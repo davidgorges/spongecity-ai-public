@@ -6,7 +6,10 @@ namespace App\SpongeCity\Geo\Hamburg;
 
 use App\SpongeCity\Geo\BuildingTags;
 use App\SpongeCity\Geo\GeoBox;
+use App\SpongeCity\Geo\GeoPoint;
+use App\SpongeCity\Geo\LocalProjection;
 use App\SpongeCity\Geo\SiteImporter;
+use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 
 /**
  * Hamburg's official buildings: the footprints, uses and storeys of the cadastre
@@ -16,6 +19,13 @@ use App\SpongeCity\Geo\SiteImporter;
  *
  * The LoD2 model's vertices are quantised to whole metres by the API, which is too
  * coarse for footprints but fine for an eaves height; its measured height is exact.
+ *
+ * A flat-roofed building whose roof has several levels (a low wing, the main roof, a
+ * recessed top storey, a stair core) carries them as `parts`: one outline and height per
+ * roof surface, from the detailed LoD3.0-HH model on the site (matched by id, or by
+ * position where its ids differ) or else from LoD2's full-precision CityGML. Drawn as one
+ * block at the measured height (the highest point), a two-storey wing would stand as
+ * tall as the tower beside it.
  */
 final readonly class HamburgBuildings
 {
@@ -25,7 +35,7 @@ final readonly class HamburgBuildings
     public const string COLLECTION_LOD2 = 'building';
 
     /** tags set besides OpenStreetMap's own */
-    public const string TAG_ALKIS_ID = 'ref:alkis';
+    public const string TAG_ALKIS_ID = BuildingTags::TAG_ALKIS_ID;
     public const string TAG_FUNCTION = SiteImporter::TAG_FUNCTION;
     public const string TAG_SOURCE = 'source';
     public const string SOURCE = 'ALKIS + LoD2-DE Hamburg';
@@ -39,6 +49,18 @@ final readonly class HamburgBuildings
     /** below this, an eaves height read from the coarse LoD2 vertices is not believed */
     private const float MIN_EAVES_METRES = 2.0;
     private const int SMALL_HOUSE_STOREYS = 2;
+    /** roof levels closer than this are one level */
+    private const float LEVEL_STEP_METRES = 1.5;
+    /** roof surfaces smaller than this (railing tops, hatches) are left out */
+    private const float MIN_SURFACE_SQUARE_METRES = 1.0;
+    /** a surface rising less than this is flat */
+    private const float FLAT_SURFACE_METRES = 0.5;
+    /** parts are drawn for roofs this flat at least (share of the area): pitched roofs keep their gable or hip */
+    private const float MIN_FLAT_SHARE = 0.8;
+    private const int MAX_PARTS = 40;
+    private const float METRES_PER_DEGREE = 111_195.0;
+    /** the element key the parts travel under (SiteImporter, SurroundingsImporter) */
+    public const string PARTS = SiteImporter::ELEMENT_PARTS;
 
     /** ALKIS Dachform (LoD2 roofType) → roof:shape */
     private const array ROOF_SHAPES = [
@@ -60,15 +82,27 @@ final readonly class HamburgBuildings
 
     public function __construct(
         private HamburgApi $api,
+        private ?HamburgCityGml $cityGml = null,
+        private ?HamburgLod3 $lod3 = null,
     ) {
     }
 
     /**
-     * @return list<array<string, mixed>> Overpass-like ways (type, geometry of lat/lon, tags)
+     * @param bool $detailed with the detailed LoD3 roofs (the site; too heavy for the wide surroundings)
+     *
+     * @return list<array<string, mixed>> Overpass-like ways (type, geometry of lat/lon, tags, parts)
      */
-    public function within(GeoBox $box): array
+    public function within(GeoBox $box, bool $detailed = false): array
     {
         $models = $this->api->cityObjects(self::DATASET_LOD2, self::COLLECTION_LOD2, $box);
+        $centre = new GeoPoint(($box->south + $box->north) / 2, ($box->west + $box->east) / 2);
+        $half = ($box->north - $box->south) / 2 * self::METRES_PER_DEGREE;
+        $lod2 = [];
+        foreach ($this->models(fn (): array => $this->cityGml?->roofSurfaces($centre, $half) ?? []) as $model) {
+            $lod2[$model['id']] = $model;
+        }
+        $lod3 = $detailed ? $this->models(fn (): array => $this->lod3?->roofSurfaces($centre, $half) ?? []) : [];
+        $projection = new LocalProjection($centre);
         $ways = [];
         foreach ($this->api->features(self::DATASET_ALKIS, self::COLLECTION_ALKIS, $box) as $feature) {
             $properties = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
@@ -80,14 +114,100 @@ final readonly class HamburgBuildings
                 continue;
             }
             $id = is_string($properties['oid'] ?? null) ? $properties['oid'] : '';
-            $ways[] = [
+            $tags = $this->tags($properties, $models[self::lod2Id($id)] ?? null);
+            $way = [
                 'type' => 'way',
                 'geometry' => array_map(static fn (array $p): array => ['lat' => (float) $p[1], 'lon' => (float) $p[0]], $ring),
-                'tags' => $this->tags($properties, $models[self::lod2Id($id)] ?? null),
+                'tags' => $tags,
             ];
+            if (self::FLAT === ($tags[BuildingTags::TAG_ROOF_SHAPE] ?? null)) {
+                $outline = array_map(static function (array $p) use ($projection): array {
+                    [$x, $z] = $projection->toPlan((float) $p[1], (float) $p[0]);
+
+                    return [$x / 1000, $z / 1000];
+                }, $ring);
+                $model = self::match(self::lod2Id($id), $outline, $lod3) ?? $lod2[self::lod2Id($id)] ?? null;
+                $parts = null === $model ? [] : self::parts($model['surfaces']);
+                if ([] !== $parts) {
+                    $way[self::PARTS] = array_map(static fn (array $part): array => [
+                        'geometry' => array_map(static function (array $p) use ($projection): array {
+                            [$lat, $lon] = $projection->toGeo($p[0], $p[1]);
+
+                            return ['lat' => $lat, 'lon' => $lon];
+                        }, $part['points']),
+                        'height' => $part['height'],
+                    ], $parts);
+                }
+            }
+            $ways[] = $way;
         }
 
         return $ways;
+    }
+
+    /**
+     * The roof levels of a flat roof as parts (largest first), when it has more than one;
+     * none for a single level or a pitched roof (drawn from the outline as before).
+     *
+     * @param list<array{points: list<array{0: float, 1: float}>, low: float, high: float}> $surfaces plan metres
+     *
+     * @return list<array{points: list<array{0: float, 1: float}>, height: float}>
+     */
+    private static function parts(array $surfaces): array
+    {
+        $surfaces = array_values(array_filter($surfaces, static fn (array $s): bool => $s['high'] > 0 && CityGmlRoofs::area($s['points']) >= self::MIN_SURFACE_SQUARE_METRES));
+        if (count($surfaces) < 2) {
+            return [];
+        }
+        $areas = array_map(static fn (array $s): float => CityGmlRoofs::area($s['points']), $surfaces);
+        $flat = array_sum(array_map(static fn (array $s, float $a): float => $s['high'] - $s['low'] < self::FLAT_SURFACE_METRES ? $a : 0.0, $surfaces, $areas));
+        $heights = array_column($surfaces, 'high');
+        if ($flat < self::MIN_FLAT_SHARE * array_sum($areas) || max($heights) - min($heights) < self::LEVEL_STEP_METRES) {
+            return [];
+        }
+        array_multisort($areas, \SORT_DESC, $surfaces);
+
+        return array_map(static fn (array $s): array => ['points' => $s['points'], 'height' => round($s['high'], 2)], array_slice($surfaces, 0, self::MAX_PARTS));
+    }
+
+    /**
+     * The model of a cadastre building: by its id, else the one whose middle lies in its outline.
+     *
+     * @param list<array{0: float, 1: float}>                                                             $outline plan metres
+     * @param list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array<string, mixed>>}> $models
+     *
+     * @return array{id: string, centre: array{0: float, 1: float}, surfaces: list<array{points: list<array{0: float, 1: float}>, low: float, high: float}>}|null
+     */
+    private static function match(string $id, array $outline, array $models): ?array
+    {
+        foreach ($models as $model) {
+            if ($model['id'] === $id) {
+                return $model;
+            }
+        }
+        foreach ($models as $model) {
+            if (Polygon::contains($outline, $model['centre'][0], $model['centre'][1])) {
+                return $model;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * Building models from a reader; none when it fails (the outline is drawn instead).
+     *
+     * @param callable(): list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array<string, mixed>>}> $read
+     *
+     * @return list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array<string, mixed>>}>
+     */
+    private function models(callable $read): array
+    {
+        try {
+            return $read();
+        } catch (\Throwable) {
+            return [];
+        }
     }
 
     /**

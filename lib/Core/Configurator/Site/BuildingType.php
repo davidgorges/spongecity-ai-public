@@ -45,8 +45,9 @@ enum BuildingType: string
     {
         return match ($this) {
             self::House, self::Terrace => [Facade::Plaster, Facade::Brick],
-            self::Apartments => [Facade::Plaster, Facade::Brick, Facade::Plaster],
-            self::School => [Facade::Brick, Facade::Ribbon],
+            self::Apartments => [Facade::Plaster, Facade::Brick, Facade::Plaster, Facade::Render],
+            // rendered walls with single windows (old and new), red brick (pre-war), window bands (1960s/70s)
+            self::School => [Facade::Render, Facade::Brick, Facade::Plaster, Facade::Ribbon],
             self::HighRise, self::Office, self::Retail => [Facade::Ribbon],
             self::Industrial => [Facade::Cladding],
             self::Public => [Facade::Plaster, Facade::Brick],

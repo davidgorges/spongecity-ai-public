@@ -48,6 +48,12 @@ final readonly class SurroundingsImporter
                 $buildings[] = [
                     'points' => self::metres($points),
                     'height' => $this->tags->height($tags) / self::MILLIMETRES_PER_METRE,
+                    'storeys' => $this->tags->storeys($tags),
+                    // roof levels (Hamburg's 3D model): blocks drawn instead of the outline at one height
+                    'parts' => array_map(fn (array $part): array => ['points' => self::metres($this->points($part, $projection)), 'height' => (float) $part['height']], array_values(array_filter(
+                        is_array($element[SiteImporter::ELEMENT_PARTS] ?? null) ? $element[SiteImporter::ELEMENT_PARTS] : [],
+                        static fn (mixed $part): bool => is_array($part) && is_numeric($part['height'] ?? null),
+                    ))),
                     'facade' => $appearance[O::FACADE],
                     'color' => $appearance[O::COLOR],
                     'roof' => $appearance[O::ROOF],

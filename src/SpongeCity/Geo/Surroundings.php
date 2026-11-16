@@ -9,7 +9,7 @@ namespace App\SpongeCity\Geo;
  * site itself holds: context for the 3D view only, not part of the plan or its balance.
  * Plan coordinates in metres (x east, z south).
  *
- * @phpstan-type BuildingShape array{points: list<array{float, float}>, height: float, facade: string, color: string, roof: string, roofColor: string}
+ * @phpstan-type BuildingShape array{points: list<array{float, float}>, height: float, storeys: int, parts: list<array{points: list<array{float, float}>, height: float}>, facade: string, color: string, roof: string, roofColor: string}
  * @phpstan-type RoadShape array{points: list<array{float, float}>, width: float, kind: string}
  */
 final readonly class Surroundings

@@ -17,6 +17,8 @@ enum Facade: string
     case Plaster = 'plaster';
     /** facing brick with punched windows: northern German housing, schools, churches */
     case Brick = 'brick';
+    /** newer rendered walls (1990s on): tall windows in dark frames, white or light grey render */
+    case Render = 'render';
     /** continuous window bands: offices, post-war schools, high-rises */
     case Ribbon = 'ribbon';
     /** profiled metal sheets with a strip of high windows: halls, warehouses */
@@ -32,6 +34,9 @@ enum Facade: string
     public const string NIGHT_GLOW = '#ffd29a';
     public const float NIGHT_GLOW_INTENSITY = 1.4;
     private const float PLAIN_TEXTURE_SIZE = 1.6;
+    /** what a storey can be: a low flat to a tall school or office floor (metres) */
+    public const float MIN_STOREY = 2.6;
+    public const float MAX_STOREY = 6.0;
 
     /** @return list<string> */
     public static function values(): array
@@ -43,6 +48,7 @@ enum Facade: string
     {
         return match ($this) {
             self::Plaster => ProceduralTexture::FacadePlaster,
+            self::Render => ProceduralTexture::FacadeRender,
             self::Brick => ProceduralTexture::FacadeBrick,
             self::Ribbon => ProceduralTexture::FacadeRibbon,
             self::Cladding => ProceduralTexture::FacadeCladding,
@@ -54,6 +60,20 @@ enum Facade: string
     public function textureSize(): float
     {
         return self::Plain === $this ? self::PLAIN_TEXTURE_SIZE : self::BAY * self::BAYS_PER_REPEAT;
+    }
+
+    /**
+     * Metres one repeat covers upwards, so each row of windows is one of the building's
+     * storeys (walls of $wallHeight metres with $storeys storeys); null when the storeys
+     * are unknown or the façade has no windows (the texture keeps its square repeat).
+     */
+    public function textureHeight(float $wallHeight, int $storeys): ?float
+    {
+        if ($storeys <= 0 || !$this->hasWindows()) {
+            return null;
+        }
+
+        return round(max(self::MIN_STOREY, min(self::MAX_STOREY, $wallHeight / $storeys)) * self::BAYS_PER_REPEAT, 2);
     }
 
     public function hasWindows(): bool
@@ -71,6 +91,8 @@ enum Facade: string
         return match ($this) {
             // cream, off-white, light ochre, warm grey, sand, pale yellow
             self::Plaster => ['#efe6d6', '#f2efe8', '#e6d3b3', '#d9d4cc', '#e9d9c4', '#eee2b8'],
+            // white, off-white, light grey, warm white
+            self::Render => ['#f4f2ec', '#efece4', '#e3e2de', '#f2efe8'],
             // red, dark red clinker, light red, brown clinker, yellow brick
             self::Brick => ['#a4553c', '#8e4632', '#b46a4c', '#7b4334', '#c9a27a'],
             // light concrete, cool grey, warm white, blue-grey

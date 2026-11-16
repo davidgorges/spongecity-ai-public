@@ -2,7 +2,7 @@ import * as THREE from 'three';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
 import { fadeNearCamera, skipOverridePasses } from './city_blocks.js';
 import { TerrainField } from './terrain.js';
-import { ASPHALT, FACADE_BRICK, FACADE_CLADDING, FACADE_PLASTER, FACADE_RIBBON, proceduralTexture } from './procedural_textures.js';
+import { ASPHALT, FACADE_BRICK, FACADE_CLADDING, FACADE_PLASTER, FACADE_RENDER, FACADE_RIBBON, proceduralTexture } from './procedural_textures.js';
 
 /**
  * The real city around an aerial site: the OpenStreetMap buildings and streets out to a
@@ -15,9 +15,14 @@ import { ASPHALT, FACADE_BRICK, FACADE_CLADDING, FACADE_PLASTER, FACADE_RIBBON, 
 export class RealCity {
     /** façade sheets repeat every 12 m (Site\Facade::BAY × BAYS_PER_REPEAT) */
     static TEXTURE_SIZE = 12;
+    /** window rows follow a building's storeys (as Site\\Facade::textureHeight): metres a storey can be */
+    static MIN_STOREY = 2.6;
+    static MAX_STOREY = 6.0;
+    static BAYS = 4;
     static ASPHALT_TEXTURE_SIZE = 6;
     static FACADE_TEXTURES = {
         plaster: FACADE_PLASTER,
+        render: FACADE_RENDER,
         brick: FACADE_BRICK,
         ribbon: FACADE_RIBBON,
         cladding: FACADE_CLADDING,
@@ -88,8 +93,7 @@ export class RealCity {
         const roofs = [];
         const colour = new THREE.Color();
         buildings.forEach((building, index) => {
-            const outline = building.points.map(([x, z]) => new THREE.Vector2(x, -z));
-            if (outline.length < 3 || !(building.height > 0)) {
+            if (building.points.length < 3 || !(building.height > 0)) {
                 return;
             }
             const middle = new THREE.Vector3(
@@ -97,23 +101,33 @@ export class RealCity {
                 0,
                 building.points.reduce((sum, [, z]) => sum + z, 0) / building.points.length,
             );
-            const shape = new THREE.Shape(outline);
-            // profile (x, -z) extruded along +z, turned up: x stays, the extrusion becomes the height, -(-z) = z
             // on the lowest ground under the footprint: on a slope the uphill walls start below ground
             const ground = this.#terrain.lowestUnder(building.points);
-            const wall = new THREE.ExtrudeGeometry(shape, { depth: building.height, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(0, ground, 0);
-            wallUVs(wall, RealCity.TEXTURE_SIZE, index);
-            paint(wall, colour.set(building.color), middle);
+            // roof levels of the 3D model (a low wing, a recessed top storey): a block each; the storeys are the main one's
+            const blocks = building.parts?.length ? building.parts : [{ points: building.points, height: building.height }];
+            const storey = building.storeys > 0
+                ? THREE.MathUtils.clamp(blocks[0].height / building.storeys, RealCity.MIN_STOREY, RealCity.MAX_STOREY)
+                : RealCity.TEXTURE_SIZE / RealCity.BAYS;
             const kind = RealCity.FACADE_TEXTURES[building.facade] ?? FACADE_PLASTER;
-            if (!walls.has(kind)) {
-                walls.set(kind, []);
-            }
-            walls.get(kind).push(wall);
+            for (const block of blocks) {
+                if (block.points.length < 3 || !(block.height > 0)) {
+                    continue;
+                }
+                const shape = new THREE.Shape(block.points.map(([x, z]) => new THREE.Vector2(x, -z)));
+                // profile (x, -z) extruded along +z, turned up: x stays, the extrusion becomes the height, -(-z) = z
+                const wall = new THREE.ExtrudeGeometry(shape, { depth: block.height, bevelEnabled: false }).rotateX(-Math.PI / 2).translate(0, ground, 0);
+                wallUVs(wall, RealCity.TEXTURE_SIZE, index, storey * RealCity.BAYS, ground);
+                paint(wall, colour.set(building.color), middle);
+                if (!walls.has(kind)) {
+                    walls.set(kind, []);
+                }
+                walls.get(kind).push(wall);
 
-            const roof = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2).translate(0, ground + building.height + RealCity.ROOF_LIFT, 0).toNonIndexed();
-            roof.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(roof.attributes.position.count * 2), 2));
-            paint(roof, colour.set(building.roofColor), middle);
-            roofs.push(roof);
+                const roof = new THREE.ShapeGeometry(shape).rotateX(-Math.PI / 2).translate(0, ground + block.height + RealCity.ROOF_LIFT, 0).toNonIndexed();
+                roof.setAttribute('uv', new THREE.Float32BufferAttribute(new Float32Array(roof.attributes.position.count * 2), 2));
+                paint(roof, colour.set(building.roofColor), middle);
+                roofs.push(roof);
+            }
         });
 
         const meshes = [];
@@ -219,7 +233,7 @@ export class RealCity {
  * Wall UVs in world metres: u along each wall, v up from the ground; the roof cap keeps
  * a plain spot of the sheet. `seed` shifts each building by whole bays and storeys.
  */
-function wallUVs(geometry, textureSize, seed) {
+function wallUVs(geometry, textureSize, seed, textureHeight = textureSize, ground = 0) {
     const position = geometry.attributes.position;
     const normal = geometry.attributes.normal;
     const uv = geometry.attributes.uv;
@@ -236,7 +250,8 @@ function wallUVs(geometry, textureSize, seed) {
         const [wx, wz] = [-normal.getZ(i), normal.getX(i)];
         for (let k = i; k < i + 3; k++) {
             const along = position.getX(k) * wx + position.getZ(k) * wz;
-            uv.setXY(k, along / textureSize + shiftU, position.getY(k) / textureSize + shiftV);
+            // up from the building's own ground, so the window rows start at its foot on any terrain
+            uv.setXY(k, along / textureSize + shiftU, (position.getY(k) - ground) / textureHeight + shiftV);
         }
     }
     uv.needsUpdate = true;

@@ -9,13 +9,20 @@ framework:
                 # the import already tries several Overpass mirrors; a failed plan shows an error at once
                 retry_strategy:
                     max_retries: 0
+            # SimStadt building simulations: a Docker run of up to a few minutes, so a queue of their own
+            simstadt:
+                dsn: 'doctrine://default?queue_name=simstadt'
+                retry_strategy:
+                    max_retries: 0
             failed: 'doctrine://default?queue_name=failed'
 
         routing:
             App\SpongeCity\Import\ImportSite: async
+            App\SpongeCity\SimStadt\RunSimulation: simstadt
 
 when@test:
     framework:
         messenger:
             transports:
                 async: 'in-memory://'
+                simstadt: 'in-memory://'

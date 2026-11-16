@@ -62,7 +62,8 @@ final readonly class ImportSiteHandler
         }
         // what official data says about the ground (infiltration potential), with the sources of every layer
         $this->conditions->save($plan->id, $this->hamburg->conditions($centre, ImportSite::CONDITIONS_RADIUS_METRES, $sources));
-        $siteJson = $this->grounding->ground($import->siteJson, $terrain);
+        // normalised now, so every object has its id from the start (the agent addresses buildings by it)
+        $siteJson = $this->grounding->ground((new SiteType())->normalize($import->siteJson), $terrain);
         $this->plans->save($plan->withLocation($message->latitude, $message->longitude)->withValues([...$plan->values, SiteType::PARAMETER => $siteJson])->withStatus(Plan::STATUS_READY));
         // the real city around the site, for the 3D view (context only: may fail without failing the plan)
         $this->surroundings->import($this->plans->get($plan->id));

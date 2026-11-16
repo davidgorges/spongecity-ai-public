@@ -1106,6 +1106,8 @@ export class SceneRenderer {
             }
         }
         material.userData.textureSize = texture ? def.textureSize : null;
+        // on upright walls, one row of windows per storey of the building (Site\\Facade::textureHeight)
+        material.userData.textureHeight = texture ? (def.textureHeight ?? def.textureSize) : null;
         material.userData.textureName = def.texture ?? null;
         if (this.#photoTextures && hasPhotoTexture(def.texture)) {
             applyPhotoTexture(material, def.texture).then(() => this.#requestRender());
@@ -1151,7 +1153,7 @@ export class SceneRenderer {
         }
         const [x, y] = profile[0] ?? [0, 0];
 
-        return applyUprightUVs(geometry, depth, textureSize, Math.round(x * 7919 + y * 104729));
+        return applyUprightUVs(geometry, depth, textureSize, Math.round(x * 7919 + y * 104729), material.userData.textureHeight ?? textureSize);
     }
 
     /** Mats of one size share their geometry: a fence is mostly identical full-width mats. */

@@ -38,6 +38,8 @@ final readonly class SiteImporter
     public const string TAG_PLANTED = 'start_date';
     /** the use of a building in the cadastre (ALKIS), when it has no name */
     public const string TAG_FUNCTION = 'alkis:funktion';
+    /** an element's roof levels: [{geometry: [{lat, lon}…], height: metres}] */
+    public const string ELEMENT_PARTS = 'parts';
 
     private const float DEFAULT_TREE_METRES = 9.0;
     private const int FALLBACK_PLOT_HALF_SIDE_MM = 20_000;
@@ -98,7 +100,7 @@ final readonly class SiteImporter
                 // the site clamps coordinates to its reach, which would squash a building that crosses it: cut it there instead
                 $points = self::clipOutlineToReach($points);
                 if (count($points) >= 3) {
-                    $buildings[] = [O::TYPE => O::BUILDING, O::POINTS => $points, O::HEIGHT => $this->tags->height($tags), ...$this->tags->appearance($tags, $points), O::LABEL => $this->name($tags) ?? $this->text($tags, self::TAG_FUNCTION)];
+                    $buildings[] = [O::TYPE => O::BUILDING, O::POINTS => $points, O::HEIGHT => $this->tags->height($tags), O::STOREYS => $this->tags->storeys($tags), O::PARTS => $this->parts($element, $projection), ...$this->tags->appearance($tags, $points), O::LABEL => $this->name($tags) ?? $this->text($tags, self::TAG_FUNCTION)];
                 }
                 continue;
             }
@@ -294,6 +296,26 @@ final readonly class SiteImporter
         $height = is_numeric($tags[self::TAG_HEIGHT] ?? null) ? (float) $tags[self::TAG_HEIGHT] : $defaultMetres;
 
         return (int) round($height * self::MILLIMETRES_PER_METRE);
+    }
+
+    /**
+     * A building's roof levels (Hamburg's 3D models), each cut to the site's reach like its outline.
+     *
+     * @param array<string, mixed> $element
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function parts(array $element, LocalProjection $projection): array
+    {
+        $parts = [];
+        foreach (is_array($element[self::ELEMENT_PARTS] ?? null) ? $element[self::ELEMENT_PARTS] : [] as $part) {
+            $points = self::clipOutlineToReach($this->outline($part, $projection));
+            if (count($points) >= 3 && is_numeric($part['height'] ?? null)) {
+                $parts[] = [O::POINTS => $points, O::HEIGHT => (int) round((float) $part['height'] * self::MILLIMETRES_PER_METRE)];
+            }
+        }
+
+        return $parts;
     }
 
     /**

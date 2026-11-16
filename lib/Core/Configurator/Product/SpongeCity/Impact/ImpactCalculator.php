@@ -279,7 +279,11 @@ final readonly class ImpactCalculator
             $num = static fn (string $key): float => is_numeric($object[$key] ?? null) ? (float) $object[$key] : 0.0;
             switch ($object[O::TYPE]) {
                 case O::BUILDING:
-                    $buildings[] = ['polygon' => Site::points($object), 'height' => $num(O::HEIGHT)];
+                    // its roof levels cast their own shadows (a low wing less than the tower beside it)
+                    $parts = Site::parts($object);
+                    foreach ([] === $parts ? [[O::POINTS => Site::points($object), O::HEIGHT => $num(O::HEIGHT)]] : $parts as $part) {
+                        $buildings[] = ['polygon' => $part[O::POINTS], 'height' => $part[O::HEIGHT]];
+                    }
                     break;
                 case O::HOUSE:
                     foreach (Site::outlinesOf($object) as $polygon) {

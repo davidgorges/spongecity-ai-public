@@ -174,7 +174,7 @@ bounding box, paged, cached a day per box: `CACHE_VERSION` in the key):
 | Layer | Datasets | Becomes |
 |---|---|---|
 | Buildings | ALKIS `alkis_vereinfacht/GebaeudeBauwerk` (footprint, function, storeys) joined with LoD2 `lod2_hamburg/building` (measured height, roof form, eaves) by ALKIS id (LoD2 id + `BL`) | `building` objects of the site and the surroundings |
-| Street trees | Straßenbaumkataster `strassenbaumkataster/strassenbaumkataster_hh` (species, planting year, crown diameter) | `tree` objects with `diameter` (crown) and a label ("Spitz-Ahorn, 1982") |
+| Street trees | Straßenbaumkataster `strassenbaumkataster/strassenbaumkataster_hh` (species, planting year, crown diameter), heights from the 3D Straßenbaumkataster (laser scan) | `tree` objects with `diameter` (crown), measured `height` and a label ("Spitz-Ahorn, 1982") |
 | Infiltration | Versickerungspotentialkarte `versickerung/versickerungspotential` | `SiteConditions` (areas with holes, cut to 100 m around the site) |
 
 - The Hamburg layers are turned into **Overpass-like elements with OpenStreetMap tags**
@@ -182,12 +182,54 @@ bounding box, paged, cached a day per box: `CACHE_VERSION` in the key):
   `SiteImporter`, `SurroundingsImporter` and `BuildingTags` stay unaware of the source.
   ALKIS functions map to `building=*` by keyword (`HamburgBuildings::FUNCTIONS`), the LoD2
   roof codes (ALKIS Dachform) to `roof:shape`; Bauteile and buildings below ground are left out.
+- **Roof levels**: a flat-roofed building whose roof has several levels (a low wing, the main
+  roof, a recessed top storey, a stair core) carries them as `parts` (`SiteObject::PARTS`:
+  `{points, height}` per roof surface, at most 40), drawn as a block each and casting their own
+  shade in the impact calculation. As one block at the measured height (the highest point) a
+  two-storey wing stood as tall as the tower beside it. The cadastre's storeys belong to the
+  largest part (the window rows follow it).
+  - On the site, from **LoD3.0-HH** (`HamburgLod3`, LGV, dl-de/by-2-0): the roofscape modelled by
+    hand from 2020 aerial photos, with recessed storeys and roof structures from 1 m². Five area
+    ZIPs of 1 km CityGML tiles named by the last two digits of the UTM kilometre (`6734.gml`); a
+    tile may be split over two areas. Tiles are 10–60 MB unpacked, so they are **streamed**
+    (`RemoteZip::stream`: range request unbuffered, inflated piece by piece, each building parsed
+    as soon as it is complete, `CityGmlRoofs::streamed`) and only the result per site is cached.
+    Its ids are mostly the cadastre's; where they are not (area 4), buildings are matched by
+    position. The Brecht-Schule: 14 levels (main roof 20.8 m, recessed top storey 23.7–24.5 m,
+    stepped wing 5.5–7.1 m) where LoD2 had 3.
+  - Elsewhere (the surroundings), from LoD2's full-precision CityGML (`HamburgCityGml`).
+  - Pitched roofs keep their gable or hip; parts only for roofs at least 80 % flat.
+- **Storeys**: buildings keep the cadastre's storeys (`storeys`); the façade texture is stretched
+  upwards so each row of windows is one storey (`Facade::textureHeight`, 2.6 to 6 m). From three
+  storeys on, the ground floor is a quarter taller than the rest (3.5 to 5.5 m): the walls are two
+  stacked pieces, each with its own rows (`SiteBuilder::facadeWalls`). Before, every
+  façade had 3 m rows, and a school with 4–5 m floors looked twice as many storeys high.
+- **Looks are a guess**: no dataset records façade material, so it is picked from the use
+  (`BuildingType::facades`; `render` is the newer rendered wall with tall, dark-framed windows).
+  A user who knows better tells the agent, which corrects `facade` and `color` with
+  `update_object` (`get_site` lists building ids). Such a building's `look` becomes `user`, and
+  `app:plan:reimport` gives it back to the building standing in the same place.
+- **Glazed bands**: roof parts under a metre wide that rise above the main roof are wall tops the
+  model draws for a glazed top storey or a glass railing: rendered wall up to the main roof, glass
+  above it.
 - A pitched roof stands on its eaves: the eaves height is the lowest roof point over the lowest
   ground point of the LoD2 solid. The API quantises LoD2 vertices to whole metres, which is why
   footprints come from ALKIS, not from LoD2.
 - The register knows **street trees only**: OpenStreetMap trees more than 3 m from a registered
-  one (yards, parks) stay. It has no heights: they are estimated as 1.3 × crown + 2 m. A recorded
-  crown is used by the impact calculation instead of the 28 %-of-height estimate.
+  one (yards, parks) stay. A recorded crown is used by the impact calculation instead of the
+  28 %-of-height estimate.
+- **Tree heights** come from the "3D Straßenbaumkataster Hamburg" (LGV, dl-de/by-2-0, metadata
+  `24513F73-D928-450C-A334-E30037945729`): the highest point of the airborne laser scan (April
+  2022) within the crown above the DGM1 ground, joined by tree number (`Baumnummer`). It is read
+  per site from the layer's 3D Tiles (`Hamburg3dTiles`: the tileset walked down to the leaf tiles
+  touching the site, external tilesets followed, batch tables of i3dm/b3dm/composite tiles read;
+  no geometry decoded). The same data exists as one 487 MB CityGML file, which cannot be read in
+  pieces. Trees the scan could not measure, or all of them when the layer is unavailable, get the
+  estimate 1.3 × crown + 2 m; `height:source` says which. On the Brecht-Schule the estimate was off
+  by up to 6.6 m (old limes 20.8 m measured against 15 m estimated).
+- Not used: "Grünes Hamburg in 3D" (CC0, all other vegetation from the laser scan, no species): its
+  metadata limits it to visualisation and rules out shade, crown areas and counts. "3D Stadtbäume"
+  in the 3D portal has no metadata or licence.
 - **Each layer falls back on its own**: when a service fails, that layer stays as OpenStreetMap
   has it (logged as a warning); outside Hamburg nothing is asked.
 - Every layer used is a `DataSource` (title, publisher, as of, licence, URL, limitations), kept in
@@ -291,6 +333,7 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |
 | `set_design_storm` | Rain depth for the calculation (10 to 120 mm/h). |
 | `calculate_impact` | Metrics with bases, assumptions, warnings, cost. |
+| `simulate_buildings` / `get_building_simulation` | Hamburg only: a SimStadt run (heat demand, heat demand with shadow, PV potential) for the buildings within 100 m, started and polled (see "Building simulations"). |
 | `get_site_conditions` | Hamburg only: terrain of the plot (elevation, slope, where water runs and collects), infiltration potential as shares of the plot with their meaning, and the sources (publisher, date, licence, limitations) of the site's official layers. |
 
 Tools are stateless: the plan id is part of every call (`PlanAssistant` prefixes each user message
@@ -299,6 +342,49 @@ before it claims anything, and never state a number that did not come from a too
 
 Because the app calls its own `/mcp` over HTTP while handling a request, the web server needs more
 than one worker (the Symfony CLI server has several).
+
+## Building simulations (SimStadt)
+
+[SimStadt 2](https://simstadt.hft-stuttgart.de/) (HFT Stuttgart, MIT licence) simulates the
+energy of buildings from CityGML: heat demand after DIN V 18599, PV potential of roof surfaces,
+shading. It covers the buildings, not the open ground, so it complements the impact calculation
+rather than replacing it. Its tools are part of this application's MCP server
+(`App\Mcp\SimStadtTools`, Symfony MCP bundle), next to `SpongeCityTools`.
+
+```
+simulate_buildings ─► Simulation (queued) + RunSimulation ─► Messenger transport "simstadt"
+                                                                  │ worker
+                     HamburgCityGml: LoD2 tiles (RemoteZip) ─► CityGML of the site's buildings
+                     SimStadtRunner: docker run simstadt/simstadt:cli simstadt <Template> …
+                     SimStadtResults: summary + one row per building (plan x/z)
+get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflow)
+```
+
+- **SimStadt runs in its own Docker image** (`SIMSTADT_IMAGE`, default `simstadt/simstadt:cli`:
+  Java, INSEL and simstadtpy). Nothing is installed on the host: INSEL has `/usr/local/insel`
+  compiled in, so a native install would need admin rights. The image is amd64 only
+  (`SIMSTADT_PLATFORM=linux/amd64`, emulated on Apple Silicon). **Docker must be available to the
+  worker**; `.symfony.local.yaml` starts a second worker for the `simstadt` transport, so a run of
+  a minute never holds up a site import.
+- **Input**: `HamburgCityGml` cuts the buildings whose first vertex lies within the site's reach
+  (100 m) out of Hamburg's LoD2 model (CityGML 1.0, AdV profile, 1 km tiles in a 660 MB ZIP read by
+  range requests through `RemoteZip`, shared with the terrain). It adds the envelope with its
+  reference system (SimStadt locates the model and fetches its weather by it) and a
+  **construction year**, which Hamburg's model lacks and without which SimStadt drops a building.
+  The year (default 1970, the agent may pass another) decides the U-values: every result lists it
+  among its assumptions.
+- **Runs**: `var/simstadt` is mounted as `/data` and is SimStadt's repository. Each run uses its
+  own file names there and removes them afterwards; the repository's `.cache` (PVGIS weather,
+  irradiance, shadows) stays, so only the first run downloads. A run that fails on the PVGIS
+  download (which drops connections now and then) is tried once more. Timeout
+  `SIMSTADT_TIMEOUT_SECONDS` (900).
+- **Results** (`SimStadtResults`): simstadtpy's printed totals as they are, and the saved table
+  condensed to one row per building (PV: the roof surfaces added up), with the position in plan
+  millimetres, largest first, at most 40.
+- Measured on the Brecht-Schule (21 buildings, M4, emulated amd64): heat demand 28 s, PV 5 s,
+  heat demand with shadow about 75 s.
+- Not used yet: GreenWater (needs trees in the CityGML: the tree register could provide them),
+  refurbishment scenarios, load profiles. SimStadt has no cooling demand.
 
 ## Chat and the live UI
 
@@ -399,7 +485,8 @@ symfony composer install
 symfony console importmap:install
 symfony console tailwind:build
 # .env.local: ANTHROPIC_API_KEY=…  OSM_USER_AGENT="YourApp contact@example.com"
-symfony server:start --no-tls      # also starts the Messenger worker
+symfony server:start --no-tls      # also starts the Messenger workers (import, SimStadt)
+docker pull simstadt/simstadt:cli  # building simulations (about 1.3 GB)
 symfony console app:plan:demo      # offline demo plan (synthetic sealed schoolyard)
 symfony console app:plan:reimport <id>   # re-import site and surroundings, keeping interventions
 bin/render-loop <id> --perf --dpr=2      # renders and frame times (installs puppeteer-core on first run)
@@ -420,6 +507,8 @@ symfony php vendor/bin/phpunit
 - Outside Hamburg the ground is flat (no terrain source).
 - The terrain model is bare earth: ramps, stairwells and light wells appear as hollows; kerbs,
   gutters and drains are below its resolution.
+- SimStadt results rest on an assumed construction year for every building. A better source
+  (e.g. the heat-planning dataset's building-age classes, per block) would sharpen heat demand.
 - The geocoder takes the first hit; a pick-list for ambiguous names would help.
 - Public Overpass/Nominatim instances are rate limited; self-host Overpass for reliability.
 - The chat shows the final answer only; streaming the agent's tool steps (Symfony AI

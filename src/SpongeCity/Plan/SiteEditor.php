@@ -64,6 +64,10 @@ final readonly class SiteEditor
         foreach ($objects as $i => $object) {
             if (is_array($object) && ($object[O::ID] ?? null) === $id) {
                 unset($changes[O::ID], $changes[O::TYPE]);
+                // a building's look set by hand is kept when the site is imported again
+                if (O::BUILDING === ($object[O::TYPE] ?? null) && (isset($changes[O::FACADE]) || isset($changes[O::COLOR]))) {
+                    $changes[O::LOOK] = O::LOOK_USER;
+                }
                 $objects[$i] = [...$object, ...$changes];
                 $found = true;
             }

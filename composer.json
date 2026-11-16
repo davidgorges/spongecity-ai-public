@@ -26,6 +26,7 @@
         "symfony/mcp-bundle": "^1.0@beta",
         "symfony/messenger": "8.2.*",
         "symfony/monolog-bundle": "^4.1",
+        "symfony/process": "8.2.*",
         "symfony/property-access": "8.2.*",
         "symfony/property-info": "8.2.*",
         "symfony/runtime": "8.2.*",

@@ -20,6 +20,8 @@ export const LAWN = 'lawn';
 export const STONES = 'stones';
 export const WOOD_GRAIN = 'wood_grain';
 export const FACADE_PLASTER = 'facade_plaster';
+export const FACADE_RENDER = 'facade_render';
+export const GLAZING = 'glazing';
 export const FACADE_BRICK = 'facade_brick';
 export const FACADE_RIBBON = 'facade_ribbon';
 export const FACADE_CLADDING = 'facade_cladding';
@@ -81,7 +83,8 @@ export function proceduralTexture(name) {
  * foot to -depth/2 at the top (the part is turned by +90° about x). `seed` shifts the
  * pattern by whole bays and storeys, so neighbouring buildings differ.
  */
-export function applyUprightUVs(geometry, depth, textureSize, seed = 0) {
+/** @param {number} textureHeight metres one repeat covers upwards (a storey per window row); textureSize when not given */
+export function applyUprightUVs(geometry, depth, textureSize, seed = 0, textureHeight = textureSize) {
     const position = geometry.attributes.position;
     const normal = geometry.attributes.normal;
     const uv = geometry.attributes.uv;
@@ -100,7 +103,7 @@ export function applyUprightUVs(geometry, depth, textureSize, seed = 0) {
         corner.set(-normal.getY(i), normal.getX(i), 0).normalize();
         for (let k = i; k < i + 3; k++) {
             const along = position.getX(k) * corner.x + position.getY(k) * corner.y;
-            uv.setXY(k, along / textureSize + shiftU, (depth / 2 - position.getZ(k)) / textureSize + shiftV);
+            uv.setXY(k, along / textureSize + shiftU, (depth / 2 - position.getZ(k)) / textureHeight + shiftV);
         }
     }
     uv.needsUpdate = true;
@@ -398,6 +401,50 @@ const PATTERNS = {
             eachBay((x, y) => punchedWindow(colour, bump, random, PATTERNS[FACADE_PLASTER].windows(x, y, BAY)[0]));
         },
     },
+    // a newer rendered wall: tall windows in dark (anthracite) frames, a slim metal sill
+    [FACADE_RENDER]: {
+        bumpScale: 1.2,
+        size: FACADE_SIZE,
+        windows: (x, y, bay) => [punched(x, y, bay, 1.5, 2.2, 0.55)],
+        draw(colour, bump, random) {
+            fill(colour, '#f6f5f2');
+            fill(bump, '#808080');
+            blotches(colour, random, 60, 0.015);
+            speckle(colour, random, 60000, 0.04);
+            speckle(bump, random, 60000, 0.3);
+            eachBay((x, y) => punchedWindow(colour, bump, random, PATTERNS[FACADE_RENDER].windows(x, y, BAY)[0], DARK_FRAME, METAL_SILL));
+        },
+    },
+    // a glazed storey behind a glass railing: four panels across between slim dark mullions,
+    // a handrail at a third of the height; one repeat is 6 m wide and one storey (3.2 m) high
+    [GLAZING]: {
+        bumpScale: 0.5,
+        size: FACADE_SIZE,
+        draw(colour, bump, random) {
+            fill(bump, '#808080');
+            const panels = 4;
+            const width = FACADE_SIZE / panels;
+            for (let i = 0; i < panels; i++) {
+                glass(colour, i * width, 0, width, FACADE_SIZE, random);
+                // a few blinds half down, as in any office or classroom
+                if (random() < 0.3) {
+                    colour.fillStyle = 'rgba(220,216,206,0.55)';
+                    colour.fillRect(i * width + 10, 10, width - 20, FACADE_SIZE * (0.15 + random() * 0.3));
+                }
+            }
+            colour.fillStyle = '#2f2c2a';
+            for (let i = 0; i <= panels; i++) {
+                colour.fillRect(i * width - 7, 0, 14, FACADE_SIZE);
+            }
+            // the floor slab's edge at the top and bottom, the railing's handrail and its glass
+            colour.fillRect(0, 0, FACADE_SIZE, 18);
+            colour.fillRect(0, FACADE_SIZE - 18, FACADE_SIZE, 18);
+            colour.fillStyle = '#5a5552';
+            colour.fillRect(0, FACADE_SIZE * 0.66, FACADE_SIZE, 10);
+            colour.fillStyle = 'rgba(190,210,215,0.25)';
+            colour.fillRect(0, FACADE_SIZE * 0.66 + 10, FACADE_SIZE, FACADE_SIZE * 0.34 - 18);
+        },
+    },
     // facing brick in running bond, a soldier course over each punched window
     [FACADE_BRICK]: {
         bumpScale: 2,
@@ -554,20 +601,25 @@ function punched(bayX, bayY, bay, width, height, sill) {
     return { x: bayX + (bay - width * metre) / 2, y: bayY + bay - (sill + height) * metre, width: width * metre, height: height * metre };
 }
 
-/** A punched window: reveal shadow, frame, glass with a mullion (blinds or curtains in some), a light sill. */
-function punchedWindow(colour, bump, random, { x, y, width: w, height: h }) {
+const LIGHT_FRAME = '#eceae6';
+const DARK_FRAME = '#3a3735';
+const STONE_SILL = '#ffffff';
+const METAL_SILL = '#cfd0ce';
+
+/** A punched window: reveal shadow, frame, glass with a mullion (blinds or curtains in some), a sill. */
+function punchedWindow(colour, bump, random, { x, y, width: w, height: h }, frameColour = LIGHT_FRAME, sillColour = STONE_SILL) {
     const frame = 4;
-    colour.fillStyle = '#eceae6';
+    colour.fillStyle = frameColour;
     colour.fillRect(x, y, w, h);
     glass(colour, x + frame, y + frame, w - 2 * frame, h - 2 * frame, random);
     blind(colour, x + frame, y + frame, w - 2 * frame, h - 2 * frame, random);
-    colour.fillStyle = '#eceae6';
+    colour.fillStyle = frameColour;
     colour.fillRect(x + w / 2 - frame / 2, y, frame, h);
     // the reveal: shade from the lintel and the left jamb
     colour.fillStyle = 'rgba(0,0,0,0.28)';
     colour.fillRect(x, y, w, 5);
     colour.fillRect(x, y, 4, h);
-    colour.fillStyle = '#ffffff';
+    colour.fillStyle = sillColour;
     colour.fillRect(x - 5, y + h, w + 10, 4);
     colour.fillStyle = 'rgba(0,0,0,0.2)';
     colour.fillRect(x - 5, y + h + 4, w + 10, 2);

@@ -60,6 +60,17 @@ final class SiteBuilder
     private const float ASPHALT_TEXTURE_SIZE = 6.0;
     private const float FOOTWAY_TEXTURE_SIZE = 0.6;
 
+    private const float MILLIMETRES_PER_METRE = 1000.0;
+    /** roof parts narrower than this (millimetres, mean width) are wall tops: a glazed band or a railing */
+    private const float GLAZED_BAND_WIDTH = 1000.0;
+    private const float GLAZING_REPEAT_WIDTH = 6.0;
+    /** a ground floor is a quarter taller than the storeys above, 3.5 to 5.5 m (buildings of three storeys and more) */
+    private const float GROUND_FLOOR_SHARE = 1.25;
+    private const float GROUND_FLOOR_MIN = 3.5;
+    private const float GROUND_FLOOR_MAX = 5.5;
+    private const int GROUND_FLOOR_MIN_STOREYS = 3;
+    private const float GLAZING_REPEAT_HEIGHT = 3.2;
+
     private Assembly $assembly;
 
     public function build(Site $site): Assembly
@@ -110,7 +121,7 @@ final class SiteBuilder
             O::CYLINDER => [Slab::onGround($label, $this->colour('solid', $text(O::COLOR)), self::circle($num(O::X), $num(O::Z), $num(O::DIAMETER) / 2), $num(O::HEIGHT), $num(O::Y))],
             O::PRISM => [Slab::onGround($label, $this->colour('solid', $text(O::COLOR)), $points, $num(O::HEIGHT), $num(O::Y))],
             O::ROAD => $this->road($label, $points, $num(O::WIDTH), O::ROAD_FOOTWAY === $text(O::KIND)),
-            O::BUILDING => $this->footprint($label, $points, $num(O::HEIGHT), Facade::tryFrom($text(O::FACADE)) ?? Facade::Plaster, $text(O::COLOR), $text(O::ROOF), $text(O::ROOF_COLOR)),
+            O::BUILDING => $this->footprint($label, $points, $num(O::HEIGHT), Facade::tryFrom($text(O::FACADE)) ?? Facade::Plaster, $text(O::COLOR), $text(O::ROOF), $text(O::ROOF_COLOR), (int) $num(O::STOREYS), Site::parts($object)),
             default => [],
         };
     }
@@ -161,31 +172,86 @@ final class SiteBuilder
      *
      * @return list<Part>
      */
-    private function footprint(string $label, array $points, float $height, Facade $facade, string $colour, string $roof, string $roofColour): array
+    private function footprint(string $label, array $points, float $height, Facade $facade, string $colour, string $roof, string $roofColour, int $storeys = 0, array $parts = []): array
     {
         $flat = Building::ROOF_FLAT === $roof;
-        $walls = self::MATERIAL_PREFIX.'facade_'.$facade->value.'_'.ltrim($colour, '#');
-        $this->assembly->material($walls, new Material(
-            $colour,
-            roughness: 0.85,
-            texture: $facade->texture(),
-            textureSize: $facade->textureSize(),
-            nightGlow: $facade->hasWindows() ? Facade::NIGHT_GLOW : null,
-            nightGlowIntensity: $facade->hasWindows() ? Facade::NIGHT_GLOW_INTENSITY : 0.0,
-        ));
+        // with roof levels the cadastre's storeys belong to the main one (the largest, first)
+        $main = $parts[0][O::HEIGHT] ?? $height;
+        $walls = $this->facadeWalls($facade, $colour, $main, $storeys);
         $roofMaterial = $flat
             ? $this->material('roof_flat', $roofColour, ProceduralTexture::RoofGravel, self::GRAVEL_TEXTURE_SIZE)
             : $this->material('roof_tiles', $roofColour, ProceduralTexture::RoofTiles, self::TILE_TEXTURE_SIZE);
 
-        $rectangle = $flat ? null : self::rectangleAround($points);
-        if (null !== $rectangle) {
-            return [Slab::onGround($label, $walls, $points, $height), ...$this->pitchedRoof($label, $rectangle, $height, $roof, $roofMaterial, $walls)];
+        if ($flat && [] !== $parts) {
+            // the roof levels of the 3D model: a block each, side by side, each with its roof
+            $blocks = [];
+            $glass = self::MATERIAL_PREFIX.'glazing';
+            // one repeat: four 1.5 m panels across, the band's usual storey up
+            $this->assembly->material($glass, new Material('#ffffff', roughness: 0.12, metalness: 0.35, texture: ProceduralTexture::Glazing, textureSize: self::GLAZING_REPEAT_WIDTH, textureHeight: self::GLAZING_REPEAT_HEIGHT));
+            foreach ($parts as $part) {
+                // a thin band rising above the main roof is the glazed front of a top storey or a glass railing
+                // (the model draws it as a wall top under a metre wide): rendered wall up to the main roof, glass above
+                if (self::meanWidth($part[O::POINTS]) < self::GLAZED_BAND_WIDTH && $part[O::HEIGHT] > $main) {
+                    array_push($blocks, ...$walls($part[O::POINTS], $main));
+                    $blocks[] = Slab::onGround($label, $glass, $part[O::POINTS], $part[O::HEIGHT] - $main, $main);
+                } else {
+                    array_push($blocks, ...$walls($part[O::POINTS], $part[O::HEIGHT]));
+                }
+                $blocks[] = Slab::onGround($label, $roofMaterial, $part[O::POINTS], self::FOOTPRINT_ROOF, $part[O::HEIGHT]);
+            }
+
+            return array_map(static fn (Part $p): Part => new Part($p->sku, $label, $p->shape, $p->material, $p->position, $p->rotation), $blocks);
         }
 
-        return [
-            Slab::onGround($label, $walls, $points, $height),
-            Slab::onGround($label, $roofMaterial, $points, self::FOOTPRINT_ROOF, $height),
-        ];
+        $rectangle = $flat ? null : self::rectangleAround($points);
+        $wallParts = array_map(static fn (Part $p): Part => new Part($p->sku, $label, $p->shape, $p->material, $p->position, $p->rotation), $walls($points, $height));
+        if (null !== $rectangle) {
+            [$gableMaterial] = array_map(static fn (Part $p): ?string => $p->material, array_slice($wallParts, -1));
+
+            return [...$wallParts, ...$this->pitchedRoof($label, $rectangle, $height, $roof, $roofMaterial, (string) $gableMaterial)];
+        }
+
+        return [...$wallParts, Slab::onGround($label, $roofMaterial, $points, self::FOOTPRINT_ROOF, $height)];
+    }
+
+    /**
+     * The façade's walls for an outline up to a height: one row of windows per storey, the ground
+     * floor taller than the rest (shops, halls, entrances) when the storeys are known, as two pieces
+     * stacked so each has its own rows. Returns a function of (outline, top) giving the wall parts.
+     *
+     * @return callable(list<array{float, float}>, float): list<Part>
+     */
+    private function facadeWalls(Facade $facade, string $colour, float $mainHeight, int $storeys): callable
+    {
+        $material = function (?float $textureHeight) use ($facade, $colour): string {
+            $key = self::MATERIAL_PREFIX.'facade_'.$facade->value.'_'.ltrim($colour, '#').(null === $textureHeight ? '' : '_'.(int) round($textureHeight * 100));
+            $this->assembly->material($key, new Material(
+                $colour,
+                roughness: 0.85,
+                texture: $facade->texture(),
+                textureSize: $facade->textureSize(),
+                nightGlow: $facade->hasWindows() ? Facade::NIGHT_GLOW : null,
+                nightGlowIntensity: $facade->hasWindows() ? Facade::NIGHT_GLOW_INTENSITY : 0.0,
+                textureHeight: $textureHeight,
+            ));
+
+            return $key;
+        };
+        $metres = $mainHeight / self::MILLIMETRES_PER_METRE;
+        $storey = $storeys > 0 ? $metres / $storeys : 0.0;
+        if ($storeys < self::GROUND_FLOOR_MIN_STOREYS || !$facade->hasWindows()) {
+            $uniform = $material($facade->textureHeight($metres, $storeys));
+
+            return static fn (array $points, float $top): array => [Slab::onGround('', $uniform, $points, $top)];
+        }
+        $ground = min(self::GROUND_FLOOR_MAX, max(self::GROUND_FLOOR_MIN, $storey * self::GROUND_FLOOR_SHARE));
+        $groundWalls = $material($facade->textureHeight($ground, 1));
+        $upperWalls = $material($facade->textureHeight($metres - $ground, $storeys - 1));
+        $groundMillimetres = $ground * self::MILLIMETRES_PER_METRE;
+
+        return static fn (array $points, float $top): array => $top <= $groundMillimetres
+            ? [Slab::onGround('', $groundWalls, $points, $top)]
+            : [Slab::onGround('', $groundWalls, $points, $groundMillimetres), Slab::onGround('', $upperWalls, $points, $top - $groundMillimetres, $groundMillimetres)];
     }
 
     /**
@@ -324,6 +390,23 @@ final class SiteBuilder
         }
 
         return $parts;
+    }
+
+    /**
+     * The mean width of an outline (twice its area over its perimeter), in its units.
+     *
+     * @param list<array{float, float}> $points
+     */
+    private static function meanWidth(array $points): float
+    {
+        [$area, $perimeter] = [0.0, 0.0];
+        for ($i = 0, $n = count($points); $i < $n; ++$i) {
+            [$a, $b] = [$points[$i], $points[($i + 1) % $n]];
+            $area += $a[0] * $b[1] - $b[0] * $a[1];
+            $perimeter += hypot($b[0] - $a[0], $b[1] - $a[1]);
+        }
+
+        return $perimeter > 0 ? abs($area) / $perimeter : 0.0;
     }
 
     /**

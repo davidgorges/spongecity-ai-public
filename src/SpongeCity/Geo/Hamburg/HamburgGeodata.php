@@ -12,7 +12,7 @@ use App\SpongeCity\Geo\GeoBox;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\LocalProjection;
 use App\SpongeCity\Geo\SiteImporter;
-use App\SpongeCity\Geo\Utm;
+use App\SpongeCity\Geo\UtmPlanTransform;
 use App\SpongeCity\Terrain\Terrain;
 use App\SpongeCity\Terrain\TerrainGrid;
 use Core\Configurator\Site\SiteObject;
@@ -45,8 +45,6 @@ final readonly class HamburgGeodata
     public const float COARSE_HALF_METRES = 360.0;
     public const float COARSE_SPACING_METRES = 4.0;
     private const float CENTIMETRES_PER_METRE = 100.0;
-    /** a step used to measure how plan metres map onto UTM here (grid convergence, scale) */
-    private const float AFFINE_STEP_METRES = 100.0;
 
     /** the city's extent (mainland and harbour), generously */
     private const float WEST = 9.70;
@@ -88,7 +86,7 @@ final readonly class HamburgGeodata
         }
         $sources = [];
         // the site keeps buildings out to its reach (cut there), trees within the radius
-        $buildings = $this->layer(self::SOURCE_BUILDINGS, fn (): array => $this->buildings->within(GeoBox::around($centre, SiteObject::REACH / self::MILLIMETRES_PER_METRE)));
+        $buildings = $this->layer(self::SOURCE_BUILDINGS, fn (): array => $this->buildings->within(GeoBox::around($centre, SiteObject::REACH / self::MILLIMETRES_PER_METRE), detailed: true));
         if (null !== $buildings) {
             $elements = [...array_values(array_filter($elements, static fn (array $e): bool => !self::isBuilding($e))), ...$buildings];
             $sources[] = self::buildingsSource();
@@ -177,16 +175,8 @@ final readonly class HamburgGeodata
             return null;
         }
         try {
-            // plan metres → UTM is affine over a few hundred metres: the origin and two steps
-            $projection = new LocalProjection($centre);
-            $utm = static fn (float $x, float $z): array => Utm::fromGeo(...$projection->toGeo($x, $z));
-            [$e0, $n0] = $utm(0, 0);
-            [$ex, $nx] = $utm(self::AFFINE_STEP_METRES, 0);
-            [$ez, $nz] = $utm(0, self::AFFINE_STEP_METRES);
-            $toUtm = static fn (float $x, float $z): array => [
-                $e0 + ($ex - $e0) * $x / self::AFFINE_STEP_METRES + ($ez - $e0) * $z / self::AFFINE_STEP_METRES,
-                $n0 + ($nx - $n0) * $x / self::AFFINE_STEP_METRES + ($nz - $n0) * $z / self::AFFINE_STEP_METRES,
-            ];
+            // plan metres → UTM is affine over a few hundred metres
+            $toUtm = (new UtmPlanTransform($centre))->toUtm(...);
             $reach = self::COARSE_HALF_METRES + self::COARSE_SPACING_METRES;
             $corners = array_map(static fn (array $c): array => $toUtm($c[0] * $reach, $c[1] * $reach), [[-1, -1], [1, -1], [1, 1], [-1, 1]]);
             $tiles = $this->elevation->tiles(min(array_column($corners, 0)), min(array_column($corners, 1)), max(array_column($corners, 0)), max(array_column($corners, 1)));
@@ -273,7 +263,7 @@ final readonly class HamburgGeodata
     public static function treesSource(): DataSource
     {
         return new DataSource(self::SOURCE_TREES, 'Straßenbaumkataster Hamburg', 'Freie und Hansestadt Hamburg, Behörde für Umwelt, Klima, Energie und Agrarwirtschaft (BUKEA)', 'updated yearly', self::LICENCE, HamburgApi::BASE_URL.'/'.HamburgTrees::DATASET,
-            sprintf('Street trees only (trees in yards and parks come from OpenStreetMap). Crown diameters are recorded; heights are estimated as %.1f × crown + %.0f m.', HamburgTrees::HEIGHT_PER_CROWN, HamburgTrees::TRUNK_METRES));
+            sprintf('Street trees only (trees in yards and parks come from OpenStreetMap). Crown diameters are recorded. Heights from the 3D Straßenbaumkataster (LGV, dl-de/by-2-0): the airborne laser scan of April 2022 within the crown above the ground, which may differ from reality; trees it could not measure are estimated as %.1f × crown + %.0f m.', HamburgTrees::HEIGHT_PER_CROWN, HamburgTrees::TRUNK_METRES));
     }
 
     public static function infiltrationSource(): DataSource

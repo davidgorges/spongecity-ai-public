@@ -28,6 +28,10 @@ enum ProceduralTexture: string
     case WoodGrain = 'wood_grain';
     /** rendered wall with a punched window per storey and bay (Site\Facade, one repeat = 3 m) */
     case FacadePlaster = 'facade_plaster';
+    /** a newer rendered wall: tall windows in dark frames (Site\Facade::Render) */
+    case FacadeRender = 'facade_render';
+    /** a glazed storey or glass railing: dark panels between slim mullions, a rail at a metre (Site\SiteBuilder) */
+    case Glazing = 'glazing';
     /** facing brick with a punched window per storey and bay */
     case FacadeBrick = 'facade_brick';
     /** a continuous window band per storey, parapet panels between */

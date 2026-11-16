@@ -112,6 +112,26 @@ final readonly class Site
     }
 
     /**
+     * A building's roof levels (SiteObject::PARTS): outlines in plan millimetres and heights.
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return list<array{points: list<array{float, float}>, height: float}>
+     */
+    public static function parts(array $object): array
+    {
+        $parts = [];
+        foreach (is_array($object[O::PARTS] ?? null) ? $object[O::PARTS] : [] as $part) {
+            $points = is_array($part) ? self::points($part) : [];
+            if (count($points) >= 3 && is_numeric($part[O::HEIGHT] ?? null)) {
+                $parts[] = [O::POINTS => $points, O::HEIGHT => (float) $part[O::HEIGHT]];
+            }
+        }
+
+        return $parts;
+    }
+
+    /**
      * @param array<string, mixed> $object
      *
      * @return list<array{float, float}>

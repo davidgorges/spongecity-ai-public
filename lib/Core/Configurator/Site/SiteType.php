@@ -225,8 +225,28 @@ final readonly class SiteType implements StructuredValue
             O::ENUM => is_string($value) && is_array($field[1]) && in_array($value, $field[1], true) ? $value : $text(2),
             O::HEX => is_string($value) && 1 === preg_match(self::HEX_PATTERN, $value) ? strtolower($value) : $text(1),
             O::OUTLINE => self::outline($value, $int(1)),
+            O::BLOCKS => self::blocks($value),
             default => null,
         };
+    }
+
+    /**
+     * Roof-level blocks: each an outline and a height (as a building's); unreadable ones are left out.
+     *
+     * @return list<array{points: list<array{int, int}>, height: int}>
+     */
+    private static function blocks(mixed $value): array
+    {
+        $blocks = [];
+        $height = O::fields(O::BUILDING)[O::HEIGHT];
+        foreach (is_array($value) ? array_slice($value, 0, O::MAX_PARTS) : [] as $block) {
+            $points = is_array($block) ? self::outline($block[O::POINTS] ?? null, 3) : null;
+            if (null !== $points && is_numeric($block[O::HEIGHT] ?? null)) {
+                $blocks[] = [O::POINTS => $points, O::HEIGHT => max($height[1], min($height[2], (int) round((float) $block[O::HEIGHT])))];
+            }
+        }
+
+        return $blocks;
     }
 
     /**
@@ -308,6 +328,7 @@ final readonly class SiteType implements StructuredValue
                 O::INT => ['type' => 'integer', 'minimum' => $field[1], 'maximum' => $field[2], 'default' => $field[3]],
                 O::ENUM => ['type' => 'string', 'enum' => $field[1], 'default' => $field[2]],
                 O::HEX => ['type' => 'string', 'pattern' => '^#[0-9a-fA-F]{6}$', 'default' => $field[1]],
+                O::BLOCKS => ['type' => 'array', 'maxItems' => O::MAX_PARTS, 'description' => 'Roof levels from the 3D building model: leave as they are.', 'items' => ['type' => 'object', 'properties' => [O::POINTS => ['type' => 'array'], O::HEIGHT => ['type' => 'integer']]]],
                 default => ['type' => 'array', 'minItems' => $field[1], 'maxItems' => O::MAX_POINTS, 'items' => ['type' => 'array', 'items' => ['type' => 'integer'], 'minItems' => 2, 'maxItems' => 2], 'description' => 'Plan points [x, z] in millimetres.'],
             };
         }

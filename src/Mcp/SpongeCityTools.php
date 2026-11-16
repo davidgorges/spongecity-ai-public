@@ -21,6 +21,7 @@ use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Mcp\Capability\Attribute\McpTool;
+use Mcp\Capability\Attribute\Schema;
 use Mcp\Schema\ToolAnnotations;
 use Symfony\Component\Messenger\MessageBusInterface;
 
@@ -203,7 +204,13 @@ final readonly class SpongeCityTools
      * @param array<string, mixed> $changes
      */
     #[McpTool(name: self::TOOL_UPDATE, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false, idempotentHint: true))]
-    public function updateObject(string $planId, string $id, array $changes): bool
+    public function updateObject(
+        string $planId,
+        string $id,
+        // a PHP array is advertised as a JSON list by default, but the changes are a map of field → value
+        #[Schema(type: 'object', description: 'The fields to change and their new values, e.g. {"facade": "plaster", "color": "#f2efe8"}.', additionalProperties: true)]
+        array $changes,
+    ): bool
     {
         return $this->editor->update($planId, $id, $changes);
     }
@@ -281,8 +288,13 @@ final readonly class SpongeCityTools
         foreach ($site->ofType(O::BUILDING) as $building) {
             $points = Site::points($building);
             $summary[] = [
+                // the id lets a building's look (facade, color) be corrected with update_object when the user knows better
+                'id' => $building[O::ID] ?? null,
                 'label' => is_string($building[O::LABEL] ?? null) ? $building[O::LABEL] : null,
                 'height_mm' => (int) ($building[O::HEIGHT] ?? 0),
+                'storeys' => (int) ($building[O::STOREYS] ?? 0),
+                O::FACADE => $building[O::FACADE] ?? null,
+                O::COLOR => $building[O::COLOR] ?? null,
                 'centre' => [(int) round(array_sum(array_column($points, 0)) / count($points)), (int) round(array_sum(array_column($points, 1)) / count($points))],
             ];
         }

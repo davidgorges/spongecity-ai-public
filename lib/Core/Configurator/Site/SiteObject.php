@@ -49,6 +49,16 @@ final class SiteObject
      * upright objects are raised by it, ground layers follow the terrain in the view.
      */
     public const string GROUND = 'ground';
+    /**
+     * a building's roof levels from the 3D building model: blocks of {points, height} (a low wing,
+     * the main roof, a recessed top storey). When given, they are drawn instead of the outline at one height.
+     */
+    public const string PARTS = 'parts';
+    /** where a building's look (facade, color) comes from: guessed from the data, or set by a person who knows it */
+    public const string LOOK = 'look';
+    public const string LOOK_DATA = 'data';
+    public const string LOOK_USER = 'user';
+    public const int MAX_PARTS = 40;
     public const int MAX_GROUND = 50000;
 
     public const string HOUSE = 'house';
@@ -111,6 +121,7 @@ final class SiteObject
     public const string ENUM = 'enum';
     public const string HEX = 'color';
     public const string OUTLINE = 'points';
+    public const string BLOCKS = 'blocks';
 
     /** plan coordinates stay within this distance of the product (an 80 m import radius, with what reaches beyond it) */
     public const int REACH = 100000;
@@ -199,7 +210,8 @@ final class SiteObject
                 ...$color('#bdb8ae'),
             ],
             // diameter: the recorded crown diameter (e.g. a tree register); 0 when unknown, then estimated from the height
-            self::TREE => [...self::POSITION, self::HEIGHT => [self::INT, 2000, 25000, 8000], self::DIAMETER => [self::INT, 0, 30000, 0]],
+            // existing trees as measured: Hamburg's street trees reach 57 m (laser scan); a new tree is planned up to 25 m
+            self::TREE => [...self::POSITION, self::HEIGHT => [self::INT, 2000, 60000, 8000], self::DIAMETER => [self::INT, 0, 30000, 0]],
             self::PAVING => [self::POINTS => [self::OUTLINE, 3], ...$color('#b9b4aa')],
             self::POOL => [...self::POSITION, ...self::TURN_FIELD,
                 self::WIDTH => [self::INT, 2000, 15000, 8000],
@@ -230,6 +242,10 @@ final class SiteObject
                 self::HEIGHT => [self::INT, 2000, 80000, 9000],
                 self::USE => [self::ENUM, BuildingType::values(), BuildingType::Other->value],
                 self::FACADE => [self::ENUM, Facade::values(), Facade::Plaster->value],
+                // storeys above ground (cadastre): the façade's window rows follow them; 0 when unknown
+                self::STOREYS => [self::INT, 0, 60, 0],
+                self::PARTS => [self::BLOCKS],
+                self::LOOK => [self::ENUM, [self::LOOK_DATA, self::LOOK_USER], self::LOOK_DATA],
                 ...$color('#e9e2d6'),
                 self::ROOF => [self::ENUM, Building::ROOFS, Building::ROOF_FLAT],
                 self::ROOF_COLOR => [self::HEX, '#8d8a84'],

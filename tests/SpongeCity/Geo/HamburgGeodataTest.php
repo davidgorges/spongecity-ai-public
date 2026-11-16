@@ -7,6 +7,7 @@ namespace App\Tests\SpongeCity\Geo;
 use App\SpongeCity\Conditions\InfiltrationPotential;
 use App\SpongeCity\Conditions\SiteConditions;
 use App\SpongeCity\Geo\GeoPoint;
+use App\SpongeCity\Geo\Hamburg\Hamburg3dTiles;
 use App\SpongeCity\Geo\Hamburg\HamburgApi;
 use App\SpongeCity\Geo\Hamburg\HamburgBuildings;
 use App\SpongeCity\Geo\Hamburg\HamburgElevation;
@@ -68,7 +69,7 @@ final class HamburgGeodataTest extends TestCase
         $registered = array_values(array_filter($trees, static fn (array $t): bool => null !== $t[O::LABEL]))[0];
         self::assertSame('Spitz-Ahorn, 1982', $registered[O::LABEL]);
         self::assertSame(7000, $registered[O::DIAMETER]);
-        self::assertSame((int) (HamburgTrees::heightFromCrown(7) * 1000), $registered[O::HEIGHT]);
+        self::assertSame(14800, $registered[O::HEIGHT], 'measured by the laser scan (3D street tree register), not estimated from the crown');
 
         self::assertSame([HamburgGeodata::SOURCE_BUILDINGS, HamburgGeodata::SOURCE_TREES], array_map(static fn ($s): string => $s->key, $sources));
     }
@@ -82,7 +83,19 @@ final class HamburgGeodataTest extends TestCase
         [$elements, $sources] = $geodata->site(new GeoPoint(self::LATITUDE, self::LONGITUDE), $osm, 80);
 
         self::assertContains($osm[0], $elements);
+        $tree = array_values(array_filter($elements, static fn (array $e): bool => HamburgTrees::SOURCE === ($e['tags']['source'] ?? null)))[0];
+        self::assertSame(HamburgTrees::HEIGHT_MEASURED, $tree['tags'][HamburgTrees::TAG_HEIGHT_SOURCE]);
         self::assertSame([HamburgGeodata::SOURCE_TREES], array_map(static fn ($s): string => $s->key, $sources));
+    }
+
+    #[Test]
+    public function estimatesTreeHeightsWhenThe3dLayerIsDown(): void
+    {
+        [$elements] = $this->geodata(failing: 'gdi3d')->site(new GeoPoint(self::LATITUDE, self::LONGITUDE), [], 80);
+
+        $tree = array_values(array_filter($elements, static fn (array $e): bool => HamburgTrees::SOURCE === ($e['tags']['source'] ?? null)))[0];
+        self::assertSame((string) HamburgTrees::heightFromCrown(7), $tree['tags']['height']);
+        self::assertSame(HamburgTrees::HEIGHT_ESTIMATED, $tree['tags'][HamburgTrees::TAG_HEIGHT_SOURCE]);
     }
 
     #[Test]
@@ -126,6 +139,13 @@ final class HamburgGeodataTest extends TestCase
                 return new MockResponse('', ['http_code' => 503]);
             }
 
+            if (str_contains($url, 'tileset.json')) {
+                return new MockResponse((string) json_encode($this->tileset()));
+            }
+            if (str_ends_with($url, '.i3dm')) {
+                return new MockResponse(self::i3dm([['Baumnummer' => 'N160-3-1', 'Hoehe_aus_ALS' => 14.8], ['Baumnummer' => 'X-1', 'Hoehe_aus_ALS' => 9.0]]));
+            }
+
             return new MockResponse((string) json_encode(match (true) {
                 str_contains($url, '/'.HamburgBuildings::DATASET_ALKIS.'/') => $this->alkis(),
                 str_contains($url, '/'.HamburgBuildings::DATASET_LOD2.'/') => $this->lod2(),
@@ -136,7 +156,7 @@ final class HamburgGeodataTest extends TestCase
         });
         $api = new HamburgApi($client, new ArrayAdapter(), 'test');
 
-        return new HamburgGeodata($api, new HamburgBuildings($api), new HamburgTrees($api), new HamburgElevation($client, new ArrayAdapter(), 'test'), new NullLogger());
+        return new HamburgGeodata($api, new HamburgBuildings($api), new HamburgTrees($api, new Hamburg3dTiles($client, new ArrayAdapter(), 'test')), new HamburgElevation($client, new ArrayAdapter(), 'test'), new NullLogger());
     }
 
     /**
@@ -195,6 +215,36 @@ final class HamburgGeodataTest extends TestCase
                 'DEHHALKA10005b0Y' => ['type' => 'Building', 'attributes' => ['measuredHeight' => 25.1, 'roofType' => '1000'], 'geometry' => [$solid(1000)]],
                 'DEHHALKAJ0000zAh' => ['type' => 'Building', 'attributes' => ['measuredHeight' => 12.0, 'roofType' => '3100'], 'geometry' => [$solid(3100)]],
             ]];
+    }
+
+    /**
+     * A tileset whose root (around the site) refers to an external tileset with one leaf tile, as the city's do.
+     *
+     * @return array<string, mixed>
+     */
+    private function tileset(): array
+    {
+        $region = [deg2rad(self::LONGITUDE - 0.01), deg2rad(self::LATITUDE - 0.01), deg2rad(self::LONGITUDE + 0.01), deg2rad(self::LATITUDE + 0.01), 0, 50];
+        $far = [deg2rad(self::LONGITUDE + 0.5), deg2rad(self::LATITUDE + 0.5), deg2rad(self::LONGITUDE + 0.6), deg2rad(self::LATITUDE + 0.6), 0, 50];
+
+        return ['asset' => ['version' => '1.0'], 'root' => ['boundingVolume' => ['region' => $region], 'children' => [
+            ['boundingVolume' => ['region' => $region], 'children' => [['boundingVolume' => ['region' => $region], 'content' => ['uri' => '../../17/1/1.i3dm']]]],
+            // a tile far away is never fetched
+            ['boundingVolume' => ['region' => $far], 'content' => ['uri' => 'far.json']],
+        ]]];
+    }
+
+    /**
+     * A minimal i3dm tile with a batch table in the city's form (one attribute set per feature).
+     *
+     * @param list<array<string, mixed>> $attributes
+     */
+    private static function i3dm(array $attributes): string
+    {
+        $feature = (string) json_encode(['INSTANCES_LENGTH' => count($attributes)]);
+        $batch = (string) json_encode(['id' => array_keys($attributes), 'attributes' => $attributes]);
+
+        return 'i3dm'.pack('V7', 1, 32 + strlen($feature) + strlen($batch), strlen($feature), 0, strlen($batch), 0, 0).$feature.$batch;
     }
 
     /**

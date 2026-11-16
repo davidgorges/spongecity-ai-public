@@ -64,6 +64,21 @@ final class SiteBuilderTest extends TestCase
     /**
      * @param array<string, mixed> $fields
      */
+    #[Test]
+    public function drawsOneRowOfWindowsPerStorey(): void
+    {
+        // 25 m in 5 storeys (5 m each): a ground floor a quarter taller, at most 5.5 m, the four above share the rest
+        $assembly = (new SiteBuilder())->build($this->site([O::FACADE => Facade::Ribbon->value, O::ROOF => Building::ROOF_FLAT, O::HEIGHT => 25000, O::STOREYS => 5]));
+        $walls = array_values(array_filter($assembly->materials(), static fn ($m): bool => null !== $m->textureHeight));
+
+        self::assertSame([5.5 * 4, (25 - 5.5) / 4 * 4], array_map(static fn ($m): ?float => $m->textureHeight, $walls), 'one row a storey: the repeat holds four rows');
+        self::assertSame(12.0, $walls[0]->textureSize, 'the windows keep their width');
+        $pieces = array_values(array_filter($assembly->parts(), static fn ($p): bool => str_contains((string) $p->material, 'facade')));
+        self::assertCount(2, $pieces, 'the ground floor and the storeys above, stacked');
+        self::assertNull(Facade::Ribbon->textureHeight(25, 0), 'unknown storeys keep the square repeat');
+        self::assertSame(2.6 * 4, Facade::Plaster->textureHeight(5, 5), 'a storey is at least 2.6 m');
+    }
+
     private function site(array $fields): Site
     {
         $building = [O::TYPE => O::BUILDING, O::POINTS => [[0, 0], [10000, 0], [10000, 8000], [0, 8000]], O::HEIGHT => self::HEIGHT, ...$fields];
