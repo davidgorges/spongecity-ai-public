@@ -23,8 +23,11 @@ final readonly class OverpassClient
         'https://overpass.kumi.systems/api/interpreter',
     ];
     private const int QUERY_TIMEOUT_SECONDS = 25;
-    /** a mirror that does not start answering within this is skipped */
-    private const int REQUEST_TIMEOUT_SECONDS = 12;
+    /**
+     * a mirror that does not start answering within this is skipped. Generous: under load the public
+     * mirrors take 20 s even for small queries, and the import runs in a worker, so waiting costs nothing
+     */
+    private const int REQUEST_TIMEOUT_SECONDS = 30;
 
     private const int CACHE_SECONDS = 86400;
     /** bump when the query changes, so answers to the old query are not reused */

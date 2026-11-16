@@ -82,16 +82,17 @@ final readonly class HamburgCityGml
     }
 
     /**
-     * The roof surfaces of the model's buildings within a square of the plan (see CityGmlRoofs).
+     * The roof surfaces of the model's buildings within a square of the plan (see CityGmlRoofs),
+     * with their walls when asked for.
      *
-     * @return list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array{points: list<array{0: float, 1: float}>, low: float, high: float}>}>
+     * @return list<array{id: string, centre: array{0: float, 1: float}, roofType: string, surfaces: list<array{points: list<array{0: float, 1: float}>, heights: list<float>, low: float, high: float}>, walls: list<array{points: list<array{0: float, 1: float}>, heights: list<float>}>}>
      */
-    public function roofSurfaces(GeoPoint $centre, float $halfSideMetres): array
+    public function roofSurfaces(GeoPoint $centre, float $halfSideMetres, bool $walls = false): array
     {
         $transform = new UtmPlanTransform($centre);
         $buildings = [];
         foreach ($this->tileNames($transform, $halfSideMetres) as $name) {
-            array_push($buildings, ...CityGmlRoofs::buildings($this->zip->read($name), $transform, $halfSideMetres));
+            array_push($buildings, ...CityGmlRoofs::buildings($this->zip->read($name), $transform, $halfSideMetres, $walls));
         }
 
         return $buildings;

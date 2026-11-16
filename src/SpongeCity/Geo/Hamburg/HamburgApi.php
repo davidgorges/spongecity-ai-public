@@ -24,6 +24,9 @@ final readonly class HamburgApi
     /** ldproxy accepts large pages; a 700 m square of the inner city holds about 500 buildings */
     private const int PAGE_SIZE = 5000;
     private const int MAX_PAGES = 4;
+    /** each(): a feature per request, at most this many */
+    private const int SINGLE_PAGE = 1;
+    private const int MAX_FEATURES = 400;
     /** the ALKIS service takes about 20 s for a few hundred buildings */
     private const int REQUEST_TIMEOUT_SECONDS = 30;
     private const int MAX_DURATION_SECONDS = 60;
@@ -48,6 +51,34 @@ final readonly class HamburgApi
         return $this->cached($dataset, $collection, $box, self::FORMAT_JSON, static function (array $page): array {
             return array_values(array_filter(is_array($page['features'] ?? null) ? $page['features'] : [], 'is_array'));
         });
+    }
+
+    /**
+     * The features of a collection one at a time, not cached: for layers whose features are huge
+     * (the infiltration map's areas reach across districts with tens of thousands of points), so
+     * the caller keeps only what it needs of each.
+     *
+     * @param callable(array<string, mixed>): void $consume
+     */
+    public function each(string $dataset, string $collection, GeoBox $box, callable $consume): void
+    {
+        for ($offset = 0; ; $offset += self::SINGLE_PAGE) {
+            $page = $this->httpClient->request('GET', sprintf('%s/%s/collections/%s/items', self::BASE_URL, $dataset, $collection), [
+                'query' => ['f' => self::FORMAT_JSON, 'bbox' => $box->toBbox(), 'limit' => self::SINGLE_PAGE, 'offset' => $offset],
+                'headers' => ['User-Agent' => $this->userAgent],
+                'timeout' => self::REQUEST_TIMEOUT_SECONDS,
+                'max_duration' => self::MAX_DURATION_SECONDS,
+            ])->toArray();
+            $features = is_array($page['features'] ?? null) ? $page['features'] : [];
+            foreach ($features as $feature) {
+                if (is_array($feature)) {
+                    $consume($feature);
+                }
+            }
+            if (count($features) < self::SINGLE_PAGE || $offset >= self::MAX_FEATURES) {
+                return;
+            }
+        }
     }
 
     /**

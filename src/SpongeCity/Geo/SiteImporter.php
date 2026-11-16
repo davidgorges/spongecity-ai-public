@@ -40,6 +40,8 @@ final readonly class SiteImporter
     public const string TAG_FUNCTION = 'alkis:funktion';
     /** an element's roof levels: [{geometry: [{lat, lon}…], height: metres}] */
     public const string ELEMENT_PARTS = 'parts';
+    /** a building's own roof surfaces: {roofs, walls} of [latitude, longitude, height in metres] (HamburgBuildings) */
+    public const string ELEMENT_MODEL = 'model';
 
     private const float DEFAULT_TREE_METRES = 9.0;
     private const int FALLBACK_PLOT_HALF_SIDE_MM = 20_000;
@@ -100,7 +102,7 @@ final readonly class SiteImporter
                 // the site clamps coordinates to its reach, which would squash a building that crosses it: cut it there instead
                 $points = self::clipOutlineToReach($points);
                 if (count($points) >= 3) {
-                    $buildings[] = [O::TYPE => O::BUILDING, O::POINTS => $points, O::HEIGHT => $this->tags->height($tags), O::STOREYS => $this->tags->storeys($tags), O::PARTS => $this->parts($element, $projection), ...$this->tags->appearance($tags, $points), O::LABEL => $this->name($tags) ?? $this->text($tags, self::TAG_FUNCTION)];
+                    $buildings[] = [O::TYPE => O::BUILDING, O::POINTS => $points, O::HEIGHT => $this->tags->height($tags), O::STOREYS => $this->tags->storeys($tags), O::PARTS => $this->parts($element, $projection), ...$this->tags->appearance($tags, $points), O::LABEL => $this->name($tags) ?? $this->text($tags, self::TAG_FUNCTION), ...$this->model($element, $projection)];
                 }
                 continue;
             }
@@ -258,9 +260,35 @@ final readonly class SiteImporter
         if (count($points) > 1 && $points[0] === end($points)) {
             array_pop($points);
         }
-        if (count($points) > self::MAX_POINTS) {
-            $step = count($points) / self::MAX_POINTS;
-            $points = array_map(static fn (int $i): array => $points[(int) floor($i * $step)], range(0, self::MAX_POINTS - 1));
+        return self::simplified($points, self::MAX_POINTS);
+    }
+
+    /**
+     * A line or outline with at most $maximum points: the least significant point (the smallest
+     * triangle with its neighbours: a point on a curve, a kink of centimetres) left out, one at a
+     * time (Visvalingam–Whyatt). Keeps the walls where they are; taking every n-th point instead
+     * would cut corners off a building, diagonally across its courtyard. Ends stay.
+     *
+     * @param list<array{0: int, 1: int}> $points
+     *
+     * @return list<array{0: int, 1: int}>
+     */
+    private static function simplified(array $points, int $maximum): array
+    {
+        while (count($points) > $maximum) {
+            $weakest = null;
+            $smallest = INF;
+            for ($i = 1, $n = count($points); $i < $n - 1; ++$i) {
+                [$a, $b, $c] = [$points[$i - 1], $points[$i], $points[$i + 1]];
+                $area = abs(($b[0] - $a[0]) * ($c[1] - $a[1]) - ($c[0] - $a[0]) * ($b[1] - $a[1]));
+                if ($area < $smallest) {
+                    [$weakest, $smallest] = [$i, $area];
+                }
+            }
+            if (null === $weakest) {
+                break;
+            }
+            array_splice($points, $weakest, 1);
         }
 
         return $points;
@@ -296,6 +324,39 @@ final readonly class SiteImporter
         $height = is_numeric($tags[self::TAG_HEIGHT] ?? null) ? (float) $tags[self::TAG_HEIGHT] : $defaultMetres;
 
         return (int) round($height * self::MILLIMETRES_PER_METRE);
+    }
+
+    /**
+     * A building's own roof from its 3D model, in plan millimetres; none when it reaches beyond
+     * the site (its outline is cut there, the model would not fit it).
+     *
+     * @param array<string, mixed> $element
+     *
+     * @return array<string, mixed> [model => …] or nothing
+     */
+    private function model(array $element, LocalProjection $projection): array
+    {
+        $model = is_array($element[self::ELEMENT_MODEL] ?? null) ? $element[self::ELEMENT_MODEL] : null;
+        if (null === $model) {
+            return [];
+        }
+        $converted = [];
+        foreach ([O::MODEL_ROOFS, O::MODEL_WALLS] as $kind) {
+            $converted[$kind] = [];
+            foreach (is_array($model[$kind] ?? null) ? $model[$kind] : [] as $polygon) {
+                $corners = [];
+                foreach (is_array($polygon) ? $polygon : [] as $corner) {
+                    [$x, $z] = $projection->toPlan((float) $corner[0], (float) $corner[1]);
+                    if (abs($x) > O::REACH || abs($z) > O::REACH) {
+                        return [];
+                    }
+                    $corners[] = [$x, (int) round((float) $corner[2] * self::MILLIMETRES_PER_METRE), $z];
+                }
+                $converted[$kind][] = $corners;
+            }
+        }
+
+        return [O::MODEL => $converted];
     }
 
     /**

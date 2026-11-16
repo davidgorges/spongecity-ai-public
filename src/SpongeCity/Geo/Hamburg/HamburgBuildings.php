@@ -8,8 +8,10 @@ use App\SpongeCity\Geo\BuildingTags;
 use App\SpongeCity\Geo\GeoBox;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\LocalProjection;
+use App\SpongeCity\Geo\RoofFit;
 use App\SpongeCity\Geo\SiteImporter;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
+use Core\Configurator\Scenery\Building;
 
 /**
  * Hamburg's official buildings: the footprints, uses and storeys of the cadastre
@@ -26,6 +28,10 @@ use Core\Configurator\Product\SpongeCity\Impact\Polygon;
  * position where its ids differ) or else from LoD2's full-precision CityGML. Drawn as one
  * block at the measured height (the highest point), a two-storey wing would stand as
  * tall as the tower beside it.
+ *
+ * A pitched roof on the site is fitted to LoD2's surfaces (RoofFit): drawn as a gable or hip
+ * with the model's pitch where that is close enough, else as the model's own roof and gables
+ * (`model`, see docs/roof-geometry.md).
  */
 final readonly class HamburgBuildings
 {
@@ -61,6 +67,11 @@ final readonly class HamburgBuildings
     private const float METRES_PER_DEGREE = 111_195.0;
     /** the element key the parts travel under (SiteImporter, SurroundingsImporter) */
     public const string PARTS = SiteImporter::ELEMENT_PARTS;
+    /** the element key a building's own roof surfaces travel under */
+    public const string MODEL = SiteImporter::ELEMENT_MODEL;
+    /** RoofFit's parametric roofs → roof:shape */
+    private const array FITTED_SHAPES = [Building::ROOF_GABLE => 'gabled', Building::ROOF_HIP => 'hipped'];
+    private const int HEIGHT_DECIMALS = 2;
 
     /** ALKIS Dachform (LoD2 roofType) → roof:shape */
     private const array ROOF_SHAPES = [
@@ -98,7 +109,8 @@ final readonly class HamburgBuildings
         $centre = new GeoPoint(($box->south + $box->north) / 2, ($box->west + $box->east) / 2);
         $half = ($box->north - $box->south) / 2 * self::METRES_PER_DEGREE;
         $lod2 = [];
-        foreach ($this->models(fn (): array => $this->cityGml?->roofSurfaces($centre, $half) ?? []) as $model) {
+        // the walls only for the site, where pitched roofs are drawn from the model
+        foreach ($this->models(fn (): array => $this->cityGml?->roofSurfaces($centre, $half, $detailed) ?? []) as $model) {
             $lod2[$model['id']] = $model;
         }
         $lod3 = $detailed ? $this->models(fn (): array => $this->lod3?->roofSurfaces($centre, $half) ?? []) : [];
@@ -120,12 +132,16 @@ final readonly class HamburgBuildings
                 'geometry' => array_map(static fn (array $p): array => ['lat' => (float) $p[1], 'lon' => (float) $p[0]], $ring),
                 'tags' => $tags,
             ];
-            if (self::FLAT === ($tags[BuildingTags::TAG_ROOF_SHAPE] ?? null)) {
-                $outline = array_map(static function (array $p) use ($projection): array {
-                    [$x, $z] = $projection->toPlan((float) $p[1], (float) $p[0]);
+            $outline = array_map(static function (array $p) use ($projection): array {
+                [$x, $z] = $projection->toPlan((float) $p[1], (float) $p[0]);
 
-                    return [$x / 1000, $z / 1000];
-                }, $ring);
+                return [$x / 1000, $z / 1000];
+            }, $ring);
+            $pitched = $lod2[self::lod2Id($id)] ?? null;
+            if (self::FLAT !== ($tags[BuildingTags::TAG_ROOF_SHAPE] ?? self::FLAT) && $detailed && null !== $pitched) {
+                $way = self::fitted($way, $outline, $pitched, self::match(self::lod2Id($id), $outline, $lod3), $projection);
+            }
+            if (self::FLAT === ($tags[BuildingTags::TAG_ROOF_SHAPE] ?? null)) {
                 $model = self::match(self::lod2Id($id), $outline, $lod3) ?? $lod2[self::lod2Id($id)] ?? null;
                 $parts = null === $model ? [] : self::parts($model['surfaces']);
                 if ([] !== $parts) {
@@ -143,6 +159,53 @@ final readonly class HamburgBuildings
         }
 
         return $ways;
+    }
+
+    /**
+     * A pitched roof fitted to its model: a gable or hip at the model's pitch, else the model's
+     * surfaces, from LoD3 where it has the building (dormers, domes, lanterns, canopies); the eaves
+     * height from LoD2 either way (built on the cadastre's outline, at full precision).
+     *
+     * @param array<string, mixed>                                                           $way
+     * @param list<array{0: float, 1: float}>                                                $outline plan metres
+     * @param array{surfaces: list<array<string, mixed>>, walls: list<array<string, mixed>>} $model   LoD2
+     * @param array<string, mixed>|null                                                      $detail  LoD3
+     *
+     * @return array<string, mixed>
+     */
+    private static function fitted(array $way, array $outline, array $model, ?array $detail, LocalProjection $projection): array
+    {
+        $surfaces = array_values(array_filter($model['surfaces'], static fn (array $s): bool => isset($s['heights'])));
+        if ([] === $surfaces) {
+            return $way;
+        }
+        /** @var list<array{points: list<array{0: float, 1: float}>, heights: list<float>}> $surfaces */
+        /** @var list<array{points: list<array{0: float, 1: float}>, heights: list<float>}> $walls */
+        $walls = $model['walls'];
+        /** @var list<array{points: list<array{0: float, 1: float}>, heights: list<float>}>|null $detailSurfaces */
+        $detailSurfaces = is_array($detail['surfaces'] ?? null) && isset($detail['surfaces'][0]['heights']) ? $detail['surfaces'] : null;
+        /** @var list<array{points: list<array{0: float, 1: float}>, heights: list<float>}>|null $detailWalls */
+        $detailWalls = is_array($detail['walls'] ?? null) ? $detail['walls'] : null;
+        $choice = RoofFit::choose($outline, $surfaces, $walls, $detailSurfaces, $detailWalls);
+        if (null === $choice) {
+            return $way;
+        }
+        $way['tags'][BuildingTags::TAG_HEIGHT] = (string) round($choice[RoofFit::RESULT_EAVES], self::HEIGHT_DECIMALS);
+        if (isset($choice[RoofFit::RESULT_ROOF], $choice[RoofFit::RESULT_PITCH])) {
+            $way['tags'][BuildingTags::TAG_ROOF_SHAPE] = self::FITTED_SHAPES[$choice[RoofFit::RESULT_ROOF]];
+            $way['tags'][BuildingTags::TAG_ROOF_ANGLE] = (string) $choice[RoofFit::RESULT_PITCH];
+
+            return $way;
+        }
+        // [x, height, z] in plan metres → [latitude, longitude, height]
+        $geo = static fn (array $polygons): array => array_map(static fn (array $polygon): array => array_map(static function (array $p) use ($projection): array {
+            [$lat, $lon] = $projection->toGeo($p[0], $p[2]);
+
+            return [$lat, $lon, $p[1]];
+        }, $polygon), $polygons);
+        $way[self::MODEL] = [RoofFit::RESULT_ROOFS => $geo($choice[RoofFit::RESULT_ROOFS] ?? []), RoofFit::RESULT_WALLS => $geo($choice[RoofFit::RESULT_WALLS] ?? [])];
+
+        return $way;
     }
 
     /**

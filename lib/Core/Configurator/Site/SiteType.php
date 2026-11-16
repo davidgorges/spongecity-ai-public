@@ -185,6 +185,13 @@ final readonly class SiteType implements StructuredValue
         // set from the terrain (not part of the schema: nobody types it in)
         $ground = $object[O::GROUND] ?? null;
         $normalized[O::GROUND] = is_numeric($ground) ? max(-O::MAX_GROUND, min(O::MAX_GROUND, (int) round((float) $ground))) : 0;
+        // a building's own roof from the 3D model (not part of the schema either: the import sets it)
+        if (O::BUILDING === $type) {
+            $model = self::model($object[O::MODEL] ?? null);
+            if (null !== $model) {
+                $normalized[O::MODEL] = $model;
+            }
+        }
 
         return $normalized;
     }
@@ -247,6 +254,44 @@ final readonly class SiteType implements StructuredValue
         }
 
         return $blocks;
+    }
+
+    /**
+     * A building's model (SiteObject::MODEL): planar polygons of [x, y, z] millimetres within the
+     * site's reach; unreadable polygons are left out, null when no roof is left.
+     *
+     * @return array{roofs: list<list<array{int, int, int}>>, walls: list<list<array{int, int, int}>>}|null
+     */
+    private static function model(mixed $value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+        $height = O::fields(O::BUILDING)[O::HEIGHT][2];
+        $polygons = static function (mixed $list) use ($height): array {
+            $polygons = [];
+            foreach (is_array($list) ? array_slice($list, 0, O::MAX_MODEL_SURFACES) : [] as $polygon) {
+                $corners = [];
+                foreach (is_array($polygon) ? array_slice($polygon, 0, O::MAX_MODEL_CORNERS) : [] as $corner) {
+                    if (!is_array($corner) || !is_numeric($corner[0] ?? null) || !is_numeric($corner[1] ?? null) || !is_numeric($corner[2] ?? null)) {
+                        continue 2;
+                    }
+                    $corners[] = [
+                        max(-O::REACH, min(O::REACH, (int) round((float) $corner[0]))),
+                        max(0, min($height, (int) round((float) $corner[1]))),
+                        max(-O::REACH, min(O::REACH, (int) round((float) $corner[2]))),
+                    ];
+                }
+                if (count($corners) >= 3) {
+                    $polygons[] = $corners;
+                }
+            }
+
+            return $polygons;
+        };
+        $roofs = $polygons($value[O::MODEL_ROOFS] ?? null);
+
+        return [] === $roofs ? null : [O::MODEL_ROOFS => $roofs, O::MODEL_WALLS => $polygons($value[O::MODEL_WALLS] ?? null)];
     }
 
     /**

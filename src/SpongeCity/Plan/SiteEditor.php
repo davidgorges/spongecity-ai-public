@@ -68,6 +68,10 @@ final readonly class SiteEditor
                 if (O::BUILDING === ($object[O::TYPE] ?? null) && (isset($changes[O::FACADE]) || isset($changes[O::COLOR]))) {
                     $changes[O::LOOK] = O::LOOK_USER;
                 }
+                // a roof chosen by hand is drawn as chosen, not as the 3D model has it
+                if (O::BUILDING === ($object[O::TYPE] ?? null) && isset($changes[O::ROOF])) {
+                    $changes[O::MODEL] = null;
+                }
                 $objects[$i] = [...$object, ...$changes];
                 $found = true;
             }

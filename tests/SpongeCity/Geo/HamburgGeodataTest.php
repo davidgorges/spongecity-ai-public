@@ -146,6 +146,14 @@ final class HamburgGeodataTest extends TestCase
                 return new MockResponse(self::i3dm([['Baumnummer' => 'N160-3-1', 'Hoehe_aus_ALS' => 14.8], ['Baumnummer' => 'X-1', 'Hoehe_aus_ALS' => 9.0]]));
             }
 
+            if (str_contains($url, '/'.HamburgGeodata::DATASET_INFILTRATION.'/')) {
+                // read a feature at a time: honour offset and limit
+                parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
+                $all = $this->infiltration();
+
+                return new MockResponse((string) json_encode([...$all, 'features' => array_slice($all['features'], (int) ($query['offset'] ?? 0), (int) ($query['limit'] ?? 100))]));
+            }
+
             return new MockResponse((string) json_encode(match (true) {
                 str_contains($url, '/'.HamburgBuildings::DATASET_ALKIS.'/') => $this->alkis(),
                 str_contains($url, '/'.HamburgBuildings::DATASET_LOD2.'/') => $this->lod2(),
@@ -156,7 +164,7 @@ final class HamburgGeodataTest extends TestCase
         });
         $api = new HamburgApi($client, new ArrayAdapter(), 'test');
 
-        return new HamburgGeodata($api, new HamburgBuildings($api), new HamburgTrees($api, new Hamburg3dTiles($client, new ArrayAdapter(), 'test')), new HamburgElevation($client, new ArrayAdapter(), 'test'), new NullLogger());
+        return new HamburgGeodata($api, new HamburgBuildings($api), new HamburgTrees($api, new Hamburg3dTiles($client, new ArrayAdapter(), 'test')), new HamburgElevation($client, new ArrayAdapter(), 'test'), new NullLogger(), new ArrayAdapter());
     }
 
     /**

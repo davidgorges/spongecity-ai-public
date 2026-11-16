@@ -17,6 +17,8 @@ use App\SpongeCity\Terrain\Terrain;
 use App\SpongeCity\Terrain\TerrainGrid;
 use Core\Configurator\Site\SiteObject;
 use Psr\Log\LoggerInterface;
+use Symfony\Contracts\Cache\CacheInterface;
+use Symfony\Contracts\Cache\ItemInterface;
 
 /**
  * Hamburg's official geodata where it is better than OpenStreetMap: inside the city,
@@ -38,6 +40,8 @@ final readonly class HamburgGeodata
     public const string SOURCE_TREES = 'trees';
     public const string SOURCE_INFILTRATION = 'infiltration';
     public const string SOURCE_TERRAIN = 'terrain';
+    private const int CACHE_SECONDS = 86400;
+    private const int CACHE_VERSION = 1;
 
     /** the site's grid: past the lawn (112 m) at 2 m; the surroundings' grid: 4 m, a bit past where the heights fade out */
     public const float FINE_HALF_METRES = 120.0;
@@ -63,6 +67,7 @@ final readonly class HamburgGeodata
         private HamburgTrees $trees,
         private HamburgElevation $elevation,
         private LoggerInterface $logger,
+        private CacheInterface $cache,
     ) {
     }
 
@@ -128,37 +133,15 @@ final readonly class HamburgGeodata
         if (!$this->covers($centre)) {
             return new SiteConditions([], $sources);
         }
-        $features = $this->layer(self::SOURCE_INFILTRATION, fn (): array => $this->api->features(self::DATASET_INFILTRATION, self::COLLECTION_INFILTRATION, GeoBox::around($centre, $radiusMetres)));
-        if (null === $features) {
-            return new SiteConditions([], $sources);
-        }
-        $projection = new LocalProjection($centre);
-        $areas = [];
-        $toPlan = static fn (array $ring): array => array_map(static function (array $point) use ($projection): array {
-            [$x, $z] = $projection->toPlan((float) $point[1], (float) $point[0]);
+        // only the part around the site is kept of each area; that is what is cached
+        $key = sprintf('hamburg_infiltration_v%d_%s_%s_%d', self::CACHE_VERSION, round($centre->latitude, 5), round($centre->longitude, 5), $radiusMetres);
+        $areas = $this->layer(self::SOURCE_INFILTRATION, fn (): array => $this->cache->get($key, function (ItemInterface $item) use ($centre, $radiusMetres): array {
+            $item->expiresAfter(self::CACHE_SECONDS);
 
-            return [round($x / self::MILLIMETRES_PER_METRE, self::DECIMALS), round($z / self::MILLIMETRES_PER_METRE, self::DECIMALS)];
-        }, $ring);
-        foreach ($features as $feature) {
-            $p = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
-            $text = static fn (string $key): string => is_string($p[$key] ?? null) ? $p[$key] : '';
-            foreach (self::polygons($feature['geometry'] ?? null) as [$outer, $holes]) {
-                // the map's areas reach far beyond the site (some with hundreds of holes): only the part around it is kept
-                $points = self::clipToSquare($toPlan($outer), $radiusMetres);
-                if (count($points) < 3) {
-                    continue;
-                }
-                $areas[] = [
-                    SiteConditions::POINTS => $points,
-                    SiteConditions::HOLES => array_values(array_filter(
-                        array_map(static fn (array $hole): array => self::clipToSquare($toPlan($hole), $radiusMetres), $holes),
-                        static fn (array $hole): bool => count($hole) >= 3,
-                    )),
-                    SiteConditions::POTENTIAL => InfiltrationPotential::fromGerman($text('versickerungswahrscheinlichkeit'))->value,
-                    SiteConditions::DEPTH => $text('versickerungsfaehige_tiefe'),
-                    SiteConditions::FACILITY => $text('versickerungsanlage'),
-                ];
-            }
+            return $this->infiltrationAreas($centre, $radiusMetres);
+        }));
+        if (null === $areas) {
+            return new SiteConditions([], $sources);
         }
 
         return new SiteConditions($areas, [...$sources, self::infiltrationSource()]);
@@ -270,6 +253,45 @@ final readonly class HamburgGeodata
     {
         return new DataSource(self::SOURCE_INFILTRATION, 'Versickerungspotentialkarte Hamburg', 'Freie und Hansestadt Hamburg, Behörde für Umwelt, Klima, Energie und Agrarwirtschaft (BUKEA)', '2024', self::LICENCE, HamburgApi::BASE_URL.'/'.self::DATASET_INFILTRATION,
             'A preliminary assessment for planning, not a substitute for a percolation test; it gives no infiltration rate, and says nothing about contamination, utilities or building distances.');
+    }
+
+    /**
+     * The infiltration areas around a site in plan metres, cut to the square: read one area at a
+     * time, as some reach across whole districts.
+     *
+     * @return list<array<string, mixed>>
+     */
+    private function infiltrationAreas(GeoPoint $centre, int $radiusMetres): array
+    {
+        $projection = new LocalProjection($centre);
+        $toPlan = static fn (array $ring): array => array_map(static function (array $point) use ($projection): array {
+            [$x, $z] = $projection->toPlan((float) $point[1], (float) $point[0]);
+
+            return [round($x / self::MILLIMETRES_PER_METRE, self::DECIMALS), round($z / self::MILLIMETRES_PER_METRE, self::DECIMALS)];
+        }, $ring);
+        $areas = [];
+        $this->api->each(self::DATASET_INFILTRATION, self::COLLECTION_INFILTRATION, GeoBox::around($centre, $radiusMetres), static function (array $feature) use (&$areas, $toPlan, $radiusMetres): void {
+            $p = is_array($feature['properties'] ?? null) ? $feature['properties'] : [];
+            $text = static fn (string $key): string => is_string($p[$key] ?? null) ? $p[$key] : '';
+            foreach (self::polygons($feature['geometry'] ?? null) as [$outer, $holes]) {
+                $points = self::clipToSquare($toPlan($outer), $radiusMetres);
+                if (count($points) < 3) {
+                    continue;
+                }
+                $areas[] = [
+                    SiteConditions::POINTS => $points,
+                    SiteConditions::HOLES => array_values(array_filter(
+                        array_map(static fn (array $hole): array => self::clipToSquare($toPlan($hole), $radiusMetres), $holes),
+                        static fn (array $hole): bool => count($hole) >= 3,
+                    )),
+                    SiteConditions::POTENTIAL => InfiltrationPotential::fromGerman($text('versickerungswahrscheinlichkeit'))->value,
+                    SiteConditions::DEPTH => $text('versickerungsfaehige_tiefe'),
+                    SiteConditions::FACILITY => $text('versickerungsanlage'),
+                ];
+            }
+        });
+
+        return $areas;
     }
 
     /**

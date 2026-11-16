@@ -10,17 +10,27 @@ use App\SpongeCity\Geo\UtmPlanTransform;
  * Reads the roof surfaces of the buildings in a CityGML tile of Hamburg's 3D building
  * models (LoD2-DE and LoD3.0-HH: UTM 32 coordinates, heights above sea level), in plan
  * metres and as heights above each building's lowest ground point. What tells a roof's
- * levels apart: a low wing, the main roof, a recessed top storey, a stair core.
+ * levels apart: a low wing, the main roof, a recessed top storey, a stair core; and, with
+ * every corner's height and the walls, what a pitched roof looks like (RoofFit).
+ *
+ * @phpstan-type Surface array{points: list<array{0: float, 1: float}>, heights: list<float>, low: float, high: float}
+ * @phpstan-type Wall array{points: list<array{0: float, 1: float}>, heights: list<float>}
+ * @phpstan-type Model array{id: string, centre: array{0: float, 1: float}, roofType: string, surfaces: list<Surface>, walls: list<Wall>}
  */
 final class CityGmlRoofs
 {
     private const string BUILDING_START = '<bldg:Building ';
     private const string BUILDING_END = '</bldg:Building>';
     private const string BUILDING_ID = '#^<bldg:Building gml:id="([^"]*)"#';
+    private const string ROOF_TYPE = '#<bldg:roofType>([^<]*)</bldg:roofType>#';
     private const string ROOF_SURFACE = '#<bldg:RoofSurface.*?</bldg:RoofSurface>#s';
+    private const string WALL_SURFACE = '#<bldg:WallSurface.*?</bldg:WallSurface>#s';
     private const string GROUND_SURFACE = '#<bldg:GroundSurface.*?</bldg:GroundSurface>#s';
+    /** what a surface holds besides its own outline: holes, and (LoD3) windows and doors */
+    private const string NOT_OUTLINE = '#<gml:interior>.*?</gml:interior>|<bldg:opening>.*?</bldg:opening>#s';
     private const string POSITIONS = '#<gml:posList[^>]*>([^<]*)</gml:posList>#';
     private const string FIRST_POSITION = '#<gml:pos(?:List)?[^>]*>\s*([\d.]+)\s+([\d.]+)#';
+    private const int HEIGHT_DECIMALS = 3;
 
     private function __construct()
     {
@@ -32,20 +42,20 @@ final class CityGmlRoofs
      *
      * @param callable(callable(string): void): void $source feeds the pieces to the callback it is given
      *
-     * @return list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array{points: list<array{0: float, 1: float}>, low: float, high: float}>}>
+     * @return list<Model>
      */
-    public static function streamed(callable $source, UtmPlanTransform $transform, float $halfSideMetres): array
+    public static function streamed(callable $source, UtmPlanTransform $transform, float $halfSideMetres, bool $walls = false): array
     {
         $buildings = [];
         $buffer = '';
-        $source(static function (string $piece) use (&$buffer, &$buildings, $transform, $halfSideMetres): void {
+        $source(static function (string $piece) use (&$buffer, &$buildings, $transform, $halfSideMetres, $walls): void {
             $buffer .= $piece;
             $end = strrpos($buffer, self::BUILDING_END);
             if (false === $end) {
                 return;
             }
             $complete = $end + strlen(self::BUILDING_END);
-            array_push($buildings, ...self::buildings(substr($buffer, 0, $complete), $transform, $halfSideMetres));
+            array_push($buildings, ...self::buildings(substr($buffer, 0, $complete), $transform, $halfSideMetres, $walls));
             $buffer = substr($buffer, $complete);
         });
 
@@ -55,9 +65,11 @@ final class CityGmlRoofs
     /**
      * The buildings standing (by their first vertex) within a square of the plan.
      *
-     * @return list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array{points: list<array{0: float, 1: float}>, low: float, high: float}>}>
+     * @param bool $walls with the wall surfaces (empty otherwise: only the drawing of a whole model needs them)
+     *
+     * @return list<Model>
      */
-    public static function buildings(string $cityGml, UtmPlanTransform $transform, float $halfSideMetres): array
+    public static function buildings(string $cityGml, UtmPlanTransform $transform, float $halfSideMetres, bool $walls = false): array
     {
         $buildings = [];
         // one building at a time: a tile of the detailed model is tens of megabytes
@@ -81,21 +93,8 @@ final class CityGmlRoofs
                 continue;
             }
             $surfaces = [];
-            preg_match_all(self::ROOF_SURFACE, $member, $roofs);
-            foreach ($roofs[0] as $roof) {
-                preg_match_all(self::POSITIONS, $roof, $lists);
-                foreach ($lists[1] as $list) {
-                    $coordinates = self::coordinates($list);
-                    if (count($coordinates) < 3) {
-                        continue;
-                    }
-                    $zs = array_column($coordinates, 2);
-                    $surfaces[] = [
-                        'points' => array_map(static fn (array $c): array => $transform->toPlan($c[0], $c[1]), $coordinates),
-                        'low' => min($zs) - $ground,
-                        'high' => max($zs) - $ground,
-                    ];
-                }
+            foreach (self::rings($member, self::ROOF_SURFACE, $transform, $ground) as $ring) {
+                $surfaces[] = [...$ring, 'low' => min($ring['heights']), 'high' => max($ring['heights'])];
             }
             if ([] === $surfaces) {
                 continue;
@@ -104,7 +103,9 @@ final class CityGmlRoofs
             $buildings[] = [
                 'id' => $id,
                 'centre' => [array_sum(array_column($all, 0)) / count($all), array_sum(array_column($all, 1)) / count($all)],
+                'roofType' => 1 === preg_match(self::ROOF_TYPE, $member, $type) ? trim($type[1]) : '',
                 'surfaces' => $surfaces,
+                'walls' => $walls ? self::rings($member, self::WALL_SURFACE, $transform, $ground) : [],
             ];
         }
 
@@ -122,6 +123,32 @@ final class CityGmlRoofs
         }
 
         return abs($sum) / 2;
+    }
+
+    /**
+     * The outer rings of a kind of surface: plan points and heights above the ground.
+     *
+     * @return list<Wall>
+     */
+    private static function rings(string $member, string $surface, UtmPlanTransform $transform, float $ground): array
+    {
+        $rings = [];
+        preg_match_all($surface, $member, $found);
+        foreach ($found[0] as $xml) {
+            preg_match_all(self::POSITIONS, (string) preg_replace(self::NOT_OUTLINE, '', $xml), $lists);
+            foreach ($lists[1] as $list) {
+                $coordinates = self::coordinates($list);
+                if (count($coordinates) < 3) {
+                    continue;
+                }
+                $rings[] = [
+                    'points' => array_map(static fn (array $c): array => $transform->toPlan($c[0], $c[1]), $coordinates),
+                    'heights' => array_map(static fn (array $c): float => round($c[2] - $ground, self::HEIGHT_DECIMALS), $coordinates),
+                ];
+            }
+        }
+
+        return $rings;
     }
 
     private static function lowest(string $member): ?float

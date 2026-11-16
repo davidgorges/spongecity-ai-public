@@ -112,6 +112,27 @@ final readonly class Site
     }
 
     /**
+     * A building's own roof from its 3D model (SiteObject::MODEL), null when it has none.
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return array{roofs: list<list<array{float, float, float}>>, walls: list<list<array{float, float, float}>>}|null
+     */
+    public static function model(array $object): ?array
+    {
+        $model = $object[O::MODEL] ?? null;
+        if (!is_array($model) || !is_array($model[O::MODEL_ROOFS] ?? null) || [] === $model[O::MODEL_ROOFS]) {
+            return null;
+        }
+        $polygons = static fn (mixed $list): array => array_values(array_map(
+            static fn (array $polygon): array => array_map(static fn (array $c): array => [(float) $c[0], (float) $c[1], (float) $c[2]], $polygon),
+            array_filter(is_array($list) ? $list : [], 'is_array'),
+        ));
+
+        return [O::MODEL_ROOFS => $polygons($model[O::MODEL_ROOFS]), O::MODEL_WALLS => $polygons($model[O::MODEL_WALLS] ?? [])];
+    }
+
+    /**
      * A building's roof levels (SiteObject::PARTS): outlines in plan millimetres and heights.
      *
      * @param array<string, mixed> $object

@@ -25,6 +25,8 @@ final readonly class BuildingTags
     public const string TAG_MATERIAL = 'building:material';
     public const string TAG_COLOUR = 'building:colour';
     public const string TAG_ROOF_SHAPE = 'roof:shape';
+    /** the roof's pitch in degrees (OpenStreetMap; Hamburg's from fitting its 3D model) */
+    public const string TAG_ROOF_ANGLE = 'roof:angle';
     public const string TAG_ROOF_COLOUR = 'roof:colour';
     /** a building's id in the cadastre (Hamburg): one building drawn as several blocks looks alike */
     public const string TAG_ALKIS_ID = 'ref:alkis';
@@ -99,6 +101,7 @@ final readonly class BuildingTags
             O::FACADE => $facade->value,
             O::COLOR => $this->colour($tags, self::TAG_COLOUR) ?? $pick($facade->colours(), O::COLOR),
             O::ROOF => $roof,
+            O::PITCH => is_numeric($tags[self::TAG_ROOF_ANGLE] ?? null) ? (int) round((float) $tags[self::TAG_ROOF_ANGLE]) : 0,
             O::ROOF_COLOR => $this->colour($tags, self::TAG_ROOF_COLOUR) ?? $pick(BuildingType::roofColours($roof), O::ROOF_COLOR),
         ];
     }

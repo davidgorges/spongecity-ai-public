@@ -59,6 +59,18 @@ final class SiteObject
     public const string LOOK_DATA = 'data';
     public const string LOOK_USER = 'user';
     public const int MAX_PARTS = 40;
+    /**
+     * a pitched roof the parametric roof cannot draw (an L, a half-hip, towers, a mix of roofs), as the
+     * 3D building model has it: {roofs, walls}, each a list of planar polygons of [x, y, z] in millimetres,
+     * x/z in the plan, y above the building's ground; the walls only above the eaves (the building's
+     * height), where the outline's façade ends. Set by the import, never by hand (not in the schema).
+     */
+    public const string MODEL = 'model';
+    public const string MODEL_ROOFS = 'roofs';
+    public const string MODEL_WALLS = 'walls';
+    /** per kind: LoD3's Johanneum has 464 roof surfaces (a dome, dormers, a lantern) */
+    public const int MAX_MODEL_SURFACES = 1000;
+    public const int MAX_MODEL_CORNERS = 64;
     public const int MAX_GROUND = 50000;
 
     public const string HOUSE = 'house';
@@ -248,6 +260,8 @@ final class SiteObject
                 self::LOOK => [self::ENUM, [self::LOOK_DATA, self::LOOK_USER], self::LOOK_DATA],
                 ...$color('#e9e2d6'),
                 self::ROOF => [self::ENUM, Building::ROOFS, Building::ROOF_FLAT],
+                // degrees; 0 when unknown (drawn at a usual pitch)
+                self::PITCH => [self::INT, 0, 60, 0],
                 self::ROOF_COLOR => [self::HEX, '#8d8a84'],
             ],
             self::ROAD => [

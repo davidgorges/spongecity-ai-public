@@ -39,7 +39,8 @@ final readonly class HamburgLod3
     private const int TILE_METRES = 1000;
     private const int KILOMETRES_PER_NAME = 100;
     private const int CACHE_SECONDS = 604_800;
-    private const int CACHE_VERSION = 1;
+    /** 3: corner heights, roof types and walls, holes and openings left out */
+    private const int CACHE_VERSION = 3;
     private const int COORDINATE_DECIMALS = 5;
 
     /** @var list<RemoteZip> */
@@ -56,10 +57,10 @@ final readonly class HamburgLod3
     }
 
     /**
-     * The roof surfaces of the model's buildings within a square of the plan; none when the
-     * model cannot be read.
+     * The roof and wall surfaces of the model's buildings within a square of the plan; none when
+     * the model cannot be read.
      *
-     * @return list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array{points: list<array{0: float, 1: float}>, low: float, high: float}>}>
+     * @return list<array{id: string, centre: array{0: float, 1: float}, roofType: string, surfaces: list<array{points: list<array{0: float, 1: float}>, heights: list<float>, low: float, high: float}>, walls: list<array{points: list<array{0: float, 1: float}>, heights: list<float>}>}>
      */
     public function roofSurfaces(GeoPoint $centre, float $halfSideMetres): array
     {
@@ -74,7 +75,7 @@ final readonly class HamburgLod3
     }
 
     /**
-     * @return list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array{points: list<array{0: float, 1: float}>, low: float, high: float}>}>
+     * @return list<array{id: string, centre: array{0: float, 1: float}, roofType: string, surfaces: list<array{points: list<array{0: float, 1: float}>, heights: list<float>, low: float, high: float}>, walls: list<array{points: list<array{0: float, 1: float}>, heights: list<float>}>}>
      */
     private function read(GeoPoint $centre, float $halfSideMetres): array
     {
@@ -88,7 +89,7 @@ final readonly class HamburgLod3
                     foreach ($this->zips as $zip) {
                         $name = $zip->find($pattern);
                         if (null !== $name) {
-                            array_push($buildings, ...CityGmlRoofs::streamed(static fn (callable $consume) => $zip->stream($name, $consume), $transform, $halfSideMetres));
+                            array_push($buildings, ...CityGmlRoofs::streamed(static fn (callable $consume) => $zip->stream($name, $consume), $transform, $halfSideMetres, walls: true));
                         }
                     }
                 }

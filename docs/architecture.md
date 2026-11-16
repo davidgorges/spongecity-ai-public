@@ -95,7 +95,9 @@ A `building` carries its `height`, `use` (`Site\BuildingType`), `facade` (`Site\
 `roof` and `roofColor`; a `road` is a centre line with `width` and `kind` (carriageway or footway).
 `SiteBuilder` draws a footprint as walls with the façade's window texture plus a roof slab (gravel
 when flat, tiles when pitched); a near-rectangular footprint with a pitched roof gets a real gable or
-hip roof over its minimum-area rectangle. Roads are thin strips (carriageways 7 mm, footways 10 mm
+hip roof over its minimum-area rectangle (`Site\PitchedRoof`, at the building's `pitch` when known), and
+a building with its own `model` (Hamburg) gets the model's roof surfaces and gables
+([roof-geometry.md](roof-geometry.md)). Roads are thin strips (carriageways 7 mm, footways 10 mm
 above ground, the plot 4 mm: see "Depth and flicker").
 
 `InterventionBuilder` sets the environment hints `Environment::AERIAL` (the viewer looks down on the
@@ -199,6 +201,12 @@ bounding box, paged, cached a day per box: `CACHE_VERSION` in the key):
     stepped wing 5.5–7.1 m) where LoD2 had 3.
   - Elsewhere (the surroundings), from LoD2's full-precision CityGML (`HamburgCityGml`).
   - Pitched roofs keep their gable or hip; parts only for roofs at least 80 % flat.
+- **Pitched roofs** (site only) are fitted to LoD2's roof surfaces (`RoofFit`): a plain gable or
+  hip within 0.4 m (root mean square, at most 1 m anywhere) is drawn parametrically at the
+  model's pitch; anything else (an L or U, half-hips, towers, a mix) as the model's own roof
+  surfaces and its walls above the eaves (`model`). See [roof-geometry.md](roof-geometry.md).
+- **Long outlines** (more than 36 corners) lose their least significant corners first
+  (Visvalingam–Whyatt), not every n-th one, so walls stay where they are.
 - **Storeys**: buildings keep the cadastre's storeys (`storeys`); the façade texture is stretched
   upwards so each row of windows is one storey (`Facade::textureHeight`, 2.6 to 6 m). From three
   storeys on, the ground floor is a quarter taller than the rest (3.5 to 5.5 m): the walls are two
@@ -213,7 +221,7 @@ bounding box, paged, cached a day per box: `CACHE_VERSION` in the key):
   model draws for a glazed top storey or a glass railing: rendered wall up to the main roof, glass
   above it.
 - A pitched roof stands on its eaves: the eaves height is the lowest roof point over the lowest
-  ground point of the LoD2 solid. The API quantises LoD2 vertices to whole metres, which is why
+  ground point of the LoD2 solid (on the site from the full-precision CityGML, see `RoofFit`). The API quantises LoD2 vertices to whole metres, which is why
   footprints come from ALKIS, not from LoD2.
 - The register knows **street trees only**: OpenStreetMap trees more than 3 m from a registered
   one (yards, parks) stay. A recorded crown is used by the impact calculation instead of the
@@ -299,7 +307,7 @@ worker), keeping its interventions: useful after importer changes.
 The plan page polls (`data-poll`) while pending and shows a clear failed state with a way back.
 
 `OverpassClient` tries several public mirrors in order (`overpass.openstreetmap.fr` first), skips
-a silent one after 12 s, and caches results per place and radius for a day (`CACHE_VERSION` in the
+a silent one after 30 s (under load they take 20 s even for small queries), and caches results per place and radius for a day (`CACHE_VERSION` in the
 key: bump it when a query changes). Public Overpass
 instances are shared and often overloaded, and they reject generic user agents: set
 `OSM_USER_AGENT` to something identifying you (also required by Nominatim's usage policy).

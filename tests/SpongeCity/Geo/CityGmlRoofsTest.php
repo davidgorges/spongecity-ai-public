@@ -46,6 +46,38 @@ final class CityGmlRoofsTest extends TestCase
     }
 
     #[Test]
+    public function readsCornerHeightsRoofTypeAndWallsWithoutHolesOrWindows(): void
+    {
+        $transform = new UtmPlanTransform(new GeoPoint(self::LATITUDE, self::LONGITUDE));
+        $list = static fn (array $corners): string => '<gml:posList>'.implode(' ', array_map(static function (array $c) use ($transform): string {
+            [$e, $n] = $transform->toUtm($c[0], $c[1]);
+
+            return sprintf('%.3f %.3f %.3f', $e, $n, $c[2]);
+        }, $corners)).'</gml:posList>';
+        $ground = $list([[0, 0, 3], [10, 0, 3], [10, 8, 3], [0, 8, 3], [0, 0, 3]]);
+        // a roof plane rising from the eaves at 9 m to the ridge at 12 m, with a skylight cut out
+        $roof = '<gml:Polygon><gml:exterior><gml:LinearRing>'.$list([[0, 0, 12], [10, 0, 12], [10, 4, 15], [0, 4, 15], [0, 0, 12]]).'</gml:LinearRing></gml:exterior>'
+            .'<gml:interior><gml:LinearRing>'.$list([[4, 1, 13], [5, 1, 13], [5, 2, 13.75], [4, 2, 13.75], [4, 1, 13]]).'</gml:LinearRing></gml:interior></gml:Polygon>';
+        // the wall below it, with a window (LoD3)
+        $wall = '<gml:Polygon><gml:exterior><gml:LinearRing>'.$list([[0, 0, 3], [10, 0, 3], [10, 0, 12], [0, 0, 12], [0, 0, 3]]).'</gml:LinearRing></gml:exterior></gml:Polygon>'
+            .'<bldg:opening><bldg:Window><gml:Polygon><gml:exterior><gml:LinearRing>'.$list([[2, 0, 5], [3, 0, 5], [3, 0, 6], [2, 0, 6], [2, 0, 5]]).'</gml:LinearRing></gml:exterior></gml:Polygon></bldg:Window></bldg:opening>';
+        $gml = '<core:CityModel><core:cityObjectMember><bldg:Building gml:id="DEHHPITCH"><bldg:roofType>2100</bldg:roofType>'
+            .'<bldg:boundedBy><bldg:GroundSurface>'.$ground.'</bldg:GroundSurface></bldg:boundedBy>'
+            .'<bldg:boundedBy><bldg:RoofSurface>'.$roof.'</bldg:RoofSurface></bldg:boundedBy>'
+            .'<bldg:boundedBy><bldg:WallSurface>'.$wall.'</bldg:WallSurface></bldg:boundedBy>'
+            .'</bldg:Building></core:cityObjectMember></core:CityModel>';
+
+        [$building] = CityGmlRoofs::buildings($gml, $transform, 100, walls: true);
+
+        self::assertSame('2100', $building['roofType']);
+        self::assertCount(1, $building['surfaces'], 'the skylight is a hole, not a roof surface');
+        self::assertEqualsWithDelta([9.0, 9.0, 12.0, 12.0], $building['surfaces'][0]['heights'], 0.01, 'each corner above the ground');
+        self::assertCount(1, $building['walls'], 'the window is part of the wall, not a wall of its own');
+        self::assertEqualsWithDelta([0.0, 0.0, 9.0, 9.0], $building['walls'][0]['heights'], 0.01);
+        self::assertSame([], CityGmlRoofs::buildings($gml, $transform, 100)[0]['walls'], 'walls only when asked for');
+    }
+
+    #[Test]
     public function drawsABlockPerRoofLevel(): void
     {
         $site = Site::fromJson((new SiteType())->normalize(['objects' => [[

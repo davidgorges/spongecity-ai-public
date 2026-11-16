@@ -37,4 +37,26 @@ final class BuildingLookTest extends KernelTestCase
         self::assertSame('render', $updated[O::FACADE]);
         self::assertSame(O::LOOK_USER, $updated[O::LOOK]);
     }
+
+    #[Test]
+    public function aRoofChosenByHandReplacesTheModelsRoof(): void
+    {
+        $container = static::getContainer();
+        $plans = $container->get(PlanStore::class);
+        $plan = $plans->create('Roof', 53.55, 10.02);
+        $model = [O::MODEL_ROOFS => [[[0, 9000, 0], [10000, 9000, 0], [10000, 12000, 5000]]], O::MODEL_WALLS => []];
+        $plans->save($plan->withValues([SiteType::PARAMETER => (new SiteType())->normalize(['objects' => [
+            [O::TYPE => O::BUILDING, O::POINTS => [[0, 0], [10000, 0], [10000, 10000], [0, 10000]], O::HEIGHT => 9000, O::ROOF => 'monopitch', O::MODEL => $model],
+        ]])]));
+        $editor = $container->get(SiteEditor::class);
+        $id = (string) $editor->site($plan->id)->ofType(O::BUILDING)[0][O::ID];
+
+        self::assertTrue($editor->update($plan->id, $id, [O::COLOR => '#f4f2ec']));
+        self::assertArrayHasKey(O::MODEL, $editor->site($plan->id)->ofType(O::BUILDING)[0], 'other changes keep the model');
+
+        self::assertTrue($editor->update($plan->id, $id, [O::ROOF => 'hip']));
+        $updated = $editor->site($plan->id)->ofType(O::BUILDING)[0];
+        self::assertSame('hip', $updated[O::ROOF]);
+        self::assertArrayNotHasKey(O::MODEL, $updated);
+    }
 }
