@@ -1,0 +1,253 @@
+/*
+ * Tailwind v4 entry point.
+ *
+ * UI components come from the Symfony UX Toolkit shadcn kit (templates/components/*).
+ * Theming follows the shadcn token names below; use `bg-background`, `text-muted-foreground`,
+ * `bg-primary`, `text-destructive`, … in templates. Fonts are self-hosted (_fonts.css):
+ * `font-sans` Instrument Sans, `font-heading` Schibsted Grotesk, `font-mono` Fragment Mono. Dark mode is toggled via
+ * `html[data-theme="dark"]` (see partials/_theme_init.html.twig + theme_controller.js).
+ */
+@import "tailwindcss";
+
+/* vendor/ is gitignored, so Tailwind never scans it on its own. */
+
+/*
+ * Touch screens: iOS zooms into any text field under 16px when it gets focus (read-only ones too,
+ * they still take focus). One rule for every text field, the kit's and the vendors' (flatpickr's
+ * time fields, TomSelect's control and its search input): !important because flatpickr's own
+ * unlayered CSS sets 14px with a more specific selector. Any other field is 16px on touch, whatever
+ * size it sets: only flatpickr's month and year in the calendar header (about 19px) are left out,
+ * by class; no app field sets a size above 16px.
+ */
+@media (pointer: coarse) {
+    :is(input:not([type="checkbox"], [type="radio"], [type="range"], [type="submit"], [type="button"], [type="reset"], [type="file"], [type="color"], [type="image"], .cur-year), select:not(.flatpickr-monthDropdown-months), textarea, .ts-control) {
+        font-size: 1rem !important;
+    }
+}
+
+@custom-variant dark (&:where(html[data-theme="dark"], html[data-theme="dark"] *));
+
+/*
+ * The configurator's 3D view on phones and tablets (below lg, tall enough): it stays pinned
+ * at the top while the options scroll (product_configurator.html.twig), and the page keeps
+ * focused fields clear of it (embed/base.html.twig). Its height is --configurator-view-height.
+ */
+@custom-variant pinned-view (@media (width < 64rem) and (min-height: 35rem));
+
+/*
+ * Design tokens. Colours are oklch so light and dark share one hue and chroma per role;
+ * neutrals are warm ivory (hue 93-100), primary is the dekkode purple #5340F4 (hue 278).
+ * Edit here, nowhere else.
+ */
+:root {
+    --background: oklch(0.97 0.008 93);
+    --configurator-view-height: max(42svh, 16rem);
+    --configurator-steps-height: 3.75rem; /* the step bar under the pinned view, below lg */
+    --foreground: oklch(0.19 0.004 100);
+    --card: oklch(0.99 0.003 95);
+    --card-foreground: var(--foreground);
+    --popover: oklch(0.99 0.003 95);
+    --popover-foreground: var(--foreground);
+    --primary: oklch(0.52 0.25 278);
+    --primary-foreground: oklch(0.99 0.005 278);
+    --secondary: oklch(0.945 0.011 95);
+    --secondary-foreground: oklch(0.30 0.006 95);
+    --muted: oklch(0.945 0.011 95);
+    --muted-foreground: oklch(0.52 0.015 90);
+    --accent: oklch(0.94 0.035 278);
+    --accent-foreground: oklch(0.38 0.16 278);
+    --destructive: oklch(0.57 0.22 25);
+    --destructive-foreground: oklch(0.99 0.005 25);
+    --success: oklch(0.56 0.13 160);
+    --success-foreground: oklch(0.99 0.005 160);
+    --warning: oklch(0.82 0.16 85);
+    --warning-foreground: oklch(0.28 0.07 70);
+    --info: oklch(0.58 0.12 235);
+    --info-foreground: oklch(0.99 0.005 235);
+    --border: oklch(0.89 0.012 95);
+    --input: oklch(0.84 0.014 95);
+    --ring: var(--primary);
+    --chart-1: var(--primary);
+    --chart-2: var(--info);
+    --chart-3: var(--success);
+    --chart-4: var(--warning);
+    --chart-5: var(--destructive);
+    --radius: 0.625rem;
+    --sidebar: var(--card);
+    --sidebar-foreground: var(--foreground);
+    --sidebar-primary: var(--primary);
+    --sidebar-primary-foreground: var(--primary-foreground);
+    --sidebar-accent: var(--muted);
+    --sidebar-accent-foreground: var(--foreground);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+    /* Top navigation bar: a card surface with a bottom border; the brand mark carries the primary. */
+    --topbar: var(--card);
+    --topbar-foreground: var(--foreground);
+    /* The bar is sticky; sticky elements below it offset by this (logo 3rem + py-2.5 + border). */
+    --topbar-height: calc(3rem + 1.25rem + 1px);
+
+    /* Elevation: one tinted colour, soft and diffuse. Only floating layers
+       (dialogs, menus, drawers, toasts) use it; controls and cards are flat. */
+    --shadow-color: oklch(0.25 0.02 80);
+    --elevation-xs: 0 1px 2px color-mix(in oklab, var(--shadow-color) 5%, transparent);
+    --elevation-sm: 0 1px 2px color-mix(in oklab, var(--shadow-color) 5%, transparent),
+                    0 2px 6px -1px color-mix(in oklab, var(--shadow-color) 6%, transparent);
+    --elevation-md: 0 2px 4px -1px color-mix(in oklab, var(--shadow-color) 6%, transparent),
+                    0 8px 20px -4px color-mix(in oklab, var(--shadow-color) 10%, transparent);
+    --elevation-lg: 0 4px 8px -2px color-mix(in oklab, var(--shadow-color) 6%, transparent),
+                    0 20px 40px -8px color-mix(in oklab, var(--shadow-color) 14%, transparent);
+    --elevation-xl: 0 8px 16px -4px color-mix(in oklab, var(--shadow-color) 8%, transparent),
+                    0 32px 64px -12px color-mix(in oklab, var(--shadow-color) 18%, transparent);
+    --elevation-2xl: 0 48px 96px -16px color-mix(in oklab, var(--shadow-color) 24%, transparent);
+}
+
+html[data-theme="dark"] {
+    --background: oklch(0.19 0.004 100);
+    --foreground: oklch(0.95 0.008 90);
+    --card: oklch(0.235 0.005 95);
+    --card-foreground: var(--foreground);
+    --popover: oklch(0.255 0.005 95);
+    --popover-foreground: var(--foreground);
+    --primary: oklch(0.74 0.16 278);
+    --primary-foreground: oklch(0.18 0.06 278);
+    --secondary: oklch(0.29 0.006 95);
+    --secondary-foreground: var(--foreground);
+    --muted: oklch(0.29 0.006 95);
+    --muted-foreground: oklch(0.70 0.012 90);
+    --accent: oklch(0.31 0.06 278);
+    --accent-foreground: oklch(0.92 0.04 278);
+    --destructive: oklch(0.70 0.19 25);
+    --destructive-foreground: oklch(0.16 0.04 25);
+    --success: oklch(0.72 0.14 160);
+    --success-foreground: oklch(0.16 0.04 160);
+    --warning: oklch(0.84 0.16 85);
+    --warning-foreground: oklch(0.22 0.06 70);
+    --info: oklch(0.74 0.12 235);
+    --info-foreground: oklch(0.16 0.04 235);
+    --border: oklch(1 0 0 / 10%);
+    --input: oklch(1 0 0 / 16%);
+    --ring: var(--primary);
+    --sidebar: var(--card);
+    --sidebar-accent: var(--muted);
+    --sidebar-border: var(--border);
+    --sidebar-ring: var(--ring);
+    --topbar: var(--card);
+    --topbar-foreground: var(--foreground);
+    --shadow-color: oklch(0 0 0);
+    --elevation-xs: 0 1px 2px color-mix(in oklab, var(--shadow-color) 30%, transparent);
+    --elevation-sm: 0 1px 2px color-mix(in oklab, var(--shadow-color) 30%, transparent),
+                    0 2px 6px -1px color-mix(in oklab, var(--shadow-color) 30%, transparent);
+    --elevation-md: 0 2px 4px -1px color-mix(in oklab, var(--shadow-color) 30%, transparent),
+                    0 8px 20px -4px color-mix(in oklab, var(--shadow-color) 45%, transparent);
+    --elevation-lg: 0 4px 8px -2px color-mix(in oklab, var(--shadow-color) 30%, transparent),
+                    0 20px 40px -8px color-mix(in oklab, var(--shadow-color) 55%, transparent);
+    --elevation-xl: 0 8px 16px -4px color-mix(in oklab, var(--shadow-color) 35%, transparent),
+                    0 32px 64px -12px color-mix(in oklab, var(--shadow-color) 60%, transparent);
+    --elevation-2xl: 0 48px 96px -16px color-mix(in oklab, var(--shadow-color) 70%, transparent);
+}
+
+@theme inline {
+    --font-sans: 'Instrument Sans Variable', ui-sans-serif, system-ui, sans-serif;
+    --font-heading: 'Schibsted Grotesk Variable', var(--font-sans);
+    --font-mono: 'Fragment Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+
+    --color-background: var(--background);
+    --color-foreground: var(--foreground);
+    --color-card: var(--card);
+    --color-card-foreground: var(--card-foreground);
+    --color-popover: var(--popover);
+    --color-popover-foreground: var(--popover-foreground);
+    --color-primary: var(--primary);
+    --color-primary-foreground: var(--primary-foreground);
+    --color-secondary: var(--secondary);
+    --color-secondary-foreground: var(--secondary-foreground);
+    --color-muted: var(--muted);
+    --color-muted-foreground: var(--muted-foreground);
+    --color-accent: var(--accent);
+    --color-accent-foreground: var(--accent-foreground);
+    --color-destructive: var(--destructive);
+    --color-destructive-foreground: var(--destructive-foreground);
+    --color-success: var(--success);
+    --color-success-foreground: var(--success-foreground);
+    --color-warning: var(--warning);
+    --color-warning-foreground: var(--warning-foreground);
+    --color-info: var(--info);
+    --color-info-foreground: var(--info-foreground);
+    --color-border: var(--border);
+    --color-input: var(--input);
+    --color-ring: var(--ring);
+    --color-chart-1: var(--chart-1);
+    --color-chart-2: var(--chart-2);
+    --color-chart-3: var(--chart-3);
+    --color-chart-4: var(--chart-4);
+    --color-chart-5: var(--chart-5);
+    --radius-sm: calc(var(--radius) - 4px);
+    --radius-md: calc(var(--radius) - 2px);
+    --radius-lg: var(--radius);
+    --radius-xl: calc(var(--radius) + 4px);
+    --color-sidebar: var(--sidebar);
+    --color-sidebar-foreground: var(--sidebar-foreground);
+    --color-sidebar-primary: var(--sidebar-primary);
+    --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+    --color-sidebar-accent: var(--sidebar-accent);
+    --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+    --color-sidebar-border: var(--sidebar-border);
+    --color-sidebar-ring: var(--sidebar-ring);
+    --color-topbar: var(--topbar);
+    --color-topbar-foreground: var(--topbar-foreground);
+
+    /* `shadow-xs` … `shadow-2xl` resolve to the elevation scale above instead of Tailwind's defaults. */
+    --shadow-2xs: var(--elevation-xs);
+    --shadow-xs: var(--elevation-xs);
+    --shadow-sm: var(--elevation-sm);
+    --shadow-md: var(--elevation-md);
+    --shadow-lg: var(--elevation-lg);
+    --shadow-xl: var(--elevation-xl);
+    --shadow-2xl: var(--elevation-2xl);
+}
+
+@layer base {
+    * {
+        @apply border-border outline-ring/50;
+    }
+    body {
+        @apply bg-background font-sans text-sm text-foreground antialiased;
+    }
+    h1, h2, h3, h4 {
+        @apply font-heading tracking-tight;
+    }
+    svg {
+        @apply shrink-0;
+    }
+    /* The turbo-frame modal fetches before it opens; signal the wait on the cursor. */
+    html:has([data-ux-modal-target="frame"][busy]) {
+        cursor: progress;
+    }
+    /* An open modal dialog holds the page still: no scrolling behind it, not even when its own content scrolls to the end. */
+    html:has(dialog:modal) {
+        overflow: hidden;
+    }
+    dialog:modal {
+        overscroll-behavior: contain;
+    }
+    input:-webkit-autofill {
+        -webkit-box-shadow: inset 0 0 0 50px var(--color-card) !important;
+        -webkit-text-fill-color: var(--color-foreground);
+    }
+}
+
+@layer components {
+    .wrapper {
+        @apply w-full px-6 md:px-8;
+    }
+    .wrapper--xl {
+        @apply mx-auto max-w-screen-2xl;
+    }
+}
+
+@import "./_fonts.css" layer(base);
+@import "./_typo.css" layer(components);
+@import "./_floating_popup.css" layer(components);
+@import "./_theme_switcher.css" layer(components);
+@import "./_configurator_motion.css";

@@ -1,0 +1,9 @@
+{# @prop model string|null LiveComponent model expression, rendered as data-model (a literal data-model attribute on a component tag is treated as a child-component binding) #}
+{%- props model = null -%}
+{# App-owned addition: the shadcn kit ships no radio recipe. Mirrors `Checkbox`. #}
+<input
+    type="radio"
+    class="{{ ('peer size-4 inline-block align-middle rounded-full accent-primary ' ~ attributes.render('class'))|tailwind_merge }}"
+    data-slot="radio"
+    {{ attributes.defaults(model ? {'data-model': model} : {}) }}
+>

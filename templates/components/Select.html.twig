@@ -1,0 +1,10 @@
+{# @prop model string|null LiveComponent model expression, rendered as data-model (a literal data-model attribute on a component tag is treated as a child-component binding) #}
+{# On touch screens (pointer: coarse) the field is at least 40px tall, also when a caller passes a compact height: a tap target (WCAG 2.5.8). Its 16px text there comes from app.css (against iOS focus zoom). #}
+{%- props model = null -%}
+{# @block content The select options (`<option>` elements) #}
+<select
+    class="{{ ('flex h-9 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm pointer-coarse:min-h-10 ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1 ' ~ attributes.render('class'))|tailwind_merge }}"
+    {{ attributes.defaults(model ? {'data-model': model} : {}) }}
+>
+    {%- block content %}{% endblock -%}
+</select>

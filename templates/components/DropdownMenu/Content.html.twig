@@ -1,0 +1,10 @@
+{# @block content The menu items, typically `DropdownMenu:Item`, `DropdownMenu:Label`, `DropdownMenu:Separator` and `DropdownMenu:Group` #}
+<div
+    data-slot="dropdown-menu-content"
+    data-floating-popup-target="popup"
+    role="menu"
+    class="{{ ('bg-popover text-popover-foreground absolute z-50 min-w-[8rem] overflow-hidden rounded-md border p-1 shadow-md ' ~ attributes.render('class'))|tailwind_merge }}"
+    {{ attributes }}
+>
+    {%- block content %}{% endblock -%}
+</div>

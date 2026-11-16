@@ -1,0 +1,8 @@
+{# @prop src string The image URL #}
+{# @prop alt string The alternative text. Defaults to `` #}
+<img
+    data-slot="avatar-image"
+    data-avatar-target="image"
+    class="{{ ('hidden rounded-full aspect-square size-full object-cover ' ~ attributes.render('class'))|tailwind_merge }}"
+    {{ attributes.defaults({alt: '', 'data-action': 'load->avatar#loaded error->avatar#failed'}) }}
+/>

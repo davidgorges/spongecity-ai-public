@@ -1,0 +1,10 @@
+{
+  "name": "spongecity-render-loop",
+  "private": true,
+  "type": "module",
+  "description": "Renders plan views with Chrome for quick visual iteration (bin/render-loop)",
+  "dependencies": {
+    "pngjs": "^7.0.0",
+    "puppeteer-core": "^24.0.0"
+  }
+}

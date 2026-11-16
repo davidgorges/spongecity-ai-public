@@ -1,0 +1,7 @@
+{% extends 'base.html.twig' %}
+
+{% block title %}{{ plan.title|u.truncate(40, '…') }} · SpongeCity AI{% endblock %}
+
+{% block body %}
+    <twig:PlanWorkspace planId="{{ plan.id }}" storm="{{ plan.storm }}" :history="history" />
+{% endblock %}

@@ -1,0 +1,100 @@
+spongecity:
+    label: SpongeCity plan
+    storm: Design storm
+    metric:
+        permeable_share: Permeable ground
+        runoff: Surface runoff
+        retention: Rain kept on site
+        runoff_coefficient: Runoff coefficient
+        shade: Shaded ground
+        surface_temperature: Surface temperature
+    part:
+        plot: Analysed area
+        newtree: Shade tree
+        raingarden: Rain garden
+        permeable: Permeable surface
+        planting: Planting
+        shadesail: Shade sail
+
+home:
+    title: Don't just ask AI how to make a place greener. Let it redesign the real place.
+    lead: Pick a schoolyard, courtyard or square. SpongeCity AI rebuilds it in 3D from OpenStreetMap, then an AI agent plans rain gardens, permeable surfaces and shade trees, and shows the measured effect.
+    label: Place or address
+    placeholder: Address or name of a place, e.g. a school
+    submit: Rebuild in 3D
+    examples: Try
+    example:
+        schoolyard: Grundschule Am Park, Leipzig
+        courtyard: Hackesche Höfe, Berlin
+        square: Schlossplatz, Stuttgart
+    sources: Data © OpenStreetMap contributors. Numbers are planning-level estimates with the assumptions shown next to them.
+    error:
+        not_found: This place could not be found or its map data could not be loaded. Try a more precise address.
+
+plan:
+    panel: Planning
+    storm: Design storm
+    viewer:
+        label: 3D model of %place%
+        unavailable: This browser cannot show the 3D view. The plan, the figures and the chat still work.
+        mood: Light
+        mood.day: Day
+        mood.sunset: Sunset
+        mood.evening: Evening
+        conditions:
+            toggle: Infiltration
+            title: Infiltration potential (Hamburg)
+            possible: Possible, any facility (groundwater > 5 m)
+            likely: Likely, swales and trenches (2–5 m)
+            limited: Limited, surface and swales (1–2 m)
+            unlikely: Unlikely (< 1 m to groundwater)
+            note: Preliminary assessment from the Versickerungspotentialkarte, not a percolation test.
+        attribution: 'Geodata: Freie und Hansestadt Hamburg (%publishers%)'
+    import:
+        pending:
+            title: Rebuilding %place% in 3D
+            text: Reading buildings, trees and the yard from OpenStreetMap. This can take up to a minute, the page updates by itself.
+        failed:
+            title: The surroundings could not be loaded
+            text: OpenStreetMap did not answer in time. Try again in a moment, or with a more precise address.
+            back: Try another place
+    chat:
+        title: Planning agent
+        label: Your request to the planning agent
+        placeholder: Redesign this yard to absorb more rainwater, give shade during heatwaves, and keep room for children to play.
+        send: Plan
+        working: The agent is planning. The model updates while it works.
+        failed: The planning agent could not answer. Check the API key and that the MCP server is reachable, then try again.
+        invalid: Please enter a request of up to 2000 characters.
+        suggest:
+            rain: Make it absorb more rainwater
+            shade: Add shade for heatwaves
+            school: Keep room for children to play
+    impact:
+        title: Measured effect
+        today: today
+        basis: Calculations and assumptions
+    measures:
+        title: Planned measures
+        clear: Remove all
+        empty: Nothing planned yet. Ask the agent for a redesign.
+        remove: Remove %name%
+        type:
+            newtree: Shade tree
+            raingarden: Rain garden
+            permeable: Permeable surface
+            planting: Planting
+            shadesail: Shade sail
+    cost:
+        title: Bill of quantities
+        total: Estimated cost
+        note: Indicative unit prices, without planning, VAT and site specifics.
+    sku:
+        SC-PLOT: Analysed area
+        SC-TREE: Shade trees
+        SC-RAINGARDEN: Rain gardens
+        SC-PERMEABLE-PAVERS: Permeable pavers
+        SC-PERMEABLE-GRAVEL: Gravel surface
+        SC-PERMEABLE-GRASS: Grass pavers
+        SC-PLANTING: Planting
+        SC-SHADESAIL: Shade sails

@@ -1,0 +1,21 @@
+framework:
+    messenger:
+        failure_transport: failed
+
+        transports:
+            # the site import talks to OpenStreetMap and can take a while: a worker does it
+            async:
+                dsn: '%env(MESSENGER_TRANSPORT_DSN)%'
+                # the import already tries several Overpass mirrors; a failed plan shows an error at once
+                retry_strategy:
+                    max_retries: 0
+            failed: 'doctrine://default?queue_name=failed'
+
+        routing:
+            App\SpongeCity\Import\ImportSite: async
+
+when@test:
+    framework:
+        messenger:
+            transports:
+                async: 'in-memory://'

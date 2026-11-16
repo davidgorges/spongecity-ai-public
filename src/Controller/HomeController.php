@@ -1,0 +1,59 @@
+<?php
+
+declare(strict_types=1);
+
+namespace App\Controller;
+
+use App\SpongeCity\Geo\NominatimGeocoder;
+use App\Controller\Plan\ShowPlanController;
+use App\SpongeCity\Import\ImportSite;
+use App\SpongeCity\Plan\Plan;
+use App\SpongeCity\Plan\PlanStore;
+use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
+use Symfony\Component\HttpFoundation\Request;
+use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Messenger\MessageBusInterface;
+use Symfony\Component\Routing\Attribute\Route;
+
+final class HomeController extends AbstractController
+{
+    public const string ROUTE = 'home';
+    public const string FIELD_PLACE = 'place';
+    public const string FLASH_ERROR = 'error';
+
+    public function __construct(
+        private readonly NominatimGeocoder $geocoder,
+        private readonly PlanStore $plans,
+        private readonly MessageBusInterface $bus,
+    ) {
+    }
+
+    #[Route('/', name: self::ROUTE, methods: ['GET', 'POST'])]
+    public function __invoke(Request $request): Response
+    {
+        if ($request->isMethod('POST')) {
+            $place = trim((string) $request->getPayload()->get(self::FIELD_PLACE, ''));
+            $plan = '' === $place ? null : $this->start($place);
+            if (null !== $plan) {
+                return $this->redirectToRoute(ShowPlanController::ROUTE, ['id' => $plan->id]);
+            }
+            $this->addFlash(self::FLASH_ERROR, 'home.error.not_found');
+        }
+
+        return $this->render('home/index.html.twig', ['examples' => ['home.example.schoolyard', 'home.example.courtyard', 'home.example.square']]);
+    }
+
+    private function start(string $place): ?Plan
+    {
+        $hits = $this->geocoder->search($place);
+        if ([] === $hits) {
+            return null;
+        }
+        $centre = $hits[0];
+        $plan = $this->plans->create($centre->label, $centre->latitude, $centre->longitude, Plan::STATUS_PENDING);
+        // the slow part, OpenStreetMap, runs in a worker: the plan page shows progress until it is ready
+        $this->bus->dispatch(new ImportSite($plan->id, $centre->latitude, $centre->longitude, ImportSite::DEFAULT_RADIUS_METRES));
+
+        return $plan;
+    }
+}

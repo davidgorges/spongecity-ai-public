@@ -1,0 +1,54 @@
+.theme-switcher__beams{
+    @apply origin-center;
+    transition: scale 0.1s ease-in, rotate 0.2s ease-in;
+}
+.theme-switcher__circle{
+    @apply origin-center;
+    transition: scale 0.2s ease-in;
+}
+.theme-switcher__mask circle{
+    transition: transform 0.2s ease-in 0s;
+}
+html[data-theme="dark"] .theme-switcher__beams{
+    @apply scale-0 -rotate-45;
+    transition: scale 0.2s ease-in 0.1s, rotate 0.1s ease-in 0.1s;
+}
+html[data-theme="dark"] .theme-switcher__circle{
+    @apply scale-150;
+    transition: scale 0.2s ease-in 0.1s;
+}
+html[data-theme="dark"] .theme-switcher__mask circle{
+    transform: translate(-75%, -30%);
+    transition: transform 0.2s ease-in 0.1s;
+}
+
+/* System: a half-filled circle. The sun grows like the moon, the right half is masked away
+   and a ring completes the outline. Comes after the dark rules, as it applies on top of either. */
+.theme-switcher__ring{
+    @apply origin-center opacity-0 scale-50;
+    transition: opacity 0.1s ease-in, scale 0.2s ease-in;
+}
+.theme-switcher__half{
+    translate: 8px 0;
+    transition: translate 0.2s ease-in;
+}
+html[data-theme-mode="system"] .theme-switcher__beams{
+    @apply scale-0 -rotate-45;
+    transition: scale 0.2s ease-in 0.1s, rotate 0.1s ease-in 0.1s;
+}
+html[data-theme-mode="system"] .theme-switcher__circle{
+    @apply scale-150;
+    transition: scale 0.2s ease-in 0.1s;
+}
+html[data-theme-mode="system"] .theme-switcher__mask circle{
+    transform: none;
+    transition: transform 0.2s ease-in 0s;
+}
+html[data-theme-mode="system"] .theme-switcher__half{
+    translate: 0 0;
+    transition: translate 0.2s ease-in 0.1s;
+}
+html[data-theme-mode="system"] .theme-switcher__ring{
+    @apply opacity-100 scale-100;
+    transition: opacity 0.2s ease-in 0.1s, scale 0.2s ease-in 0.1s;
+}

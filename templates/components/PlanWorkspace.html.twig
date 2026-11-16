@@ -1,0 +1,246 @@
+{% set tree_sku = constant('Core\\Configurator\\Product\\SpongeCity\\SpongeCitySku::TREE') %}
+{% set plan = this.plan %}
+{% set remove_action = constant('App\\Twig\\Components\\PlanWorkspace::ACTION_REMOVE') %}
+{% set viewer_debug = app.request.query.getBoolean(constant('App\\Twig\\Components\\PlanWorkspace::QUERY_DEBUG')) %}
+{% set viewer_tier = app.request.query.getInt(constant('App\\Twig\\Components\\PlanWorkspace::QUERY_TIER'), constant('App\\Twig\\Components\\PlanWorkspace::TIER_UNPINNED')) %}
+{% set chat_url = path('plan_chat', {id: plan.id}) %}
+{% set viewer_title = plan.title %}
+{% set chat_errors = {
+    failed: 'plan.chat.failed'|trans({}, 'spongecity'),
+    'plan.chat.failed': 'plan.chat.failed'|trans({}, 'spongecity'),
+    'plan.chat.invalid': 'plan.chat.invalid'|trans({}, 'spongecity'),
+} %}
+{% set viewer_label = 'plan.viewer.label'|trans({'%place%': plan.title}, 'spongecity') %}
+{% if not plan.ready %}
+    <div {{ attributes.defaults({'class': 'flex min-h-screen items-center justify-center p-6', 'data-poll': plan.pending ? 'delay(2000)|$render' : false}) }}>
+        <div class="flex max-w-md flex-col items-center gap-4 text-center" role="status" aria-live="polite">
+            {% if plan.pending %}
+                <twig:Spinner class="size-6 text-primary" />
+                <h1 class="font-heading text-xl font-semibold">{{ 'plan.import.pending.title'|trans({'%place%': plan.title|u.truncate(60, '…')}, 'spongecity') }}</h1>
+                <p class="text-sm text-muted-foreground">{{ 'plan.import.pending.text'|trans({}, 'spongecity') }}</p>
+            {% else %}
+                <twig:ux:icon name="lucide:triangle-alert" class="size-6 text-destructive" aria-hidden="true" />
+                <h1 class="font-heading text-xl font-semibold">{{ 'plan.import.failed.title'|trans({}, 'spongecity') }}</h1>
+                <p class="text-sm text-muted-foreground">{{ 'plan.import.failed.text'|trans({}, 'spongecity') }}</p>
+                <twig:Button as="a" href="{{ path('home') }}" variant="outline">{{ 'plan.import.failed.back'|trans({}, 'spongecity') }}</twig:Button>
+            {% endif %}
+        </div>
+    </div>
+{% else %}
+{% set impact = this.impact %}
+{% set cost = this.cost %}
+{% set interventions = this.interventions %}
+<div {{ attributes.defaults({'class': 'flex min-h-screen flex-col lg:grid lg:h-screen lg:grid-cols-[minmax(0,1fr)_480px]', 'data-action': 'plan:changed@window->live#$render'}) }}>
+    <section
+        class="relative h-[45svh] shrink-0 bg-muted lg:h-screen"
+        aria-label="{{ viewer_label }}"
+        data-action="pointermove->configurator-viewer#hover"
+        {{ stimulus_controller('configurator-viewer', {
+            scene: this.scene,
+            skies: configurator_skies(),
+            textures: configurator_textures(),
+            environmentModels: configurator_environment_models(),
+            photoName: 'spongecity',
+            debug: viewer_debug,
+            tier: viewer_tier,
+            surroundingsUrl: path(constant('App\\Controller\\Plan\\SurroundingsController::ROUTE'), {id: plan.id}),
+            conditionsUrl: path(constant('App\\Controller\\Plan\\ConditionsController::ROUTE'), {id: plan.id}),
+            terrainUrl: path(constant('App\\Controller\\Plan\\TerrainController::ROUTE'), {id: plan.id}),
+        }) }}
+    >
+        <div
+            class="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&>canvas]:block [&>canvas]:size-full"
+            data-configurator-viewer-target="canvas"
+            data-live-ignore
+            tabindex="0"
+            role="application"
+            aria-label="{{ viewer_label }}"
+            data-action="keydown->configurator-viewer#keydown keyup->configurator-viewer#keyup blur->configurator-viewer#releaseKeys pointerdown->configurator-viewer#focus pointermove->configurator-viewer#hover pointerleave->configurator-viewer#unhover"
+        ></div>
+        <div class="absolute inset-0 flex items-center justify-center p-6" data-configurator-viewer-target="unavailable" data-live-ignore hidden>
+            <p class="max-w-sm text-center text-sm text-muted-foreground">{{ 'plan.viewer.unavailable'|trans({}, 'spongecity') }}</p>
+        </div>
+        <div class="pointer-events-none absolute z-10 rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md" data-configurator-viewer-target="tooltip" data-live-ignore aria-hidden="true" hidden></div>
+        <pre class="pointer-events-none absolute bottom-4 left-4 z-10 rounded-md bg-background/85 px-2 py-1 font-mono text-[11px] leading-tight" data-configurator-viewer-target="stats" data-live-ignore hidden></pre>
+
+        <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-4 bg-linear-to-b from-background/85 via-background/50 to-transparent p-4 pb-10 sm:p-6 sm:pb-14">
+            <div class="min-w-0">
+                <a href="{{ path('home') }}" class="pointer-events-auto flex items-center gap-1.5 font-mono text-xs text-primary hover:underline">
+                    <twig:ux:icon name="lucide:sprout" class="size-3.5" aria-hidden="true" />
+                    SpongeCity AI
+                </a>
+                <h1 class="mt-1 truncate font-heading text-lg font-semibold leading-tight sm:text-xl">{{ viewer_title|u.truncate(80, '…') }}</h1>
+            </div>
+            <div class="flex shrink-0 items-center gap-2">
+            {% set conditions_label = 'plan.viewer.conditions.toggle'|trans({}, 'spongecity') %}
+            <twig:Button variant="outline" size="xs" class="pointer-events-auto bg-background aria-pressed:bg-accent aria-pressed:text-primary" aria-pressed="false" title="{{ conditions_label }}" data-configurator-viewer-target="conditions" data-action="configurator-viewer#toggleConditions" hidden>
+                <twig:ux:icon name="lucide:droplets" aria-hidden="true" />
+                <span class="hidden sm:inline">{{ conditions_label }}</span>
+            </twig:Button>
+            <div class="pointer-events-auto inline-flex items-center gap-px rounded-md border border-border bg-background p-px" role="group" aria-label="{{ 'plan.viewer.mood'|trans({}, 'spongecity') }}" data-configurator-viewer-target="controls">
+                {% for mood, icon in {day: 'lucide:sun', sunset: 'lucide:sunset', evening: 'lucide:moon'} %}
+                    {% set mood_label = ('plan.viewer.mood.' ~ mood)|trans({}, 'spongecity') %}
+                    <twig:Button variant="ghost" size="icon-xs" class="rounded-[calc(var(--radius-md)-2px)] text-muted-foreground aria-pressed:bg-accent aria-pressed:text-primary" aria-pressed="false" title="{{ mood_label }}" data-configurator-viewer-target="mood" data-configurator-viewer-mood-param="{{ mood }}" data-action="configurator-viewer#setMood">
+                        <twig:ux:icon name="{{ icon }}" aria-hidden="true" />
+                        <span class="sr-only">{{ mood_label }}</span>
+                    </twig:Button>
+                {% endfor %}
+            </div>
+            </div>
+        </div>
+
+        {# the infiltration overlay's legend (colours as in assets/configurator/site_conditions.js) #}
+        <div class="absolute right-4 bottom-10 z-10 max-w-64 rounded-md border border-border bg-background/90 p-3 text-xs shadow-sm" data-configurator-viewer-target="legend" data-live-ignore hidden>
+            <p class="font-medium">{{ 'plan.viewer.conditions.title'|trans({}, 'spongecity') }}</p>
+            <ul class="mt-2 flex flex-col gap-1">
+                {% for potential, colour in {possible: '#0a4fc4', likely: '#1fa0e0', limited: '#f09a1a', unlikely: '#d8321e'} %}
+                    <li class="flex items-center gap-2"><span class="size-3 shrink-0 rounded-sm" style="background-color: {{ colour }}" aria-hidden="true"></span>{{ ('plan.viewer.conditions.' ~ potential)|trans({}, 'spongecity') }}</li>
+                {% endfor %}
+            </ul>
+            <p class="mt-2 text-muted-foreground">{{ 'plan.viewer.conditions.note'|trans({}, 'spongecity') }}</p>
+        </div>
+
+        {% set sources = this.sources %}
+        {% if sources is not empty %}
+            <p class="absolute right-4 bottom-2 left-4 z-10 truncate text-right text-[10px] text-muted-foreground" title="{{ sources|map(s => s.title ~ ' (' ~ s.publisher ~ ')')|join(' · ') }}">
+                {{ 'plan.viewer.attribution'|trans({'%publishers%': this.publishers|join(', ')}, 'spongecity') }} · <a class="hover:underline" href="https://www.govdata.de/dl-de/by-2-0" rel="noopener" target="_blank">dl-de/by-2-0</a> · © OpenStreetMap
+            </p>
+        {% endif %}
+    </section>
+
+    <aside class="flex min-h-0 flex-col gap-0 border-t border-border bg-card lg:border-t-0 lg:border-l lg:overflow-y-auto" aria-label="{{ 'plan.panel'|trans({}, 'spongecity') }}">
+        {# the agent #}
+        <section
+            class="flex flex-col gap-3 border-b border-border p-4"
+            aria-labelledby="chat-title"
+            data-live-ignore
+            {{ stimulus_controller('plan-chat', {url: chat_url, errors: chat_errors}) }}
+        >
+            <h2 id="chat-title" class="flex items-center gap-2 font-heading text-sm font-semibold">
+                <twig:ux:icon name="lucide:message-circle" class="size-4 text-primary" aria-hidden="true" />
+                {{ 'plan.chat.title'|trans({}, 'spongecity') }}
+            </h2>
+            <ol class="flex max-h-72 min-h-24 flex-col gap-2 overflow-y-auto text-sm" data-plan-chat-target="messages" aria-live="polite">
+                {% for turn in history %}
+                    <li data-role="{{ turn.role }}" class="rounded-lg px-3 py-2 data-[role=assistant]:bg-muted data-[role=user]:ml-8 data-[role=user]:bg-primary data-[role=user]:text-primary-foreground data-[role=error]:bg-destructive/10 data-[role=error]:text-destructive"><span data-text class="whitespace-pre-line">{{ turn.content }}</span></li>
+                {% endfor %}
+            </ol>
+            <template data-plan-chat-target="template">
+                <li class="rounded-lg px-3 py-2 text-sm data-[role=assistant]:bg-muted data-[role=user]:ml-8 data-[role=user]:bg-primary data-[role=user]:text-primary-foreground data-[role=error]:bg-destructive/10 data-[role=error]:text-destructive"><span data-text class="whitespace-pre-line"></span></li>
+            </template>
+            <p class="flex items-center gap-2 text-xs text-muted-foreground" data-plan-chat-target="status" role="status" hidden>
+                <twig:Spinner class="size-3.5" />
+                {{ 'plan.chat.working'|trans({}, 'spongecity') }}
+            </p>
+            <ul class="flex flex-wrap gap-1.5">
+                {% for suggestion in ['plan.chat.suggest.rain', 'plan.chat.suggest.shade', 'plan.chat.suggest.school'] %}
+                    {% set text = suggestion|trans({}, 'spongecity') %}
+                    <li><twig:Button type="button" variant="outline" size="xs" data-action="plan-chat#suggest" data-plan-chat-text-param="{{ text }}">{{ text|u.truncate(46, '…') }}</twig:Button></li>
+                {% endfor %}
+            </ul>
+            <form class="flex flex-col gap-2" data-action="submit->plan-chat#send">
+                <label for="chat-input" class="sr-only">{{ 'plan.chat.label'|trans({}, 'spongecity') }}</label>
+                <twig:Textarea id="chat-input" rows="3" placeholder="{{ 'plan.chat.placeholder'|trans({}, 'spongecity') }}" data-plan-chat-target="input" data-action="keydown->plan-chat#keydown" />
+                <twig:Button type="submit" data-plan-chat-target="submit" class="self-end">
+                    {{ 'plan.chat.send'|trans({}, 'spongecity') }}
+                    <twig:ux:icon name="lucide:send" aria-hidden="true" />
+                </twig:Button>
+            </form>
+        </section>
+
+        {# measurable impact #}
+        <section class="flex flex-col gap-3 border-b border-border p-4" aria-labelledby="impact-title">
+            <div class="flex items-center justify-between gap-2">
+                <h2 id="impact-title" class="font-heading text-sm font-semibold">{{ 'plan.impact.title'|trans({}, 'spongecity') }}</h2>
+                <span class="font-mono text-xs text-muted-foreground">{{ impact.plot_m2|number_format(0, ',', '.') }} m²</span>
+            </div>
+            <div class="flex items-center gap-3">
+                <label for="storm" class="shrink-0 text-xs text-muted-foreground">{{ 'plan.storm'|trans({}, 'spongecity') }}</label>
+                <input id="storm" type="range" min="{{ this.minStorm }}" max="{{ this.maxStorm }}" step="5" value="{{ storm }}" data-model="debounce(300)|storm" class="h-1.5 flex-1 accent-primary">
+                <output for="storm" class="w-16 text-right font-mono text-xs">{{ storm }} mm/h</output>
+            </div>
+            <dl class="grid grid-cols-2 gap-2">
+                {% for metric in impact.metrics %}
+                    <div class="rounded-lg border border-border p-3">
+                        <dt class="text-xs text-muted-foreground">{{ metric.label|trans({}, 'spongecity') }}</dt>
+                        <dd class="mt-1 flex items-baseline gap-1.5">
+                            <span class="font-heading text-xl font-semibold tabular-nums">{{ metric.design|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}</span>
+                            <span class="text-xs text-muted-foreground">{{ metric.unit }}</span>
+                        </dd>
+                        <dd class="mt-0.5 text-xs tabular-nums {{ metric.delta == 0 ? 'text-muted-foreground' : (metric.improved ? 'text-success' : 'text-destructive') }}">
+                            {{ 'plan.impact.today'|trans({}, 'spongecity') }} {{ metric.baseline|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}
+                            {% if metric.delta != 0 %}({{ metric.delta > 0 ? '+' : '−' }}{{ metric.delta|abs|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}){% endif %}
+                        </dd>
+                    </div>
+                {% endfor %}
+            </dl>
+            {% for warning in impact.warnings %}
+                <p class="flex gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground" role="note">
+                    <twig:ux:icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
+                    {{ warning }}
+                </p>
+            {% endfor %}
+            <twig:Accordion id="impact-basis">
+                <twig:Accordion:Item value="basis">
+                    <twig:Accordion:Trigger>{{ 'plan.impact.basis'|trans({}, 'spongecity') }}</twig:Accordion:Trigger>
+                    <twig:Accordion:Content>
+                        <ul class="flex list-disc flex-col gap-1.5 pl-4 text-xs text-muted-foreground">
+                            {% for metric in impact.metrics %}
+                                <li><strong class="font-medium text-foreground">{{ metric.label|trans({}, 'spongecity') }}:</strong> {{ metric.basis }}</li>
+                            {% endfor %}
+                            {% for assumption in impact.assumptions %}
+                                <li>{{ assumption }}</li>
+                            {% endfor %}
+                        </ul>
+                    </twig:Accordion:Content>
+                </twig:Accordion:Item>
+            </twig:Accordion>
+        </section>
+
+        {# the plan: interventions and bill of quantities #}
+        <section class="flex flex-col gap-3 p-4" aria-labelledby="measures-title">
+            <div class="flex items-center justify-between gap-2">
+                <h2 id="measures-title" class="font-heading text-sm font-semibold">{{ 'plan.measures.title'|trans({}, 'spongecity') }}</h2>
+                {% if interventions is not empty %}
+                    <twig:Button variant="ghost" size="xs" data-action="live#action" data-live-action-param="clearInterventions">{{ 'plan.measures.clear'|trans({}, 'spongecity') }}</twig:Button>
+                {% endif %}
+            </div>
+            {% if interventions is empty %}
+                <p class="text-sm text-muted-foreground">{{ 'plan.measures.empty'|trans({}, 'spongecity') }}</p>
+            {% else %}
+                <ul class="flex flex-col divide-y divide-border rounded-lg border border-border">
+                    {% for item in interventions %}
+                        {% set item_name = item.label ?? ('plan.measures.type.' ~ item.type)|trans({}, 'spongecity') %}
+                        {% set remove_label = 'plan.measures.remove'|trans({'%name%': item_name}, 'spongecity') %}
+                        <li class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                            <span>{{ item_name }}</span>
+                            <twig:Button variant="ghost" size="icon-xs" aria-label="{{ remove_label }}" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ item.id }}">
+                                <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                            </twig:Button>
+                        </li>
+                    {% endfor %}
+                </ul>
+                <table class="w-full text-sm">
+                    <caption class="sr-only">{{ 'plan.cost.title'|trans({}, 'spongecity') }}</caption>
+                    <tbody class="divide-y divide-border">
+                        {% for line in cost.lines %}
+                            <tr>
+                                <th scope="row" class="py-1.5 pr-2 text-left font-normal">{{ ('plan.sku.' ~ line.sku)|trans({}, 'spongecity') }}</th>
+                                <td class="py-1.5 text-right tabular-nums text-muted-foreground">{{ line.amount|number_format(1, ',', '.') }} {{ line.sku == tree_sku ? '×' : 'm²' }}</td>
+                                <td class="py-1.5 pl-3 text-right tabular-nums">{{ line.total is null ? '–' : line.total|number_format(0, ',', '.') ~ ' €' }}</td>
+                            </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr class="border-t border-border font-medium">
+                            <th scope="row" colspan="2" class="py-2 text-left">{{ 'plan.cost.total'|trans({}, 'spongecity') }}</th>
+                            <td class="py-2 pl-3 text-right tabular-nums">{{ cost.total|number_format(0, ',', '.') }} €</td>
+                        </tr>
+                    </tfoot>
+                </table>
+                <p class="text-xs text-muted-foreground">{{ 'plan.cost.note'|trans({}, 'spongecity') }}</p>
+            {% endif %}
+        </section>
+    </aside>
+</div>
+{% endif %}

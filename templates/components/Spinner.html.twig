@@ -1,0 +1,10 @@
+{# @prop label string Accessible label. Defaults to `Loading` #}
+{%- props label = 'Loading' -%}
+{# `attributes` is spread without `class`: spreading it after `class` would replace the merged classes with the raw one #}
+{{ ux_icon('lucide:loader-2', {
+    'data-slot': 'spinner',
+    'aria-label': label,
+    role: 'status',
+    class: ('size-4 animate-spin ' ~ attributes.render('class'))|tailwind_merge,
+    ...attributes.without('class'),
+}) }}

@@ -1,0 +1,9 @@
+{# @block content A set of related `DropdownMenu:Item`s, optionally preceded by a `DropdownMenu:Label` #}
+<div
+    data-slot="dropdown-menu-group"
+    role="group"
+    class="{{ ('flex flex-col ' ~ attributes.render('class'))|tailwind_merge }}"
+    {{ attributes }}
+>
+    {%- block content %}{% endblock -%}
+</div>

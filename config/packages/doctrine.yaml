@@ -1,0 +1,5 @@
+# DBAL only: it backs the Messenger queue. Plans live in the cache pool, not in the database.
+doctrine:
+    dbal:
+        url: '%env(resolve:DATABASE_URL)%'
+        profiling_collect_backtrace: '%kernel.debug%'

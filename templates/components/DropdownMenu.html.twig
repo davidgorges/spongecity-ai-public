@@ -1,0 +1,19 @@
+{# App-owned component (no dropdown-menu recipe in the shadcn kit yet). Built on the `floating-popup` Stimulus controller.
+   Closes when another popup opens (a hover mega menu, another dropdown) and on a Turbo visit. #}
+{# @prop placement string Floating UI placement of the menu relative to its trigger. Defaults to `bottom-end` #}
+{# @prop closeOnOutsideClick boolean Close the menu when clicking outside of it. Defaults to `true` #}
+{# @block content The menu structure, typically `DropdownMenu:Trigger` and `DropdownMenu:Content` #}
+{%- props placement = 'bottom-end', closeOnOutsideClick = true -%}
+
+<div
+    data-slot="dropdown-menu"
+    class="{{ ('relative inline-flex ' ~ attributes.render('class'))|tailwind_merge }}"
+    {{ attributes.defaults({
+        'data-controller': 'floating-popup',
+        'data-floating-popup-placement-value': placement,
+        'data-floating-popup-close-on-outside-click-value': closeOnOutsideClick ? 'true' : 'false',
+        'data-action': 'keydown.esc->floating-popup#close floating-popup:opened@window->floating-popup#closeOther turbo:visit@document->floating-popup#close',
+    }) }}
+>
+    {%- block content %}{% endblock -%}
+</div>

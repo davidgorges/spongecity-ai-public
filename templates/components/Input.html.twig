@@ -1,0 +1,7 @@
+{# @prop model string|null LiveComponent model expression, rendered as data-model (a literal data-model attribute on a component tag is treated as a child-component binding) #}
+{# On touch screens (pointer: coarse) the field is at least 40px tall, also when a caller passes a compact height: a tap target (WCAG 2.5.8). Its 16px text there comes from app.css (against iOS focus zoom). #}
+{%- props model = null -%}
+<input
+    class="{{ ('flex h-9 w-full rounded-md border border-input bg-background px-3 py-2 text-sm pointer-coarse:min-h-10 ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:focus-visible:ring-destructive/40 ' ~ attributes.render('class'))|tailwind_merge }}"
+    {{ attributes.defaults(model ? {'data-model': model} : {}) }}
+>

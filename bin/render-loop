@@ -1,0 +1,5 @@
+#!/usr/bin/env sh
+# Renders the 3D plan view to PNGs for quick visual iteration. See tools/render-loop/render.mjs.
+DIR="$(cd "$(dirname "$0")/.." && pwd)"
+[ -d "$DIR/tools/render-loop/node_modules" ] || (cd "$DIR/tools/render-loop" && npm install --silent --no-audit --no-fund)
+exec node "$DIR/tools/render-loop/render.mjs" "$@"

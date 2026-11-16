@@ -1,0 +1,38 @@
+/*
+ * Show/hide transition for popups positioned by the `floating-popup` Stimulus
+ * controller (DropdownMenu component, notification popup, mobile navigation).
+ * The controller toggles the `opened` class and sets left/top via Floating UI.
+ */
+[data-floating-popup-target="popup"] {
+    transition: opacity 100ms ease-out, transform 200ms ease-out, display 250ms;
+    transition-behavior: allow-discrete;
+    transform: translateY(-0.5rem);
+    opacity: 0;
+}
+[data-floating-popup-target="popup"]:not(.opened) {
+    @apply hidden;
+}
+[data-floating-popup-target="popup"].opened {
+    opacity: 1;
+    transform: translateY(0);
+    @starting-style {
+        opacity: 0;
+        transform: translateY(-0.5rem);
+    }
+}
+/* Hover bridge: an invisible strip across the offset gap, so moving the pointer
+   from a hover-opened button into its popup does not leave the wrapper. */
+[data-floating-popup-target="popup"].opened[data-floating-popup-side]::before {
+    content: "";
+    position: absolute;
+}
+[data-floating-popup-side="bottom"]::before {
+    inset-inline: 0;
+    bottom: 100%;
+    height: var(--floating-popup-offset);
+}
+[data-floating-popup-side="top"]::before {
+    inset-inline: 0;
+    top: 100%;
+    height: var(--floating-popup-offset);
+}

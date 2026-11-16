@@ -1,0 +1,22 @@
+.h1, .h2, .h3, .h4 {
+    @apply font-heading font-semibold tracking-tight;
+}
+.h1,
+.prose h1 {
+    @apply max-sm:text-2xl text-3xl;
+}
+.h2,
+.prose h2 {
+    @apply max-sm:text-xl text-2xl;
+}
+.h3,
+.prose h3 {
+    @apply max-sm:text-lg text-xl;
+}
+.h4,
+.prose h4 {
+    @apply text-base;
+}
+.prose ul {
+    @apply list-disc list-inside my-4;
+}

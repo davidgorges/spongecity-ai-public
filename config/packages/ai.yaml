@@ -1,0 +1,16 @@
+ai:
+    platform:
+        anthropic:
+            api_key: '%env(ANTHROPIC_API_KEY)%'
+
+    agent:
+        spongecity:
+            platform: 'ai.platform.anthropic'
+            # the output limit covers the model's thinking and its answer: with the platform's default (1000)
+            # the thinking can use it all up and the reply comes back without any text
+            model: 'claude-sonnet-5-5?max_tokens=8000'
+            prompt:
+                file: '%kernel.project_dir%/config/prompts/spongecity.md'
+            tools:
+                # the tools of this application's own MCP server (App\Mcp\SpongeCityTools)
+                - mcp_server: 'spongecity.local'

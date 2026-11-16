@@ -1,0 +1,11 @@
+{# @prop inset boolean Indent the label to align with items that have an icon. Defaults to `false` #}
+{# @block content The label text #}
+{%- props inset = false -%}
+<div
+    data-slot="dropdown-menu-label"
+    {% if inset %}data-inset{% endif %}
+    class="{{ ('text-muted-foreground px-2 py-1.5 text-xs font-medium data-[inset]:pl-8 ' ~ attributes.render('class'))|tailwind_merge }}"
+    {{ attributes }}
+>
+    {%- block content %}{% endblock -%}
+</div>

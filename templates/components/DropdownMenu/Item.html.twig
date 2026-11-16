@@ -1,0 +1,24 @@
+{# @prop as 'button'|'a'|'div' The HTML tag to render. Defaults to `button` #}
+{# @prop variant 'default'|'destructive' The visual style variant. Defaults to `default` #}
+{# @prop inset boolean Indent the item to align with items that have an icon. Defaults to `false` #}
+{# @block content The item label and/or icon #}
+{%- props as = 'button', variant = 'default', inset = false -%}
+{%- set style = html_cva(
+    base: "relative flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-sm outline-hidden select-none transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:bg-accent focus-visible:text-accent-foreground aria-[current]:bg-accent aria-[current]:font-medium data-[inset]:pl-8 disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-muted-foreground",
+    variants: {
+        variant: {
+            default: '',
+            destructive: 'text-destructive hover:bg-destructive/10 focus-visible:bg-destructive/10 dark:hover:bg-destructive/20 [&_svg]:text-destructive',
+        },
+    },
+) -%}
+<{{ as }}
+    data-slot="dropdown-menu-item"
+    data-variant="{{ variant }}"
+    role="menuitem"
+    {% if inset %}data-inset{% endif %}
+    class="{{ style.apply({variant: variant}, attributes.render('class'))|tailwind_merge }}"
+    {{ attributes.defaults(as == 'button' ? {type: 'button'} : {}) }}
+>
+    {%- block content %}{% endblock -%}
+</{{ as }}>

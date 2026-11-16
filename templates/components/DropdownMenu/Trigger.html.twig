@@ -1,0 +1,8 @@
+{# @block content The trigger element (e.g., a `Button`) that spreads `{{ ...dropdown_menu_trigger_attrs }}` #}
+{%- set dropdown_menu_trigger_attrs = {
+    'data-action': 'click->floating-popup#toggle'|html_attr_type('sst'),
+    'data-floating-popup-target': 'button',
+    'aria-haspopup': 'menu',
+    'aria-expanded': 'false',
+} -%}
+{%- block content %}{% endblock -%}

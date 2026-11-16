@@ -1,0 +1,437 @@
+# SpongeCity AI: architecture
+
+An interactive 3D planning tool: pick a real place, rebuild it from OpenStreetMap, and let an AI
+agent redesign it with rain gardens, permeable surfaces and shade, with measurable effect.
+
+Stack: Symfony 8.2 (beta), Symfony AI 1.0 (beta: `ai-bundle`, `ai-agent`, `ai-anthropic-platform`,
+`ai-mcp-tool`), `mcp-bundle` / `mcp/sdk` (PHP MCP SDK), Messenger, UX Live/Twig Components,
+Stimulus, Tailwind v4, three.js. The 3D engine and UI kit come from the `sf_configurator` project.
+
+## Big picture
+
+```
+ Browser                              Symfony app                                External
+ ───────                              ───────────                                ────────
+ home form ── POST / ───────────────► HomeController ── geocode ───────────────► Nominatim
+                                         │  create Plan(pending), dispatch
+                                         ▼
+                                      Messenger (async, Doctrine/SQLite)
+                                         │  worker: messenger:consume async
+                                         ▼
+                                      ImportSiteHandler ── Overpass query ─────► Overpass mirrors
+                                         │  HamburgGeodata (in Hamburg) ──────────► api.hamburg.de (OGC API)
+                                         │  SiteImporter → site JSON, SiteConditions
+                                         ▼
+ plan page ◄── Live Component ──────  PlanStore (cache.app)  ◄───────────┐
+  (3D view, impact, list)             Plan: values + status               │ reads/writes
+  3D view ◄── GET /plan/{id}/surroundings ── SurroundingsLoader ─────────►│ (real city around the site)
+  3D view ◄── GET /plan/{id}/conditions ──── SiteConditionsStore ────────►│ (infiltration overlay, sources)
+  3D view ◄── GET /plan/{id}/terrain ─────── TerrainStore ───────────────►│ (the ground: height grids)
+        │                                                                 │
+        │ chat POST /plan/{id}/chat                                       │
+        ▼                                                                 │
+   ChatController → PlanAssistant → Agent "spongecity" (Claude)           │
+                                         │ MCP client (HTTP)              │
+                                         ▼                                │
+                                      /mcp  ── SpongeCityTools ───────────┘
+                                         (geodata, scene edit, impact)
+```
+
+Everything is addressed by a **plan id**. The browser and the agent's MCP tools run in separate
+requests and share state only through `PlanStore`.
+
+## Layers and directories
+
+| Path | What lives there |
+|---|---|
+| `lib/Core/Configurator/` | The parametric 3D engine, copied from `sf_configurator` (namespace `Core\`). Framework-light, no Doctrine. |
+| `lib/Core/Configurator/Product/SpongeCity/` | The product definition, SKUs, intervention builder and the impact calculation. |
+| `src/SpongeCity/` | Application services: plans, geodata, import, chat. |
+| `src/SpongeCity/Geo/Hamburg/` | Hamburg's official geodata (OGC API Features at api.hamburg.de): buildings, street trees, infiltration potential. |
+| `src/SpongeCity/Conditions/` | What official data says about a site's ground (`SiteConditions`: infiltration potential, sources). |
+| `src/SpongeCity/Terrain/` | The ground of a plan (`Terrain`, `TerrainGrid`), standing objects on it (`SiteGrounding`), reading it for the agent (`TerrainAnalysis`). |
+| `src/Mcp/` | The MCP tools (`SpongeCityTools`). The MCP registry is restricted to `App\Mcp\`. |
+| `src/Controller/`, `src/Twig/` | HTTP entry points, the `PlanWorkspace` Live Component, Twig functions for the viewer. |
+| `assets/configurator/` | three.js scene renderer, environments, textures, models (from `sf_configurator`), the city around an aerial site (`real_city.js`, `city_blocks.js`). |
+| `assets/controllers/` | Stimulus controllers: `configurator_viewer`, `plan_chat`, UI kit controllers. |
+| `templates/components/` | The shadcn UX Toolkit components (`<twig:Button>` …) and `PlanWorkspace`. |
+| `config/prompts/spongecity.md` | The agent's system prompt. |
+| `tools/render-loop/`, `bin/render-loop` | Headless Chrome render loop for the 3D view: screenshots, flicker and frame-time measurements (see "Render loop"). |
+
+## The configurator engine
+
+Data flow (see `sf_configurator/docs/configurator.md` for the full framework):
+
+```
+values (storm, site JSON)
+  └─ ConfigurationResolver ─► Configuration
+       └─ SpongeCityDefinition::build()  ─► Assembly of Parts      (the product: plot + interventions)
+            ├─ BillOfMaterials ─► Quote (prices per SKU)           (bill of quantities, cost estimate)
+            └─ Evaluation::scene() = product + SiteBuilder(site)   (the surrounding city)
+                 └─ SceneSerializer ─► scene JSON ─► SceneRenderer (three.js)
+```
+
+Units: **millimetres** on the server, metres in the browser. Plan coordinates: **x east, z south**,
+origin = the searched point.
+
+### The site
+
+The city and the design are one structured parameter, `site`: `{"objects": [{id, type, …fields}]}`,
+normalised by `Site\SiteType` (defaults filled in, numbers clamped, unknown things dropped, max 200
+objects, coordinates within `SiteObject::REACH` = 100 m of the centre), so nothing an agent sends
+can break the scene. Types are specified once in
+`Site\SiteObject::fields()`; the JSON Schema for agents is derived from it.
+
+| Kind | Types | Built by | Meaning |
+|---|---|---|---|
+| Context (real) | `plot`, `building`, `road`, `tree`, `house`, `paving`, … | `SiteBuilder` (scenery, no SKU) | What exists today (imported from OSM). |
+| Interventions | `newtree`, `raingarden`, `permeable`, `planting`, `shadesail` | `InterventionBuilder` (parts **with SKU**) | What the agent plans. |
+
+Because interventions have SKUs they are *the product*: they are priced, listed in the bill of
+quantities, framed by the camera and named on hover. The `plot` is built with SKU `SC-PLOT` but
+`counted: false`, so the camera frames the whole yard without it appearing on the bill.
+
+A `building` carries its `height`, `use` (`Site\BuildingType`), `facade` (`Site\Facade`), `color`,
+`roof` and `roofColor`; a `road` is a centre line with `width` and `kind` (carriageway or footway).
+`SiteBuilder` draws a footprint as walls with the façade's window texture plus a roof slab (gravel
+when flat, tiles when pitched); a near-rectangular footprint with a pitched roof gets a real gable or
+hip roof over its minimum-area rectangle. Roads are thin strips (carriageways 7 mm, footways 10 mm
+above ground, the plot 4 mm: see "Depth and flicker").
+
+`InterventionBuilder` sets the environment hints `Environment::AERIAL` (the viewer looks down on the
+site: bird's-eye camera, larger max distance, a city instead of a garden around it) and
+`Environment::SUBURBAN` when the site's buildings are mostly low (median ≤ 10 m or ≥ 40 % houses),
+so the generic city around it is a suburb rather than perimeter blocks.
+
+### Impact calculation (`Impact\ImpactCalculator`)
+
+Compares the plan **without** interventions (baseline) to the plan **with** them:
+
+- The plot is rasterised into square cells (≤ 40 000 cells); each cell takes the top-most surface,
+  so overlaps resolve like in the 3D view and nothing is counted twice.
+- Surfaces are `Impact\GroundClass` values with a runoff coefficient (typical DWA-A 138 /
+  DIN 1986-100 values) and an indicative midday surface temperature.
+- Rain gardens capture runoff from the sealed area around them, up to their storage and a 10:1
+  catchment ratio (otherwise a warning is reported). Tree crowns intercept 2 mm.
+- Shade is a ray march toward the sun (14:00, mid-summer: 52° elevation, from the south-west)
+  against buildings, tree crowns and shade sails.
+- Result: `ImpactReport` of `Metric`s (permeable share, runoff volume, retained volume, runoff
+  coefficient, shade share, surface temperature), each with baseline, design, delta and its
+  **basis**, plus the list of assumptions and warnings. Every number is traceable; the UI shows the
+  bases under "Calculations and assumptions".
+
+This is a planning-level estimate, not a simulation. Keep new rules in `GroundClass` /
+`ImpactCalculator` and list them in the report's assumptions.
+
+## Plans and state
+
+`App\SpongeCity\Plan\Plan` is an immutable value: id, title, location, configuration `values`
+(`storm`, `site`) and a `status` (`pending` → `ready` | `failed`). `PlanStore` keeps plans in the
+application cache pool (`cache.app`), with no database entities. This is deliberate for the demo:
+the browser and the MCP tools read and write the same plan in separate requests.
+`SiteEditor` is the only code that mutates the site (add, update, remove, clear interventions); it
+always goes through `SiteType::normalize()`.
+
+`PlanAnalyzer` combines `PlanEvaluator` (engine) and `ImpactCalculator` into impact and cost.
+
+Plans are not persisted beyond the cache. For production, replace `PlanStore` with a database
+backed implementation (the interface is small: `create`, `find`, `get`, `save`).
+
+## Geodata and the import (async)
+
+1. `HomeController` geocodes the text with `NominatimGeocoder` (synchronous, fast), takes the
+   first hit, creates a `pending` plan and dispatches `ImportSite`. It redirects at once.
+2. `ImportSiteHandler` (Messenger worker) asks `OverpassClient` for the area:
+   - the ways the point lies in (`is_in` + `pivot`): leisure (playground, pitch, garden, park,
+     schoolyard), amenity (school, kindergarten, …), landuse (education, residential). Not
+     `around:1`: that measures the distance to a way's *outline*, so a point well inside a school
+     yard was never "around" its polygon and every plan fell back to the square;
+   - buildings, streets (`highway=*`) and `natural=tree` nodes within the radius (80 m, 30 to 150 m
+     via the MCP tool).
+3. `SiteImporter` projects lat/lon to plan millimetres (`LocalProjection`) and builds the site
+   JSON: the **plot** is the most specific polygon containing the point (leisure > amenity >
+   landuse, smaller wins), else a 40 m square; buildings (nearest first, at most 80) cut to the
+   reach with Sutherland-Hodgman rather than squashed by the clamp; streets as `road` objects cut
+   where they leave the reach (at most 40); at most 30 trees.
+4. `BuildingTags` classifies each building the way urban energy simulation does (SimStadt: building
+   function + IWU/TABULA archetypes such as detached house, terrace, apartment block, high-rise):
+   `building=*` and the storeys give a `BuildingType`, which suggests a `Facade` (plaster, brick,
+   window bands, cladding) and a roof; `building:material`, `building:colour`, `roof:shape` and
+   `roof:colour` from the map win. Missing colours are picked from the façade's palette, seeded by
+   the building's position, so a re-import looks the same. Heights from `height`, else
+   `building:levels` × 3 m, else 9 m.
+5. In Hamburg, `HamburgGeodata` replaces OpenStreetMap's buildings and street trees with the
+   city's own before `SiteImporter` runs (below, "Hamburg's official geodata").
+6. The handler saves the site and its `SiteConditions` and sets the plan `ready` (or `failed`),
+   then imports the **surroundings** (below). A failure there never fails the plan.
+
+### Hamburg's official geodata
+
+Inside Hamburg (a bounding box, `HamburgGeodata::covers`) three layers come from the city's
+OGC API Features (`HamburgApi`, `https://api.hamburg.de/datasets/v1`, GeoJSON or CityJSON per
+bounding box, paged, cached a day per box: `CACHE_VERSION` in the key):
+
+| Layer | Datasets | Becomes |
+|---|---|---|
+| Buildings | ALKIS `alkis_vereinfacht/GebaeudeBauwerk` (footprint, function, storeys) joined with LoD2 `lod2_hamburg/building` (measured height, roof form, eaves) by ALKIS id (LoD2 id + `BL`) | `building` objects of the site and the surroundings |
+| Street trees | Straßenbaumkataster `strassenbaumkataster/strassenbaumkataster_hh` (species, planting year, crown diameter) | `tree` objects with `diameter` (crown) and a label ("Spitz-Ahorn, 1982") |
+| Infiltration | Versickerungspotentialkarte `versickerung/versickerungspotential` | `SiteConditions` (areas with holes, cut to 100 m around the site) |
+
+- The Hamburg layers are turned into **Overpass-like elements with OpenStreetMap tags**
+  (`building=school`, `height`, `building:levels`, `roof:shape`, `diameter_crown`, …), so
+  `SiteImporter`, `SurroundingsImporter` and `BuildingTags` stay unaware of the source.
+  ALKIS functions map to `building=*` by keyword (`HamburgBuildings::FUNCTIONS`), the LoD2
+  roof codes (ALKIS Dachform) to `roof:shape`; Bauteile and buildings below ground are left out.
+- A pitched roof stands on its eaves: the eaves height is the lowest roof point over the lowest
+  ground point of the LoD2 solid. The API quantises LoD2 vertices to whole metres, which is why
+  footprints come from ALKIS, not from LoD2.
+- The register knows **street trees only**: OpenStreetMap trees more than 3 m from a registered
+  one (yards, parks) stay. It has no heights: they are estimated as 1.3 × crown + 2 m. A recorded
+  crown is used by the impact calculation instead of the 28 %-of-height estimate.
+- **Each layer falls back on its own**: when a service fails, that layer stays as OpenStreetMap
+  has it (logged as a warning); outside Hamburg nothing is asked.
+- Every layer used is a `DataSource` (title, publisher, as of, licence, URL, limitations), kept in
+  the plan's `SiteConditions`. The page shows the attribution under the view (Datenlizenz
+  Deutschland – Namensnennung 2.0, as the licence requires); `get_site_conditions` gives them to
+  the agent.
+- Infiltration classes (`Conditions\InfiltrationPotential`), best first: possible (> 5 m to
+  groundwater, any facility), likely (2 to 5 m), limited (1 to 2 m), unlikely (< 1 m). A
+  preliminary assessment, never an infiltration rate; the agent is told to say so.
+
+Not imported yet: surface sealing (the Bodenversiegelung WFS and OGC API answered 404 in
+November 2026), runoff paths and the heavy-rain hazard map.
+
+### Terrain (DGM1)
+
+Hamburg publishes its 1 m terrain model (bare earth, airborne laser scan 2022) only as one
+1.4 GB ZIP of 926 GeoTIFF tiles (1 × 1 km, float32, LZW). `HamburgElevation` reads it with
+**HTTP range requests**: the end of the ZIP for its central directory, then the local header
+and the deflated bytes of each tile it needs (about 1.7 MB); both are cached for a week.
+`ElevationTile` reads the GeoTIFF itself (one strip, LZW or none, float32, tie point and pixel
+scale; no GDAL). `Utm` projects ETRS89 to UTM 32 (Krüger series; matches PROJ to 0.1 mm).
+
+`HamburgGeodata::terrain()` samples two grids around the origin, each node the mean of the 1 m
+heights in its cell: **2 m out to ±120 m** (the site and the lawn) and **4 m out to ±360 m** (the
+real surroundings), in centimetres relative to the origin's height (`Terrain::reference`, m
+above sea level). Between 300 and 350 m the heights fade to 0, so the generic city beyond stays
+flat. Building them takes about 2 s (under a second with cached tiles), at most 4 tiles.
+
+Who uses it:
+
+- **Upright objects** (`SiteObject::UPRIGHT`: buildings, trees, walls, sails, …) get a
+  `ground` field (mm): the lowest ground along their outline, sampled every metre.
+  `SiteGrounding` sets it whenever a site is saved (import and `SiteEditor`), so whatever the
+  agent adds stands right; `ground` is not in the agent's schema. `SiteBuilder` and
+  `InterventionBuilder` raise every part of such an object by it (`Part::raisedBy`).
+- **Ground layers** (plot, roads, paving, rain gardens, permeable surfaces, planting) are parts
+  with `draped: true`; the view lays them over the terrain.
+- **The 3D view** (`terrain.js`, `TerrainField`, from `GET /plan/{id}/terrain`; 204 without
+  terrain) is loaded before the surroundings and the overlay. Within a grid the ground is
+  **linear on the two triangles of each cell** (split north-west to south-east), in PHP
+  (`TerrainGrid::heightAt`) and JS alike. The lawn is built on exactly those triangles, and a
+  draped part is cut along the grid lines and diagonals so each piece lies in one triangle: lawn,
+  plot, roads and surfaces then stay parallel at their millimetre offsets on any slope (with
+  plain subdivision they drifted by centimetres and the lawn showed through the plot). The real
+  city's buildings stand on the lowest ground under them, its streets are subdivided to 4 m,
+  its trees, the generic blocks and the city ground follow `heightAt` too. The infiltration
+  overlay is draped like a ground layer.
+- **The agent**: `get_site_conditions` adds `terrain` (`TerrainAnalysis`, on the plot's open
+  ground, buildings left out): elevation range, relief, mean slope, the direction surface water
+  runs, and up to five low spots (lower than the ring 8 m around them by ≥ 5 cm). Hollows deeper
+  than 1 m are marked "probably built": on the Brecht-Schule plot the deepest is the 3 m ramp to
+  the underground car park, which the model shows like any other ground.
+
+### Surroundings (the real city around the site)
+
+`SurroundingsLoader` imports the OSM buildings and streets out to 350 m
+(`ImportSite::SURROUNDINGS_RADIUS_METRES`) through `OverpassClient::surroundings()` and
+`SurroundingsImporter` (same `BuildingTags`; buildings that are the site's own are left out), and
+keeps them in `SurroundingsStore` (cache pool, next to the plan). They are context for the 3D view
+only: not part of the site, the agent's tools or the balance. `GET /plan/{id}/surroundings`
+(`SurroundingsController`) returns them as JSON in metres; a plan that has none yet (older plans)
+imports them on that first request. The viewer fetches them once in the background.
+
+`symfony console app:plan:reimport <id>` rebuilds a plan's site and surroundings at once (no
+worker), keeping its interventions: useful after importer changes.
+
+The plan page polls (`data-poll`) while pending and shows a clear failed state with a way back.
+
+`OverpassClient` tries several public mirrors in order (`overpass.openstreetmap.fr` first), skips
+a silent one after 12 s, and caches results per place and radius for a day (`CACHE_VERSION` in the
+key: bump it when a query changes). Public Overpass
+instances are shared and often overloaded, and they reject generic user agents: set
+`OSM_USER_AGENT` to something identifying you (also required by Nominatim's usage policy).
+
+Messenger: transport `async` on Doctrine (SQLite, `var/data_<env>.db`), no retries (the mirrors are
+the retry), failed messages go to the `failed` transport. **A worker must run**
+(`messenger:consume async`); `.symfony.local.yaml` starts it with `symfony server:start`. DBAL is
+installed only for the queue.
+
+## The agent and MCP
+
+`config/packages/ai.yaml` defines the agent `spongecity` (Anthropic, `claude-sonnet-5-5`, prompt in
+`config/prompts/spongecity.md`). The model name carries `?max_tokens=8000`: the limit covers the
+model's thinking *and* its answer, and with the platform's default of 1000 the thinking could use it
+all up, so the reply came back as a bare `ThinkingResult` and `asText()` failed ("The planning
+agent could not answer"). Its tools are the **MCP server of this same application**:
+
+- **Server** (`mcp-bundle`, `config/packages/mcp.yaml`): `/mcp` (HTTP, localhost only by default;
+  set `http.allowed_hosts` to expose it) serves `App\Mcp\SpongeCityTools`, declared with
+  `#[McpTool]`. Any MCP client (Claude Desktop, the inspector) can use it.
+- **Client**: `mcp.clients.spongecity.servers.local` points at `MCP_SERVER_URL`
+  (default `http://127.0.0.1:8000/mcp`); the agent's `tools: - mcp_server: 'spongecity.local'`
+  exposes the tools to the model with the prefix `local_`.
+
+| Tool | Does |
+|---|---|
+| `search_place` | Nominatim lookup. |
+| `load_site` | Queues the OSM import for a plan (status `pending`; poll `get_site`). |
+| `get_site` | Status, plot bounds, objects, existing buildings and trees. |
+| `list_object_types` | Types, fields, ranges, defaults. |
+| `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |
+| `set_design_storm` | Rain depth for the calculation (10 to 120 mm/h). |
+| `calculate_impact` | Metrics with bases, assumptions, warnings, cost. |
+| `get_site_conditions` | Hamburg only: terrain of the plot (elevation, slope, where water runs and collects), infiltration potential as shares of the plot with their meaning, and the sources (publisher, date, licence, limitations) of the site's official layers. |
+
+Tools are stateless: the plan id is part of every call (`PlanAssistant` prefixes each user message
+with `plan_id: …`). The system prompt tells the agent to look first, design with tools, measure
+before it claims anything, and never state a number that did not come from a tool.
+
+Because the app calls its own `/mcp` over HTTP while handling a request, the web server needs more
+than one worker (the Symfony CLI server has several).
+
+## Chat and the live UI
+
+- `POST /plan/{id}/chat` (`ChatController`) → `PlanAssistant::ask()`. The conversation is kept in
+  the session per plan (last 20 turns) so user and agent refine the design together. One turn is
+  several model calls with tools in between (40 to 60 s when the agent places interventions), so
+  the action raises PHP's time limit to 180 s.
+- `PlanWorkspace` (Live Component) renders the 3D view, the impact cards, the storm slider, the
+  planned measures and the cost table. Removing an object or changing the storm are live actions;
+  the storm persists into the plan.
+- `plan_chat_controller.js` posts the message and dispatches a `plan:changed` event on window
+  every 2.5 s while the agent works and once more when it answers; the component re-renders on that
+  event, so the user watches the design appear. The chat region is `data-live-ignore`.
+- The 3D canvas is `data-live-ignore`; a re-render only changes the `scene` value, and the
+  `configurator_viewer_controller.js` updates the scene without moving the camera.
+
+## The 3D view
+
+`SceneRenderer` (`assets/configurator/scene_renderer.js`) draws the scene JSON; frames are rendered
+on demand (after an update or while the camera moves). For an aerial site the outdoor environment
+becomes a city:
+
+- **Façades** are procedural canvas textures (`procedural_textures.js`, `ProceduralTexture::Facade*`):
+  near-white sheets tinted by the building colour, 4 × 4 window bays per repeat (12 m), each window
+  a little different (glass tone, blinds, curtains). Upright extrusions get per-wall UVs
+  (`applyUprightUVs`: u along the wall, v up from the ground), so window rows sit on the storeys of
+  every wall, and each building is shifted by whole bays so neighbours differ. Lit windows at night
+  come from a separate, coarser glow sheet (7 × 5 bays), so the lit pattern does not repeat visibly.
+- **Around the site**: the real city (`RealCity`, from the surroundings endpoint: one merged mesh per
+  façade kind, one for roofs, two for streets, street trees along carriageways), and beyond its
+  radius a generic one (`CityBlocks`: instanced perimeter blocks, or detached houses with gable roofs
+  for a `suburban` site). Flat ground, no mountains, broadleaf street trees, haze pushed back by the
+  camera's distance (`OutdoorEnvironment::setFogOffset`). Generic and context buildings standing
+  between the camera and the site sink into the ground (`fadeNearCamera`), so they never hide it;
+  they skip passes with an override material (`skipOverridePasses`), otherwise ambient occlusion
+  would draw them as ghosts. None of them cast shadows.
+- **Site conditions**: `InfiltrationOverlay` (`site_conditions.js`) draws the infiltration areas
+  (from `GET /plan/{id}/conditions`) as one translucent merged mesh 30 mm above the ground with
+  polygon offset, coloured per class (legend in `PlanWorkspace`), hidden until the "Infiltration"
+  button is pressed; the button appears only when there is something to show. Its colours are
+  saturated on purpose: at the higher tiers the composer's OutputPass tone-maps the whole frame.
+  In debug mode `configuratorShowConditions(true)` turns it on (`bin/render-loop --eval`).
+- **Models**: `garden_trees.glb` was simplified to ~40 000 triangles (see
+  `assets/configurator/models/README.md`); up to 30 OSM trees are drawn three times per frame
+  (view, shadow map, ambient occlusion).
+
+### Depth and flicker
+
+Ground layers are millimetres apart: lawn −2 mm, plot 4 mm, carriageways 7 mm, footways 10 mm,
+paving 10 mm, interventions 14 to 22 mm. To keep them apart from far away the near plane follows the
+camera's distance to its target (4 %, 0.1 to 12 m; `NEAR_PER_DISTANCE`); with a fixed 0.1 m they
+z-fought and flickered. Layers 2 mm apart or less were not enough at the edge of the view: keep new
+ground layers at least 3 mm apart, or separate them with polygon offset as `RealCity` does for its
+streets (footways over carriageways over the ground).
+
+### Quality tiers and the governor
+
+`quality_tiers.js` (low, standard, high, ultra) and `performance_governor.js`:
+
+- Desktops start at the best tier allowed: every switch rebuilds and recompiles (a hitch of about
+  0.1 s), so a capable machine should not climb into it.
+- Too slow means dropped frames: a window of 40 frames with more than 10 % late (≥ 1.5 refresh
+  intervals) steps down. A slow median alone missed 46 fps stutter.
+- Three frames in a row over 250 ms step down at once (very slow GPUs), and a frame loop that
+  restarts right after the last frame keeps measuring; otherwise a device whose every frame
+  outlasted `KEEP_RENDERING_MS` was never measured.
+- Judging pauses for 1 s after a switch and 1.5 s after new scenery arrives (built and compiled
+  with `compileAsync`): one-off work is not a reason to lower the quality.
+- Ultra renders at 1.5× (not 2×): on a retina Mac 2× cost about 2.2× the GPU time for a difference
+  SMAA mostly hides.
+
+Measured with `bin/render-loop --perf --dpr=2` ([render-loop.md](render-loop.md)) on an M4 MacBook (Brecht-Schule and Iserbrook plans,
+the page choosing the tier): 60 fps at ultra, worst frame 16.8 ms. With 2.6× the pixels (roughly
+an M1's load) it settles on standard, which holds 60 fps (worst frame 16.8 ms pinned). Not yet
+measured on a real older Mac.
+
+## Render loop
+
+`bin/render-loop <plan id or URL> [options]` renders the 3D view of a plan in Chrome on the real GPU
+and writes screenshots and a report (errors, meshes, frame times, flicker) to
+`var/render-loop/latest/`. Options, output, how to read the numbers and recipes:
+[render-loop.md](render-loop.md).
+
+## Conventions
+
+- No inline JavaScript: Stimulus controllers only. Use Stimulus `data-action`, not manual listeners.
+- No magic strings: parameter names, SKUs, object types and statuses are constants.
+- Translations in `translations/spongecity.<locale>.yaml` (domain `spongecity`); inside `<twig:…>`
+  bodies pass the domain to `|trans`.
+- Run Composer and the console through the Symfony CLI (`symfony composer …`, `symfony console …`).
+- UI: Tailwind v4 with shadcn token names, the UX Toolkit components in `templates/components/`.
+  Build CSS with `symfony console tailwind:build`.
+
+## Running it
+
+```bash
+symfony composer install
+symfony console importmap:install
+symfony console tailwind:build
+# .env.local: ANTHROPIC_API_KEY=…  OSM_USER_AGENT="YourApp contact@example.com"
+symfony server:start --no-tls      # also starts the Messenger worker
+symfony console app:plan:demo      # offline demo plan (synthetic sealed schoolyard)
+symfony console app:plan:reimport <id>   # re-import site and surroundings, keeping interventions
+bin/render-loop <id> --perf --dpr=2      # renders and frame times (installs puppeteer-core on first run)
+symfony php vendor/bin/phpunit
+```
+
+## Known limitations and next steps
+
+- Plans live in the cache pool; sessions hold the chat history. Not for production as is.
+- The plot's ground is assumed to be asphalt. Reading `surface` tags from OSM would fix parks;
+  in Hamburg the Bodenversiegelung dataset would, once its service is back.
+- LoD2 roofs are drawn as simple flat, gable or hip roofs over the footprint, not the model's own
+  roof geometry (its vertices come quantised to whole metres from the API; the glTF output is
+  precise but carries no per-building ids).
+- The terrain is drawn and given to the agent, but the impact calculation still treats the plot
+  as level: rain gardens catch the sealed area around them, not what flows downhill to them.
+  Routing runoff over the terrain (or the Fließwegekarte) is the next step.
+- Outside Hamburg the ground is flat (no terrain source).
+- The terrain model is bare earth: ramps, stairwells and light wells appear as hollows; kerbs,
+  gutters and drains are below its resolution.
+- The geocoder takes the first hit; a pick-list for ambiguous names would help.
+- Public Overpass/Nominatim instances are rate limited; self-host Overpass for reliability.
+- The chat shows the final answer only; streaming the agent's tool steps (Symfony AI
+  `onProgress`) is a natural next step. A turn runs inside the request (up to 180 s); Messenger
+  would be the place for it in production.
+- `get_site` gives the agent building centres only, not footprints, so it places interventions
+  without knowing exactly where walls are.
+- Areas mapped as multipolygon relations (some schools, parks) are not found as the plot yet: only
+  ways are.
+- The real surroundings reach 350 m; beyond that the city is generic. They live in the cache pool.
+- Lit windows do not light the ground at night.
+- Speed is measured on an M4 only (plus simulated heavier loads); older Macs are untested. On slow
+  hardware the photoreal trees and the ambient-occlusion pass are the next things to cut.
+- A flicker reported behind the Brecht-Schule site was not reproduced in renders; the likely causes
+  (street layers at one height, too little depth precision) are fixed.
