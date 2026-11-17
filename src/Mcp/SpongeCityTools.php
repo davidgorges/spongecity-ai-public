@@ -10,8 +10,8 @@ use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\DataSource;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\NominatimGeocoder;
-use App\SpongeCity\Import\ImportSite;
-use App\SpongeCity\Plan\Plan;
+use App\SpongeCity\Import\PlanImporter;
+use App\SpongeCity\Plan\PlanStatus;
 use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
@@ -23,7 +23,6 @@ use Core\Configurator\Site\SiteObject as O;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Capability\Attribute\Schema;
 use Mcp\Schema\ToolAnnotations;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * The tools the planning agent works with, exposed over MCP: geodata, the
@@ -54,7 +53,7 @@ final readonly class SpongeCityTools
         private PlanStore $plans,
         private SiteEditor $editor,
         private PlanAnalyzer $analyzer,
-        private MessageBusInterface $bus,
+        private PlanImporter $importer,
         private SiteConditionsStore $conditions,
         private TerrainStore $terrains,
         private TerrainAnalysis $terrainAnalysis = new TerrainAnalysis(),
@@ -73,7 +72,7 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * Starts rebuilding the real surroundings of a point from OpenStreetMap into the plan: the plot (the school yard, park or garden the point lies in; a 40 m square if none is mapped), buildings with heights and existing trees. This runs in the background and takes from a few seconds to a minute: the plan has status "pending" until it is "ready". Poll get_site until its status is "ready" before you plan anything. Replaces the site of the plan, planned interventions are removed. The plan's origin (0, 0) is the given point; x runs east, z south, all in millimetres.
+     * Starts rebuilding the real surroundings of a point from OpenStreetMap into the plan: the plot (the school yard, park or garden the point lies in; a 40 m square if none is mapped), buildings with heights and existing trees. This runs in the background and takes from a few seconds to a minute: the plan has status "pending", then "importing", until it is "ready" (or "failed"). Poll get_site until its status is "ready" before you plan anything. Replaces the site of the plan, planned interventions are removed. The plan's origin (0, 0) is the given point; x runs east, z south, all in millimetres.
      *
      * @return array<string, mixed>
      */
@@ -81,10 +80,12 @@ final readonly class SpongeCityTools
     public function loadSite(string $planId, float $latitude, float $longitude, int $radiusMetres = self::DEFAULT_RADIUS_METRES): array
     {
         $plan = $this->plans->get($planId);
-        $this->plans->save($plan->withStatus(Plan::STATUS_PENDING));
-        $this->bus->dispatch(new ImportSite($plan->id, $latitude, $longitude, max(self::MIN_RADIUS_METRES, min(self::MAX_RADIUS_METRES, $radiusMetres))));
+        $radius = max(self::MIN_RADIUS_METRES, min(self::MAX_RADIUS_METRES, $radiusMetres));
+        if (!$this->importer->request($plan, new GeoPoint($latitude, $longitude), $radius)) {
+            return ['status' => $plan->status->value, 'note' => 'The site is already being imported. Call get_site until its status is "ready".'];
+        }
 
-        return ['status' => Plan::STATUS_PENDING, 'note' => 'The import runs in the background. Call get_site until its status is "ready".'];
+        return ['status' => PlanStatus::Pending->value, 'note' => 'The import runs in the background. Call get_site until its status is "ready".'];
     }
 
     /**
@@ -111,7 +112,7 @@ final readonly class SpongeCityTools
 
         return [
             'plan' => $plan->id,
-            'status' => $plan->status,
+            'status' => $plan->status->value,
             'title' => $plan->title,
             'design_storm_mm_per_hour' => $plan->storm(),
             'plot_bounds_mm' => $bounds,
@@ -241,7 +242,8 @@ final readonly class SpongeCityTools
     {
         $storm = max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $millimetresPerHour));
         $plan = $this->plans->get($planId);
-        $this->plans->save($plan->withValues([...$plan->values, SpongeCityParameter::STORM => $storm]));
+        $plan->setStorm($storm);
+        $this->plans->save($plan);
 
         return $storm;
     }

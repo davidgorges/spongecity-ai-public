@@ -24,6 +24,7 @@ final readonly class RunSimulationHandler
     public function __construct(
         private PlanStore $plans,
         private SimulationStore $simulations,
+        private SimulationRun $run,
         private HamburgCityGml $cityGml,
         private SimStadtRunner $runner,
         private SimStadtResults $results,
@@ -33,36 +34,43 @@ final readonly class RunSimulationHandler
 
     public function __invoke(RunSimulation $message): void
     {
-        $plan = $this->plans->find($message->planId);
         $simulation = $this->simulations->find($message->planId, $message->workflow)
-            ?? new Simulation($message->planId, $message->workflow, Simulation::STATUS_QUEUED, $message->yearOfConstruction, new \DateTimeImmutable());
+            ?? new Simulation($message->planId, $message->workflow, $message->yearOfConstruction);
+        $plan = $this->plans->find($message->planId);
         if (null === $plan) {
-            $this->simulations->save($simulation->failed('The plan is gone.'));
+            $this->fail($simulation, 'The plan is gone.');
 
             return;
         }
-        $this->simulations->save($simulation = $simulation->withStatus(Simulation::STATUS_RUNNING));
+        $this->run->apply($simulation, SimulationRun::START);
 
         try {
             $centre = new GeoPoint($plan->latitude, $plan->longitude, $plan->title);
             // the buildings within the site's reach, as the 3D view and the impact calculation see them
             $extract = $this->cityGml->extract($centre, SiteObject::REACH / self::MILLIMETRES_PER_METRE, $message->yearOfConstruction);
             if ([] === $extract['buildings']) {
-                $this->simulations->save($simulation->failed('Hamburg\'s 3D building model has no buildings around this site.'));
+                $this->fail($simulation, 'Hamburg\'s 3D building model has no buildings around this site.');
 
                 return;
             }
-            $run = $this->runner->run($message->workflow, $extract['gml']);
-            $this->simulations->save($simulation->done(
-                $run['seconds'],
-                $this->results->summary($run['output']),
-                $this->results->buildings($run['csv'], $message->workflow, $centre),
+            $output = $this->runner->run($message->workflow, $extract['gml']);
+            $simulation->recordResults(
+                $output['seconds'],
+                $this->results->summary($output['output']),
+                $this->results->buildings($output['csv'], $message->workflow, $centre),
                 $this->assumptions($message, count($extract['buildings'])),
-            ));
+            );
+            $this->run->apply($simulation, SimulationRun::FINISH);
         } catch (\Throwable $exception) {
             $this->logger->error('SimStadt simulation failed', ['plan' => $message->planId, 'workflow' => $message->workflow->value, 'exception' => $exception]);
-            $this->simulations->save($simulation->failed($exception->getMessage()));
+            $this->fail($simulation, $exception->getMessage());
         }
+    }
+
+    private function fail(Simulation $simulation, string $reason): void
+    {
+        $simulation->recordError($reason);
+        $this->run->apply($simulation, SimulationRun::FAIL);
     }
 
     /**

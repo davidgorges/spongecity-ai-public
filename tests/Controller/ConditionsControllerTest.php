@@ -11,7 +11,6 @@ use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
 use App\SpongeCity\Plan\PlanStore;
 use Core\Configurator\Site\SiteObject as O;
-use Core\Configurator\Site\SiteType;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
 
@@ -25,9 +24,10 @@ final class ConditionsControllerTest extends WebTestCase
         $plans = $container->get(PlanStore::class);
         $plan = $plans->create('Test', 53.5513, 10.0188);
         // a 20 m plot, half of it in an area where infiltration is unlikely
-        $plans->save($plan->withValues([SiteType::PARAMETER => (string) json_encode(['objects' => [
+        $plan->replaceSite((string) json_encode(['objects' => [
             [O::TYPE => O::PLOT, O::POINTS => [[-10000, -10000], [10000, -10000], [10000, 10000], [-10000, 10000]]],
-        ]])]));
+        ]]));
+        $plans->save($plan);
         $container->get(SiteConditionsStore::class)->save($plan->id, new SiteConditions(
             [[SiteConditions::POINTS => [[-50.0, -50.0], [0.0, -50.0], [0.0, 50.0], [-50.0, 50.0]], SiteConditions::HOLES => [], SiteConditions::POTENTIAL => 'unlikely', SiteConditions::DEPTH => '0 - 1 m', SiteConditions::FACILITY => 'Versickerung unwahrscheinlich']],
             [HamburgGeodata::infiltrationSource()],

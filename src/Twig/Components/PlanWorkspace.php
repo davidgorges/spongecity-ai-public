@@ -67,7 +67,7 @@ final class PlanWorkspace
         $plan = $this->plans->get($this->planId);
         $storm = max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $this->storm));
         if ($storm !== $plan->storm()) {
-            $plan = $plan->withValues([...$plan->values, SpongeCityParameter::STORM => $storm]);
+            $plan->setStorm($storm);
             $this->plans->save($plan);
         }
 

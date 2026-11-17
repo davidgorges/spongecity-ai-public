@@ -8,7 +8,7 @@ use App\Mcp\SimStadtTools;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\SimStadt\RunSimulation;
 use App\SpongeCity\SimStadt\SimStadtWorkflow;
-use App\SpongeCity\SimStadt\Simulation;
+use App\SpongeCity\SimStadt\SimulationStatus;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
@@ -27,14 +27,14 @@ final class SimStadtToolsTest extends KernelTestCase
 
         $started = $tools->simulateBuildings($plan->id, SimStadtWorkflow::PvPotential->value, 1990);
 
-        self::assertSame(Simulation::STATUS_QUEUED, $started['status']);
+        self::assertSame(SimulationStatus::Queued->value, $started['status']);
         $transport = $container->get('messenger.transport.simstadt');
         self::assertInstanceOf(InMemoryTransport::class, $transport);
         $message = $transport->getSent()[0]->getMessage();
         self::assertInstanceOf(RunSimulation::class, $message);
         self::assertSame(1990, $message->yearOfConstruction);
 
-        self::assertSame(Simulation::STATUS_QUEUED, $tools->getBuildingSimulation($plan->id, 'pv_potential')['status']);
+        self::assertSame(SimulationStatus::Queued->value, $tools->getBuildingSimulation($plan->id, 'pv_potential')['status']);
         self::assertStringContainsString('already running', $tools->simulateBuildings($plan->id, 'pv_potential')['note'], 'one run at a time');
         self::assertSame('none', $tools->getBuildingSimulation($plan->id, 'heat_demand')['status']);
     }

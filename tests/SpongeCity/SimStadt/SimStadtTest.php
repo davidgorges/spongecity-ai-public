@@ -13,16 +13,15 @@ use App\SpongeCity\SimStadt\RunSimulationHandler;
 use App\SpongeCity\SimStadt\SimStadtResults;
 use App\SpongeCity\SimStadt\SimStadtRunner;
 use App\SpongeCity\SimStadt\SimStadtWorkflow;
-use App\SpongeCity\SimStadt\Simulation;
+use App\SpongeCity\SimStadt\SimulationStatus;
 use App\SpongeCity\SimStadt\SimulationStore;
 use PHPUnit\Framework\Attributes\Test;
-use PHPUnit\Framework\TestCase;
-use Psr\Log\NullLogger;
+use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
-final class SimStadtTest extends TestCase
+final class SimStadtTest extends KernelTestCase
 {
     private const float LATITUDE = 53.5513228;
     private const float LONGITUDE = 10.0187849;
@@ -63,25 +62,20 @@ final class SimStadtTest extends TestCase
     #[Test]
     public function runsAWorkflowForAPlanAndStoresTheResult(): void
     {
-        $cache = new ArrayAdapter();
-        $plans = new PlanStore($cache);
-        $plan = $plans->create('Brecht-Schule', self::LATITUDE, self::LONGITUDE);
-        $simulations = new SimulationStore($cache);
+        $container = static::getContainer();
+        $plan = $container->get(PlanStore::class)->create('Brecht-Schule', self::LATITUDE, self::LONGITUDE);
+        $simulations = $container->get(SimulationStore::class);
         $repository = sys_get_temp_dir().'/simstadt_test_'.bin2hex(random_bytes(4));
-        $handler = new RunSimulationHandler(
-            $plans,
-            $simulations,
-            new HamburgCityGml(self::zipServer(self::tile()), new ArrayAdapter(), 'test'),
-            new SimStadtRunner('simstadt/simstadt:cli', '', self::FIXTURES.'/fake-docker.sh', 60, $repository),
-            new SimStadtResults(),
-            new NullLogger(),
-        );
+        // the model's tile from a fixture, SimStadt from a script that writes its results
+        $container->set(HamburgCityGml::class, new HamburgCityGml(self::zipServer(self::tile()), new ArrayAdapter(), 'test'));
+        $container->set(SimStadtRunner::class, new SimStadtRunner('simstadt/simstadt:cli', '', self::FIXTURES.'/fake-docker.sh', 60, $repository));
+        $handler = $container->get(RunSimulationHandler::class);
 
         $handler(new RunSimulation($plan->id, SimStadtWorkflow::HeatDemand, 1955));
 
         $simulation = $simulations->find($plan->id, SimStadtWorkflow::HeatDemand);
         self::assertNotNull($simulation);
-        self::assertSame(Simulation::STATUS_DONE, $simulation->status, (string) $simulation->error);
+        self::assertSame(SimulationStatus::Done, $simulation->status, (string) $simulation->error);
         self::assertSame('376000 kWh / a', $simulation->summary['Yearly Heating demand']);
         self::assertCount(2, $simulation->buildings);
         self::assertStringContainsString('1 buildings', $simulation->assumptions[0], 'the far building is left out');

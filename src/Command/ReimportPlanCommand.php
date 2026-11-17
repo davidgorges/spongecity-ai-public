@@ -4,8 +4,9 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Import\ImportSite;
-use App\SpongeCity\Import\ImportSiteHandler;
+use App\SpongeCity\Import\PlanImporter;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
@@ -26,7 +27,7 @@ final class ReimportPlanCommand
 {
     public function __construct(
         private readonly PlanStore $plans,
-        private readonly ImportSiteHandler $handler,
+        private readonly PlanImporter $importer,
         private readonly SiteEditor $editor,
     ) {
     }
@@ -43,7 +44,11 @@ final class ReimportPlanCommand
         $interventions = array_values(array_filter($before, static fn (array $object): bool => in_array($object[O::TYPE] ?? null, O::INTERVENTIONS, true)));
         // buildings whose look a person corrected: found again by where they stand
         $looks = array_values(array_filter($before, static fn (array $object): bool => O::BUILDING === ($object[O::TYPE] ?? null) && O::LOOK_USER === ($object[O::LOOK] ?? null)));
-        ($this->handler)(new ImportSite($plan->id, $plan->latitude, $plan->longitude, $radius));
+        if (!$this->importer->request($plan, new GeoPoint($plan->latitude, $plan->longitude, $plan->title), $radius, now: true)) {
+            $io->error(sprintf('Plan %s is being imported right now (%s).', $plan->id, $plan->status->value));
+
+            return Command::FAILURE;
+        }
         if ([] !== $interventions) {
             $this->editor->add($plan->id, $interventions);
         }

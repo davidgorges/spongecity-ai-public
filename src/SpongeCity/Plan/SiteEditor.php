@@ -123,6 +123,7 @@ final readonly class SiteEditor
     {
         // whatever was added or moved stands on the ground there
         $siteJson = $this->grounding->ground($siteJson, $this->terrains->find($plan->id));
-        $this->plans->save($plan->withValues([...$plan->values, SiteType::PARAMETER => $siteJson]));
+        $plan->replaceSite($siteJson);
+        $this->plans->save($plan);
     }
 }

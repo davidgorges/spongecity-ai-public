@@ -22,9 +22,9 @@ final readonly class PlanStore
     ) {
     }
 
-    public function create(string $title, float $latitude, float $longitude, string $status = Plan::STATUS_READY): Plan
+    public function create(string $title, float $latitude, float $longitude, PlanStatus $status = PlanStatus::Ready): Plan
     {
-        $plan = new Plan(Uuid::v7()->toBase32(), $title, $latitude, $longitude, [], $status);
+        $plan = new Plan(Uuid::v7()->toBase32(), $title, $latitude, $longitude, status: $status);
         $this->save($plan);
 
         return $plan;

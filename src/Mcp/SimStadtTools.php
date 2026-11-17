@@ -10,6 +10,7 @@ use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\SimStadt\RunSimulation;
 use App\SpongeCity\SimStadt\SimStadtWorkflow;
 use App\SpongeCity\SimStadt\Simulation;
+use App\SpongeCity\SimStadt\SimulationStatus;
 use App\SpongeCity\SimStadt\SimulationStore;
 use Mcp\Capability\Attribute\McpTool;
 use Mcp\Schema\ToolAnnotations;
@@ -56,13 +57,13 @@ final readonly class SimStadtTools
         }
         $current = $this->simulations->find($plan->id, $type);
         if (null !== $current && $current->isActive()) {
-            return ['status' => $current->status, 'note' => 'This simulation is already running. Poll get_building_simulation.'];
+            return ['status' => $current->status->value, 'note' => 'This simulation is already running. Poll get_building_simulation.'];
         }
         $year = max(self::MIN_YEAR, min(self::MAX_YEAR, $yearOfConstruction));
-        $this->simulations->save(new Simulation($plan->id, $type, Simulation::STATUS_QUEUED, $year, new \DateTimeImmutable()));
+        $this->simulations->save(new Simulation($plan->id, $type, $year));
         $this->bus->dispatch(new RunSimulation($plan->id, $type, $year));
 
-        return ['status' => Simulation::STATUS_QUEUED, 'workflow' => $type->value, 'year_of_construction' => $year, 'note' => 'Runs in the background. Poll get_building_simulation until its status is "done".'];
+        return ['status' => SimulationStatus::Queued->value, 'workflow' => $type->value, 'year_of_construction' => $year, 'note' => 'Runs in the background. Poll get_building_simulation until its status is "done".'];
     }
 
     /**
@@ -84,7 +85,7 @@ final readonly class SimStadtTools
         }
 
         return array_filter([
-            'status' => $simulation->status,
+            'status' => $simulation->status->value,
             'workflow' => $type->value,
             'description' => $type->description(),
             'year_of_construction' => $simulation->yearOfConstruction,

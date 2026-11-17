@@ -7,7 +7,6 @@ namespace App\Command;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\SiteImporter;
 use App\SpongeCity\Plan\PlanStore;
-use Core\Configurator\Site\SiteType;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -45,7 +44,8 @@ final class CreateDemoPlanCommand extends Command
         ]);
 
         $plan = $this->plans->create($centre->label, $centre->latitude, $centre->longitude);
-        $this->plans->save($plan->withValues([SiteType::PARAMETER => $import->siteJson]));
+        $plan->replaceSite($import->siteJson);
+        $this->plans->save($plan);
         $io->success(sprintf('Plan %s: /plan/%s', $plan->id, $plan->id));
 
         return Command::SUCCESS;

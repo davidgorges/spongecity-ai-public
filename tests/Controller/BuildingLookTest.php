@@ -23,9 +23,10 @@ final class BuildingLookTest extends KernelTestCase
         $container = static::getContainer();
         $plans = $container->get(PlanStore::class);
         $plan = $plans->create('Look', 52.52, 13.40);
-        $plans->save($plan->withValues([SiteType::PARAMETER => (new SiteType())->normalize(['objects' => [
+        $plan->replaceSite((new SiteType())->normalize(['objects' => [
             [O::TYPE => O::BUILDING, O::POINTS => [[0, 0], [10000, 0], [10000, 10000], [0, 10000]], O::HEIGHT => 20000, O::FACADE => 'ribbon'],
-        ]])]));
+        ]]));
+        $plans->save($plan);
         $tools = $container->get(SpongeCityTools::class);
         $building = $tools->getSite($plan->id)['existing_buildings'][0];
         self::assertSame('ribbon', $building[O::FACADE]);
@@ -45,9 +46,10 @@ final class BuildingLookTest extends KernelTestCase
         $plans = $container->get(PlanStore::class);
         $plan = $plans->create('Roof', 53.55, 10.02);
         $model = [O::MODEL_ROOFS => [[[0, 9000, 0], [10000, 9000, 0], [10000, 12000, 5000]]], O::MODEL_WALLS => []];
-        $plans->save($plan->withValues([SiteType::PARAMETER => (new SiteType())->normalize(['objects' => [
+        $plan->replaceSite((new SiteType())->normalize(['objects' => [
             [O::TYPE => O::BUILDING, O::POINTS => [[0, 0], [10000, 0], [10000, 10000], [0, 10000]], O::HEIGHT => 9000, O::ROOF => 'monopitch', O::MODEL => $model],
-        ]])]));
+        ]]));
+        $plans->save($plan);
         $editor = $container->get(SiteEditor::class);
         $id = (string) $editor->site($plan->id)->ofType(O::BUILDING)[0][O::ID];
 
