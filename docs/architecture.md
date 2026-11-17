@@ -13,14 +13,15 @@ Stimulus, Tailwind v4, three.js. The 3D engine and UI kit come from the `sf_conf
  Browser                              Symfony app                                External
  ───────                              ───────────                                ────────
  home form ── POST / ───────────────► HomeController ── geocode ───────────────► Nominatim
-                                         │  create Plan(pending), dispatch
+                                         │  create Plan(pending), PlanImporter → dispatch
                                          ▼
                                       Messenger (async, Doctrine/SQLite)
                                          │  worker: messenger:consume async
                                          ▼
-                                      ImportSiteHandler ── Overpass query ─────► Overpass mirrors
-                                         │  HamburgGeodata (in Hamburg) ──────────► api.hamburg.de (OGC API)
-                                         │  SiteImporter → site JSON, SiteConditions
+                                      ImportSiteHandler: PlanImport start → steps → complete
+                                         │  FetchOpenStreetMap ───────────────────► Overpass mirrors
+                                         │  ApplyOfficialLayers (MapLayer, in Hamburg) ► api.hamburg.de (OGC API)
+                                         │  BuildSite, ImportTerrain, CollectSiteConditions, GroundSite
                                          ▼
  plan page ◄── Live Component ──────  PlanStore (cache.app)  ◄───────────┐
   (3D view, impact, list)             Plan: values + status               │ reads/writes
@@ -127,8 +128,9 @@ This is a planning-level estimate, not a simulation. Keep new rules in `GroundCl
 
 ## Plans and state
 
-`App\SpongeCity\Plan\Plan` is an immutable value: id, title, location, configuration `values`
-(`storm`, `site`) and a `status` (`pending` → `ready` | `failed`). `PlanStore` keeps plans in the
+`App\SpongeCity\Plan\Plan` is an entity: id, title, location, configuration `values` (`storm`,
+`site`, changed through `replaceSite()` and `setStorm()`) and a `PlanStatus`, which only the
+`PlanImport` state machine moves (below). `PlanStore` keeps plans in the
 application cache pool (`cache.app`), with no database entities. This is deliberate for the demo:
 the browser and the MCP tools read and write the same plan in separate requests.
 `SiteEditor` is the only code that mutates the site (add, update, remove, clear interventions); it
@@ -136,21 +138,49 @@ always goes through `SiteType::normalize()`.
 
 `PlanAnalyzer` combines `PlanEvaluator` (engine) and `ImpactCalculator` into impact and cost.
 
+### The import as a state machine (`PlanImport`)
+
+A Symfony Workflow state machine, defined in its class (`#[AsWorkflow]`, a `#[Transition]` per
+constant, the places from the `PlanStatus` enum; `symfony console workflow:dump plan_import`):
+
+```
+pending ──start──► importing ──complete──► ready
+   │                   │                     │
+   └──────fail─────────┴──► failed           │
+           ▲                  │              │
+           └── request ◄──────┴──────────────┘   (request: back to pending)
+```
+
+- `PlanImporter::request()` is the one way in (home page, `load_site`, `app:plan:reimport`): a new
+  plan is pending already, a ready or failed one is requested again, one being imported is left
+  alone (`load_site` says so).
+- The worker applies `start` (a second worker for the same plan finds it importing and stops),
+  then `complete` with the new site, or `fail`.
+- `PlanImport::store()` (`#[AsEnteredListener]`) saves the plan in every status it enters: the
+  page and the agent poll it. `ImportSurroundings` (`#[AsCompletedListener]` on `complete`)
+  imports the surroundings once the site is in place.
+
+SimStadt runs have their own state machine, `SimulationRun` (`queued → running → done | failed`),
+built the same way.
+
 Plans are not persisted beyond the cache. For production, replace `PlanStore` with a database
 backed implementation (the interface is small: `create`, `find`, `get`, `save`).
 
 ## Geodata and the import (async)
 
 1. `HomeController` geocodes the text with `NominatimGeocoder` (synchronous, fast), takes the
-   first hit, creates a `pending` plan and dispatches `ImportSite`. It redirects at once.
-2. `ImportSiteHandler` (Messenger worker) asks `OverpassClient` for the area:
+   first hit, creates a `pending` plan and has `PlanImporter` dispatch `ImportSite`. It redirects
+   at once.
+2. `ImportSiteHandler` (Messenger worker) runs every `SiteImportStep` (a tagged interface,
+   `#[AutowireIterator]`, ordered by `#[AsTaggedItem(priority)]`), handing a `SiteImportContext`
+   from one to the next. `FetchOpenStreetMap` asks `OverpassClient` for the area:
    - the ways the point lies in (`is_in` + `pivot`): leisure (playground, pitch, garden, park,
      schoolyard), amenity (school, kindergarten, …), landuse (education, residential). Not
      `around:1`: that measures the distance to a way's *outline*, so a point well inside a school
      yard was never "around" its polygon and every plan fell back to the square;
    - buildings, streets (`highway=*`) and `natural=tree` nodes within the radius (80 m, 30 to 150 m
      via the MCP tool).
-3. `SiteImporter` projects lat/lon to plan millimetres (`LocalProjection`) and builds the site
+3. `BuildSite`: `SiteImporter` projects lat/lon to plan millimetres (`LocalProjection`) and builds the site
    JSON: the **plot** is the most specific polygon containing the point (leisure > amenity >
    landuse, smaller wins), else a 40 m square; buildings (nearest first, at most 80) cut to the
    reach with Sutherland-Hodgman rather than squashed by the clamp; streets as `road` objects cut
@@ -162,22 +192,26 @@ backed implementation (the interface is small: `create`, `find`, `get`, `save`).
    `roof:colour` from the map win. Missing colours are picked from the façade's palette, seeded by
    the building's position, so a re-import looks the same. Heights from `height`, else
    `building:levels` × 3 m, else 9 m.
-5. In Hamburg, `HamburgGeodata` replaces OpenStreetMap's buildings and street trees with the
-   city's own before `SiteImporter` runs (below, "Hamburg's official geodata").
-6. The handler saves the site and its `SiteConditions` and sets the plan `ready` (or `failed`),
-   then imports the **surroundings** (below). A failure there never fails the plan.
+5. Before that, `ApplyOfficialLayers` has `MapLayers` apply every `MapLayer` (a tagged
+   interface) that covers the area: in Hamburg, the city's own buildings and street trees replace
+   OpenStreetMap's (below, "Hamburg's official geodata"). A layer whose service fails is skipped,
+   and that kind of element stays as OpenStreetMap has it.
+6. `ImportTerrain` and `CollectSiteConditions` store the ground and what official data says
+   about it, with the sources of every layer; `GroundSite` puts the objects onto the terrain.
+7. The handler completes the import with the new site (or fails it when a step throws); the
+   **surroundings** (below) follow on `complete`. A failure there never fails the plan.
 
 ### Hamburg's official geodata
 
-Inside Hamburg (a bounding box, `HamburgGeodata::covers`) three layers come from the city's
+Inside Hamburg (a bounding box, `Hamburg::covers`) three layers come from the city's
 OGC API Features (`HamburgApi`, `https://api.hamburg.de/datasets/v1`, GeoJSON or CityJSON per
 bounding box, paged, cached a day per box: `CACHE_VERSION` in the key):
 
 | Layer | Datasets | Becomes |
 |---|---|---|
-| Buildings | ALKIS `alkis_vereinfacht/GebaeudeBauwerk` (footprint, function, storeys) joined with LoD2 `lod2_hamburg/building` (measured height, roof form, eaves) by ALKIS id (LoD2 id + `BL`) | `building` objects of the site and the surroundings |
-| Street trees | Straßenbaumkataster `strassenbaumkataster/strassenbaumkataster_hh` (species, planting year, crown diameter), heights from the 3D Straßenbaumkataster (laser scan) | `tree` objects with `diameter` (crown), measured `height` and a label ("Spitz-Ahorn, 1982") |
-| Infiltration | Versickerungspotentialkarte `versickerung/versickerungspotential` | `SiteConditions` (areas with holes, cut to 100 m around the site) |
+| Buildings (`HamburgBuildingLayer`) | ALKIS `alkis_vereinfacht/GebaeudeBauwerk` (footprint, function, storeys) joined with LoD2 `lod2_hamburg/building` (measured height, roof form, eaves) by ALKIS id (LoD2 id + `BL`) | `building` objects of the site and the surroundings |
+| Street trees (`HamburgTreeLayer`, the site only) | Straßenbaumkataster `strassenbaumkataster/strassenbaumkataster_hh` (species, planting year, crown diameter), heights from the 3D Straßenbaumkataster (laser scan) | `tree` objects with `diameter` (crown), measured `height` and a label ("Spitz-Ahorn, 1982") |
+| Infiltration (`HamburgInfiltration`) | Versickerungspotentialkarte `versickerung/versickerungspotential` | `SiteConditions` (areas with holes, cut to 100 m around the site) |
 
 - The Hamburg layers are turned into **Overpass-like elements with OpenStreetMap tags**
   (`building=school`, `height`, `building:levels`, `roof:shape`, `diameter_crown`, …), so
@@ -260,7 +294,7 @@ and the deflated bytes of each tile it needs (about 1.7 MB); both are cached for
 `ElevationTile` reads the GeoTIFF itself (one strip, LZW or none, float32, tie point and pixel
 scale; no GDAL). `Utm` projects ETRS89 to UTM 32 (Krüger series; matches PROJ to 0.1 mm).
 
-`HamburgGeodata::terrain()` samples two grids around the origin, each node the mean of the 1 m
+`HamburgTerrain::around()` samples two grids around the origin, each node the mean of the 1 m
 heights in its cell: **2 m out to ±120 m** (the site and the lawn) and **4 m out to ±360 m** (the
 real surroundings), in centimetres relative to the origin's height (`Terrain::reference`, m
 above sea level). Between 300 and 350 m the heights fade to 0, so the generic city beyond stays
@@ -304,7 +338,7 @@ imports them on that first request. The viewer fetches them once in the backgrou
 `symfony console app:plan:reimport <id>` rebuilds a plan's site and surroundings at once (no
 worker), keeping its interventions: useful after importer changes.
 
-The plan page polls (`data-poll`) while pending and shows a clear failed state with a way back.
+The plan page polls (`data-poll`) while pending or importing and shows a clear failed state with a way back.
 
 `OverpassClient` tries several public mirrors in order (`overpass.openstreetmap.fr` first), skips
 a silent one after 30 s (under load they take 20 s even for small queries), and caches results per place and radius for a day (`CACHE_VERSION` in the
@@ -335,7 +369,7 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | Tool | Does |
 |---|---|
 | `search_place` | Nominatim lookup. |
-| `load_site` | Queues the OSM import for a plan (status `pending`; poll `get_site`). |
+| `load_site` | Queues the OSM import for a plan (status `pending`, then `importing`; poll `get_site`). |
 | `get_site` | Status, plot bounds, objects, existing buildings and trees. |
 | `list_object_types` | Types, fields, ranges, defaults. |
 | `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |

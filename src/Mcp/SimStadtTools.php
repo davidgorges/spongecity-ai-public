@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Mcp;
 
 use App\SpongeCity\Geo\GeoPoint;
-use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
+use App\SpongeCity\Geo\Hamburg\Hamburg;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\SimStadt\RunSimulation;
 use App\SpongeCity\SimStadt\SimStadtWorkflow;
@@ -34,7 +34,6 @@ final readonly class SimStadtTools
     public function __construct(
         private PlanStore $plans,
         private SimulationStore $simulations,
-        private HamburgGeodata $hamburg,
         private MessageBusInterface $bus,
     ) {
     }
@@ -52,7 +51,7 @@ final readonly class SimStadtTools
         if (null === $type) {
             return ['error' => sprintf('Unknown workflow "%s".', $workflow), 'workflows' => self::workflows()];
         }
-        if (!$this->hamburg->covers(new GeoPoint($plan->latitude, $plan->longitude))) {
+        if (!Hamburg::covers(new GeoPoint($plan->latitude, $plan->longitude))) {
             return ['error' => 'Building simulations need Hamburg\'s 3D building model: this plan lies outside Hamburg.'];
         }
         $current = $this->simulations->find($plan->id, $type);

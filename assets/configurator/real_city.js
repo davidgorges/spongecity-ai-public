@@ -39,7 +39,7 @@ export class RealCity {
     static TREE_SPACING = 20;
     static TREE_SETBACK = 2.5;
     static MAX_TREES = 450;
-    /** streets follow the terrain's coarse grid out here (HamburgGeodata::COARSE_SPACING_METRES) */
+    /** streets follow the terrain's coarse grid out here (HamburgTerrain::COARSE_SPACING_METRES) */
     static DRAPE_EDGE = 4;
 
     #group = new THREE.Group();

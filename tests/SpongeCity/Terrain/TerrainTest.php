@@ -6,7 +6,7 @@ namespace App\Tests\SpongeCity\Terrain;
 
 use App\SpongeCity\Geo\Hamburg\ElevationTile;
 use App\SpongeCity\Geo\Hamburg\HamburgElevation;
-use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
+use App\SpongeCity\Geo\Hamburg\HamburgTerrain;
 use App\SpongeCity\Geo\Utm;
 use App\SpongeCity\Terrain\SiteGrounding;
 use App\SpongeCity\Terrain\Terrain;
@@ -159,7 +159,7 @@ final class TerrainTest extends TestCase
             return new TerrainGrid(-$half, -$half, $spacing, $n, $n, $heights);
         };
 
-        return new Terrain(5.0, $grid(60, 2), $grid(120, 4), HamburgGeodata::terrainSource());
+        return new Terrain(5.0, $grid(60, 2), $grid(120, 4), HamburgTerrain::source());
     }
 
     /**

@@ -10,9 +10,12 @@ use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\Hamburg\Hamburg3dTiles;
 use App\SpongeCity\Geo\Hamburg\HamburgApi;
 use App\SpongeCity\Geo\Hamburg\HamburgBuildings;
-use App\SpongeCity\Geo\Hamburg\HamburgElevation;
-use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
+use App\SpongeCity\Geo\Hamburg\HamburgBuildingLayer;
+use App\SpongeCity\Geo\Hamburg\HamburgInfiltration;
+use App\SpongeCity\Geo\Hamburg\HamburgTreeLayer;
 use App\SpongeCity\Geo\Hamburg\HamburgTrees;
+use App\SpongeCity\Geo\MapArea;
+use App\SpongeCity\Geo\MapLayers;
 use App\SpongeCity\Geo\SiteImporter;
 use Core\Configurator\Scenery\Building;
 use Core\Configurator\Site\BuildingType;
@@ -26,10 +29,10 @@ use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 
 /**
- * The Hamburg layers against answers shaped like api.hamburg.de's (ALKIS, LoD2 CityJSON,
+ * The Hamburg map layers and infiltration map against answers shaped like api.hamburg.de's (ALKIS, LoD2 CityJSON,
  * Straßenbaumkataster, Versickerungspotentialkarte), around the Brecht-Schule.
  */
-final class HamburgGeodataTest extends TestCase
+final class HamburgLayersTest extends TestCase
 {
     private const float LATITUDE = 53.5513;
     private const float LONGITUDE = 10.0188;
@@ -49,8 +52,8 @@ final class HamburgGeodataTest extends TestCase
             // the same tree as the registered one, mapped a metre off
             ['type' => 'node', 'lat' => self::LATITUDE - 0.0003 + 0.00001, 'lon' => self::LONGITUDE, 'tags' => ['natural' => 'tree']],
         ];
-        [$elements, $sources] = $this->geodata()->site(new GeoPoint(self::LATITUDE, self::LONGITUDE), $osm, 80);
-        $import = (new SiteImporter())->import(new GeoPoint(self::LATITUDE, self::LONGITUDE, 'Test'), $elements);
+        $map = $this->layers()->apply($osm, MapArea::site(new GeoPoint(self::LATITUDE, self::LONGITUDE), 80));
+        $import = (new SiteImporter())->import(new GeoPoint(self::LATITUDE, self::LONGITUDE, 'Test'), $map->elements);
         $objects = json_decode((new SiteType())->normalize($import->siteJson), true, flags: \JSON_THROW_ON_ERROR)['objects'];
 
         $buildings = array_values(array_filter($objects, static fn (array $o): bool => O::BUILDING === $o[O::TYPE]));
@@ -71,29 +74,28 @@ final class HamburgGeodataTest extends TestCase
         self::assertSame(7000, $registered[O::DIAMETER]);
         self::assertSame(14800, $registered[O::HEIGHT], 'measured by the laser scan (3D street tree register), not estimated from the crown');
 
-        self::assertSame([HamburgGeodata::SOURCE_BUILDINGS, HamburgGeodata::SOURCE_TREES], array_map(static fn ($s): string => $s->key, $sources));
+        self::assertSame([HamburgBuildingLayer::SOURCE, HamburgTreeLayer::SOURCE], array_map(static fn ($s): string => $s->key, $map->sources));
     }
 
     #[Test]
     public function keepsOpenStreetMapWhenAServiceFails(): void
     {
-        $geodata = $this->geodata(failing: HamburgBuildings::DATASET_ALKIS);
         $osm = [$this->way(['building' => 'yes'], 3)];
 
-        [$elements, $sources] = $geodata->site(new GeoPoint(self::LATITUDE, self::LONGITUDE), $osm, 80);
+        $map = $this->layers(failing: HamburgBuildings::DATASET_ALKIS)->apply($osm, MapArea::site(new GeoPoint(self::LATITUDE, self::LONGITUDE), 80));
 
-        self::assertContains($osm[0], $elements);
-        $tree = array_values(array_filter($elements, static fn (array $e): bool => HamburgTrees::SOURCE === ($e['tags']['source'] ?? null)))[0];
+        self::assertContains($osm[0], $map->elements);
+        $tree = array_values(array_filter($map->elements, static fn (array $e): bool => HamburgTrees::SOURCE === ($e['tags']['source'] ?? null)))[0];
         self::assertSame(HamburgTrees::HEIGHT_MEASURED, $tree['tags'][HamburgTrees::TAG_HEIGHT_SOURCE]);
-        self::assertSame([HamburgGeodata::SOURCE_TREES], array_map(static fn ($s): string => $s->key, $sources));
+        self::assertSame([HamburgTreeLayer::SOURCE], array_map(static fn ($s): string => $s->key, $map->sources));
     }
 
     #[Test]
     public function estimatesTreeHeightsWhenThe3dLayerIsDown(): void
     {
-        [$elements] = $this->geodata(failing: 'gdi3d')->site(new GeoPoint(self::LATITUDE, self::LONGITUDE), [], 80);
+        $map = $this->layers(failing: 'gdi3d')->apply([], MapArea::site(new GeoPoint(self::LATITUDE, self::LONGITUDE), 80));
 
-        $tree = array_values(array_filter($elements, static fn (array $e): bool => HamburgTrees::SOURCE === ($e['tags']['source'] ?? null)))[0];
+        $tree = array_values(array_filter($map->elements, static fn (array $e): bool => HamburgTrees::SOURCE === ($e['tags']['source'] ?? null)))[0];
         self::assertSame((string) HamburgTrees::heightFromCrown(7), $tree['tags']['height']);
         self::assertSame(HamburgTrees::HEIGHT_ESTIMATED, $tree['tags'][HamburgTrees::TAG_HEIGHT_SOURCE]);
     }
@@ -103,17 +105,29 @@ final class HamburgGeodataTest extends TestCase
     {
         $osm = [$this->way(['building' => 'yes'], 3)];
 
-        [$elements, $sources] = $this->geodata()->site(new GeoPoint(52.52, 13.40), $osm, 80);
+        $map = $this->layers()->apply($osm, MapArea::site(new GeoPoint(52.52, 13.40), 80));
 
-        self::assertSame($osm, $elements);
-        self::assertSame([], $sources);
+        self::assertSame($osm, $map->elements);
+        self::assertSame([], $map->sources);
         self::assertSame([], $this->requested);
+        self::assertSame([], (new HamburgInfiltration($this->api(), new NullLogger(), new ArrayAdapter()))->around(new GeoPoint(52.52, 13.40), 100)->infiltration);
+    }
+
+    #[Test]
+    public function aroundTheSiteOnlyTheBuildingsAreReplaced(): void
+    {
+        $osm = [['type' => 'node', 'lat' => self::LATITUDE + 0.0002, 'lon' => self::LONGITUDE, 'tags' => ['natural' => 'tree']]];
+
+        $map = $this->layers()->apply($osm, MapArea::surroundings(new GeoPoint(self::LATITUDE, self::LONGITUDE), 350));
+
+        self::assertSame([HamburgBuildingLayer::SOURCE], array_map(static fn ($s): string => $s->key, $map->sources));
+        self::assertContains($osm[0], $map->elements);
     }
 
     #[Test]
     public function mapsTheInfiltrationPotentialAroundTheSite(): void
     {
-        $conditions = $this->geodata()->conditions(new GeoPoint(self::LATITUDE, self::LONGITUDE), 100);
+        $conditions = (new HamburgInfiltration($this->api(), new NullLogger(), new ArrayAdapter()))->around(new GeoPoint(self::LATITUDE, self::LONGITUDE), 100);
 
         self::assertCount(2, $conditions->infiltration);
         self::assertSame(InfiltrationPotential::Possible->value, $conditions->infiltration[0][SiteConditions::POTENTIAL]);
@@ -123,7 +137,7 @@ final class HamburgGeodataTest extends TestCase
         self::assertSame(100.0, max($xs));
         self::assertCount(1, $conditions->infiltration[0][SiteConditions::HOLES]);
         $sources = $conditions->sources;
-        self::assertSame(HamburgGeodata::SOURCE_INFILTRATION, end($sources)->key);
+        self::assertSame(HamburgInfiltration::SOURCE, end($sources)->key);
 
         // a 20 m square plot: the west half lies in the unlikely area (the hole), the rest in the possible one
         $shares = $conditions->infiltrationShares([[-10000, -10000], [10000, -10000], [10000, 10000], [-10000, 10000]]);
@@ -131,9 +145,25 @@ final class HamburgGeodataTest extends TestCase
         self::assertEqualsWithDelta(0.5, $shares[InfiltrationPotential::Possible->value], 0.05);
     }
 
-    private function geodata(?string $failing = null): HamburgGeodata
+    /**
+     * The buildings, then the trees, as the container orders them.
+     */
+    private function layers(?string $failing = null): MapLayers
     {
-        $client = new MockHttpClient(function (string $method, string $url) use ($failing): MockResponse {
+        $api = $this->api($failing);
+        $tiles = new Hamburg3dTiles($this->client($failing), new ArrayAdapter(), 'test');
+
+        return new MapLayers([new HamburgBuildingLayer(new HamburgBuildings($api)), new HamburgTreeLayer(new HamburgTrees($api, $tiles))], new NullLogger());
+    }
+
+    private function api(?string $failing = null): HamburgApi
+    {
+        return new HamburgApi($this->client($failing), new ArrayAdapter(), 'test');
+    }
+
+    private function client(?string $failing): MockHttpClient
+    {
+        return new MockHttpClient(function (string $method, string $url) use ($failing): MockResponse {
             $this->requested[] = $url;
             if (null !== $failing && str_contains($url, '/'.$failing.'/')) {
                 return new MockResponse('', ['http_code' => 503]);
@@ -146,7 +176,7 @@ final class HamburgGeodataTest extends TestCase
                 return new MockResponse(self::i3dm([['Baumnummer' => 'N160-3-1', 'Hoehe_aus_ALS' => 14.8], ['Baumnummer' => 'X-1', 'Hoehe_aus_ALS' => 9.0]]));
             }
 
-            if (str_contains($url, '/'.HamburgGeodata::DATASET_INFILTRATION.'/')) {
+            if (str_contains($url, '/'.HamburgInfiltration::DATASET.'/')) {
                 // read a feature at a time: honour offset and limit
                 parse_str((string) parse_url($url, \PHP_URL_QUERY), $query);
                 $all = $this->infiltration();
@@ -158,13 +188,10 @@ final class HamburgGeodataTest extends TestCase
                 str_contains($url, '/'.HamburgBuildings::DATASET_ALKIS.'/') => $this->alkis(),
                 str_contains($url, '/'.HamburgBuildings::DATASET_LOD2.'/') => $this->lod2(),
                 str_contains($url, '/'.HamburgTrees::DATASET.'/') => $this->trees(),
-                str_contains($url, '/'.HamburgGeodata::DATASET_INFILTRATION.'/') => $this->infiltration(),
+                str_contains($url, '/'.HamburgInfiltration::DATASET.'/') => $this->infiltration(),
                 default => [],
             }));
         });
-        $api = new HamburgApi($client, new ArrayAdapter(), 'test');
-
-        return new HamburgGeodata($api, new HamburgBuildings($api), new HamburgTrees($api, new Hamburg3dTiles($client, new ArrayAdapter(), 'test')), new HamburgElevation($client, new ArrayAdapter(), 'test'), new NullLogger(), new ArrayAdapter());
     }
 
     /**

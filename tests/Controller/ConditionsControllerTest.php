@@ -8,7 +8,7 @@ use App\Controller\Plan\ConditionsController;
 use App\Mcp\SpongeCityTools;
 use App\SpongeCity\Conditions\SiteConditions;
 use App\SpongeCity\Conditions\SiteConditionsStore;
-use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
+use App\SpongeCity\Geo\Hamburg\HamburgInfiltration;
 use App\SpongeCity\Plan\PlanStore;
 use Core\Configurator\Site\SiteObject as O;
 use PHPUnit\Framework\Attributes\Test;
@@ -30,7 +30,7 @@ final class ConditionsControllerTest extends WebTestCase
         $plans->save($plan);
         $container->get(SiteConditionsStore::class)->save($plan->id, new SiteConditions(
             [[SiteConditions::POINTS => [[-50.0, -50.0], [0.0, -50.0], [0.0, 50.0], [-50.0, 50.0]], SiteConditions::HOLES => [], SiteConditions::POTENTIAL => 'unlikely', SiteConditions::DEPTH => '0 - 1 m', SiteConditions::FACILITY => 'Versickerung unwahrscheinlich']],
-            [HamburgGeodata::infiltrationSource()],
+            [HamburgInfiltration::source()],
         ));
 
         $client->request('GET', $container->get('router')->generate(ConditionsController::ROUTE, ['id' => $plan->id]));

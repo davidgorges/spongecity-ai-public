@@ -4,71 +4,56 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Import;
 
-use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\GeoPoint;
-use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
-use App\SpongeCity\Geo\OverpassClient;
-use App\SpongeCity\Geo\SiteImporter;
 use App\SpongeCity\Plan\PlanImport;
 use App\SpongeCity\Plan\PlanStore;
-use App\SpongeCity\Terrain\SiteGrounding;
-use App\SpongeCity\Terrain\TerrainStore;
-use Core\Configurator\Site\SiteType;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 
+/**
+ * Imports a plan's site in a worker: takes the plan up, runs every SiteImportStep, then
+ * completes the import with the new site (or fails it, and the plan shows an error).
+ */
 #[AsMessageHandler]
 final readonly class ImportSiteHandler
 {
+    /**
+     * @param iterable<SiteImportStep> $steps
+     */
     public function __construct(
-        private OverpassClient $overpass,
-        private SiteImporter $importer,
         private PlanStore $plans,
-        private LoggerInterface $logger,
-        private HamburgGeodata $hamburg,
-        private SiteConditionsStore $conditions,
-        private TerrainStore $terrains,
         private PlanImport $import,
-        private SiteGrounding $grounding = new SiteGrounding(),
+        #[AutowireIterator(SiteImportStep::class)]
+        private iterable $steps,
+        private LoggerInterface $logger,
     ) {
     }
 
     public function __invoke(ImportSite $message): void
     {
-        $plan = $this->plans->find($message->planId);
-        if (null === $plan) {
-            throw new UnrecoverableMessageHandlingException(sprintf('Plan "%s" is gone.', $message->planId));
-        }
+        $plan = $this->plans->find($message->planId)
+            ?? throw new UnrecoverableMessageHandlingException(sprintf('Plan "%s" is gone.', $message->planId));
         if (!$this->import->can($plan, PlanImport::START)) {
             return; // not requested, or another worker has it
         }
         $this->import->apply($plan, PlanImport::START);
 
+        $context = new SiteImportContext($plan->id, new GeoPoint($message->latitude, $message->longitude, $plan->title), $message->radiusMetres);
         try {
-            $centre = new GeoPoint($message->latitude, $message->longitude, $plan->title);
-            // in Hamburg, the city's own buildings and street trees replace OpenStreetMap's (each layer falls back on its own)
-            [$elements, $sources] = $this->hamburg->site($centre, $this->overpass->around($centre, $message->radiusMetres), $message->radiusMetres);
-            $import = $this->importer->import($centre, $elements);
+            foreach ($this->steps as $step) {
+                $step->process($context);
+            }
         } catch (\Throwable $exception) {
-            $this->logger->error('OpenStreetMap import failed', ['plan' => $plan->id, 'exception' => $exception]);
+            $this->logger->error('Site import failed', ['plan' => $plan->id, 'step' => isset($step) ? $step::class : null, 'exception' => $exception]);
             $this->import->apply($plan, PlanImport::FAIL);
 
             throw $exception;
         }
 
-        // the ground (terrain model): upright objects stand on it, the view drapes the rest over it
-        $terrain = $this->hamburg->terrain($centre);
-        $this->terrains->save($plan->id, $terrain);
-        if (null !== $terrain) {
-            $sources[] = $terrain->source;
-        }
-        // what official data says about the ground (infiltration potential), with the sources of every layer
-        $this->conditions->save($plan->id, $this->hamburg->conditions($centre, ImportSite::CONDITIONS_RADIUS_METRES, $sources));
-        // normalised now, so every object has its id from the start (the agent addresses buildings by it)
-        $siteJson = $this->grounding->ground((new SiteType())->normalize($import->siteJson), $terrain);
         $plan->relocate($message->latitude, $message->longitude);
-        $plan->replaceSite($siteJson);
+        $plan->replaceSite($context->siteJson);
         $this->import->apply($plan, PlanImport::COMPLETE);
     }
 }

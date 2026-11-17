@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Geo;
 
-use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
 use App\SpongeCity\Import\ImportSite;
 use App\SpongeCity\Plan\Plan;
 use Core\Configurator\Site\Site;
@@ -23,7 +22,7 @@ final readonly class SurroundingsLoader
         private SurroundingsImporter $importer,
         private SurroundingsStore $store,
         private LoggerInterface $logger,
-        private HamburgGeodata $hamburg,
+        private MapLayers $layers,
     ) {
     }
 
@@ -40,8 +39,9 @@ final readonly class SurroundingsLoader
         }
         try {
             $centre = new GeoPoint($plan->latitude, $plan->longitude, $plan->title);
-            $elements = $this->hamburg->surroundings($centre, $this->overpass->surroundings($centre, ImportSite::SURROUNDINGS_RADIUS_METRES), ImportSite::SURROUNDINGS_RADIUS_METRES);
-            $surroundings = $this->importer->import($centre, $elements, Site::fromJson($plan->siteJson()), ImportSite::SURROUNDINGS_RADIUS_METRES);
+            // a city's own buildings in place of OpenStreetMap's, where it has them
+            $map = $this->layers->apply($this->overpass->surroundings($centre, ImportSite::SURROUNDINGS_RADIUS_METRES), MapArea::surroundings($centre, ImportSite::SURROUNDINGS_RADIUS_METRES));
+            $surroundings = $this->importer->import($centre, $map->elements, Site::fromJson($plan->siteJson()), ImportSite::SURROUNDINGS_RADIUS_METRES);
         } catch (\Throwable $exception) {
             $this->logger->warning('OpenStreetMap surroundings could not be imported', ['plan' => $plan->id, 'exception' => $exception]);
 
