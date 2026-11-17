@@ -4,40 +4,31 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Terrain;
 
-use Psr\Cache\CacheItemPoolInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use App\SpongeCity\CacheStore;
 
 /**
  * The terrain of each plan, next to the plan in the application cache: imported
  * with the site, read by the site editor, the agent's tools and the 3D view.
+ *
+ * @extends CacheStore<Terrain>
  */
-final readonly class TerrainStore
+final readonly class TerrainStore extends CacheStore
 {
     private const string KEY_PREFIX = 'spongecity_terrain_';
 
-    public function __construct(
-        #[Autowire(service: 'cache.app')]
-        private CacheItemPoolInterface $pool,
-    ) {
+    protected function type(): string
+    {
+        return Terrain::class;
     }
 
     public function find(string $planId): ?Terrain
     {
-        $item = $this->pool->getItem(self::KEY_PREFIX.$planId);
-        $terrain = $item->get();
-
-        return $item->isHit() && $terrain instanceof Terrain ? $terrain : null;
+        return $this->fetch(self::KEY_PREFIX.$planId);
     }
 
+    /** none (outside Hamburg) removes the one stored before */
     public function save(string $planId, ?Terrain $terrain): void
     {
-        if (null === $terrain) {
-            $this->pool->deleteItem(self::KEY_PREFIX.$planId);
-
-            return;
-        }
-        $item = $this->pool->getItem(self::KEY_PREFIX.$planId);
-        $item->set($terrain);
-        $this->pool->save($item);
+        null === $terrain ? $this->remove(self::KEY_PREFIX.$planId) : $this->store(self::KEY_PREFIX.$planId, $terrain);
     }
 }

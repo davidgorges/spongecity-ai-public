@@ -166,6 +166,12 @@ built the same way.
 Plans are not persisted beyond the cache. For production, replace `PlanStore` with a database
 backed implementation (the interface is small: `create`, `find`, `get`, `save`).
 
+`PlanStore`, `SimulationStore`, `TerrainStore`, `SurroundingsStore` and `SiteConditionsStore`
+extend `CacheStore` (one kind of object per key in `cache.app`). Controllers take the plan as an
+argument (`Plan $plan`): `PlanValueResolver` looks up the route's `{id}` and answers 404 when
+there is none. The chat binds its message with `#[MapRequestPayload]` to `ChatMessage`
+(validated: not blank, at most 2000 characters).
+
 ## Geodata and the import (async)
 
 1. `HomeController` geocodes the text with `NominatimGeocoder` (synchronous, fast), takes the

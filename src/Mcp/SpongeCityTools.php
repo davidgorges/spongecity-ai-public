@@ -56,7 +56,7 @@ final readonly class SpongeCityTools
         private PlanImporter $importer,
         private SiteConditionsStore $conditions,
         private TerrainStore $terrains,
-        private TerrainAnalysis $terrainAnalysis = new TerrainAnalysis(),
+        private TerrainAnalysis $terrainAnalysis,
     ) {
     }
 

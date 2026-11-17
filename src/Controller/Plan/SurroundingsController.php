@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Controller\Plan;
 
 use App\SpongeCity\Geo\SurroundingsLoader;
-use App\SpongeCity\Plan\PlanStore;
+use App\SpongeCity\Plan\Plan;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\Routing\Attribute\Route;
@@ -22,15 +22,13 @@ final class SurroundingsController extends AbstractController
     private const int TIME_LIMIT_SECONDS = 90;
 
     public function __construct(
-        private readonly PlanStore $plans,
         private readonly SurroundingsLoader $surroundings,
     ) {
     }
 
     #[Route('/plan/{id}/surroundings', name: self::ROUTE, methods: ['GET'])]
-    public function __invoke(string $id): JsonResponse
+    public function __invoke(Plan $plan): JsonResponse
     {
-        $plan = $this->plans->find($id) ?? throw $this->createNotFoundException();
         // the first request of an older plan imports them (the view asks in the background)
         set_time_limit(self::TIME_LIMIT_SECONDS);
         $response = $this->json($this->surroundings->load($plan)->toArray());

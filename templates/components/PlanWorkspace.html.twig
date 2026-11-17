@@ -140,7 +140,7 @@
             </ul>
             <form class="flex flex-col gap-2" data-action="submit->plan-chat#send">
                 <label for="chat-input" class="sr-only">{{ 'plan.chat.label'|trans({}, 'spongecity') }}</label>
-                <twig:Textarea id="chat-input" rows="3" placeholder="{{ 'plan.chat.placeholder'|trans({}, 'spongecity') }}" data-plan-chat-target="input" data-action="keydown->plan-chat#keydown" />
+                <twig:Textarea id="chat-input" rows="3" maxlength="{{ constant('App\\Controller\\Plan\\ChatMessage::MAX_LENGTH') }}" placeholder="{{ 'plan.chat.placeholder'|trans({}, 'spongecity') }}" data-plan-chat-target="input" data-action="keydown->plan-chat#keydown" />
                 <twig:Button type="submit" data-plan-chat-target="submit" class="self-end">
                     {{ 'plan.chat.send'|trans({}, 'spongecity') }}
                     <twig:ux:icon name="lucide:send" aria-hidden="true" />

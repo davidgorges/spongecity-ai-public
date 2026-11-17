@@ -20,7 +20,7 @@ final readonly class SiteEditor
     public function __construct(
         private PlanStore $plans,
         private TerrainStore $terrains,
-        private SiteGrounding $grounding = new SiteGrounding(),
+        private SiteGrounding $grounding,
     ) {
     }
 

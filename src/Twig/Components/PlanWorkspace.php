@@ -19,6 +19,7 @@ use Symfony\UX\LiveComponent\Attribute\AsLiveComponent;
 use Symfony\UX\LiveComponent\Attribute\LiveAction;
 use Symfony\UX\LiveComponent\Attribute\LiveArg;
 use Symfony\UX\LiveComponent\Attribute\LiveProp;
+use Symfony\UX\LiveComponent\Attribute\PreReRender;
 use Symfony\UX\LiveComponent\DefaultActionTrait;
 
 /**
@@ -45,7 +46,8 @@ final class PlanWorkspace
     #[LiveProp]
     public string $planId = '';
 
-    #[LiveProp(writable: true)]
+    /** the slider; the plan's storm, which the agent may change too, wins on every re-render */
+    #[LiveProp(writable: true, onUpdated: 'onStormUpdated')]
     public int $storm = SpongeCityParameter::STORM_DEFAULT;
 
     /** @var list<array{role: string, content: string}> */
@@ -64,14 +66,21 @@ final class PlanWorkspace
 
     public function plan(): Plan
     {
-        $plan = $this->plans->get($this->planId);
-        $storm = max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $this->storm));
-        if ($storm !== $plan->storm()) {
-            $plan->setStorm($storm);
-            $this->plans->save($plan);
-        }
+        return $this->plans->get($this->planId);
+    }
 
-        return $plan;
+    /** the user moved the slider */
+    public function onStormUpdated(): void
+    {
+        $plan = $this->plan();
+        $plan->setStorm(max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $this->storm)));
+        $this->plans->save($plan);
+    }
+
+    #[PreReRender]
+    public function showThePlansStorm(): void
+    {
+        $this->storm = $this->plan()->storm();
     }
 
     /**

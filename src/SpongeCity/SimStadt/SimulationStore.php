@@ -4,35 +4,30 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\SimStadt;
 
-use Psr\Cache\CacheItemPoolInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
+use App\SpongeCity\CacheStore;
 
 /**
  * The latest SimStadt run of each workflow per plan, next to the plan in the application cache.
+ *
+ * @extends CacheStore<Simulation>
  */
-final readonly class SimulationStore
+final readonly class SimulationStore extends CacheStore
 {
     private const string KEY_PREFIX = 'spongecity_simstadt_';
 
-    public function __construct(
-        #[Autowire(service: 'cache.app')]
-        private CacheItemPoolInterface $pool,
-    ) {
+    protected function type(): string
+    {
+        return Simulation::class;
     }
 
     public function find(string $planId, SimStadtWorkflow $workflow): ?Simulation
     {
-        $item = $this->pool->getItem(self::key($planId, $workflow));
-        $simulation = $item->get();
-
-        return $item->isHit() && $simulation instanceof Simulation ? $simulation : null;
+        return $this->fetch(self::key($planId, $workflow));
     }
 
     public function save(Simulation $simulation): void
     {
-        $item = $this->pool->getItem(self::key($simulation->planId, $simulation->workflow));
-        $item->set($simulation);
-        $this->pool->save($item);
+        $this->store(self::key($simulation->planId, $simulation->workflow), $simulation);
     }
 
     private static function key(string $planId, SimStadtWorkflow $workflow): string
