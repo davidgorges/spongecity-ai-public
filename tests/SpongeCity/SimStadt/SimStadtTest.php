@@ -13,7 +13,10 @@ use App\SpongeCity\SimStadt\RunSimulationHandler;
 use App\SpongeCity\SimStadt\SimStadtResults;
 use App\SpongeCity\SimStadt\SimStadtRunner;
 use App\SpongeCity\SimStadt\SimStadtWorkflow;
+use App\SpongeCity\SimStadt\SimStadtTemplates;
 use App\SpongeCity\SimStadt\SimulationStatus;
+use App\SpongeCity\SimStadt\Template\HeatDemand;
+use App\SpongeCity\SimStadt\Template\PvPotential;
 use App\SpongeCity\SimStadt\SimulationStore;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
@@ -38,7 +41,7 @@ final class SimStadtTest extends KernelTestCase
     #[Test]
     public function condensesHeatDemandToBuildingsInPlanCoordinates(): void
     {
-        $buildings = (new SimStadtResults())->buildings((string) file_get_contents(self::FIXTURES.'/heat_demand.csv'), SimStadtWorkflow::HeatDemand, new GeoPoint(self::LATITUDE, self::LONGITUDE));
+        $buildings = (new SimStadtResults())->buildings((string) file_get_contents(self::FIXTURES.'/heat_demand.csv'), new HeatDemand(), new GeoPoint(self::LATITUDE, self::LONGITUDE));
 
         self::assertCount(2, $buildings);
         self::assertSame('DEHHALKAJ0000zRr', $buildings[0]['id'], 'the largest demand first');
@@ -52,11 +55,19 @@ final class SimStadtTest extends KernelTestCase
     #[Test]
     public function addsUpRoofSurfacesPerBuilding(): void
     {
-        $buildings = (new SimStadtResults())->buildings((string) file_get_contents(self::FIXTURES.'/pv_potential.csv'), SimStadtWorkflow::PvPotential, new GeoPoint(self::LATITUDE, self::LONGITUDE));
+        $buildings = (new SimStadtResults())->buildings((string) file_get_contents(self::FIXTURES.'/pv_potential.csv'), new PvPotential(), new GeoPoint(self::LATITUDE, self::LONGITUDE));
 
         self::assertCount(1, $buildings);
         self::assertSame(47.5, $buildings[0]['pv_kwp'], '8.0 + 16.9 + 22.6 kWp');
         self::assertArrayHasKey('x', $buildings[0]);
+    }
+
+    #[Test]
+    public function everyWorkflowHasItsTemplate(): void
+    {
+        $templates = static::getContainer()->get(SimStadtTemplates::class);
+
+        self::assertSame(['HeatDemand', 'HeatDemandWithShadow', 'PV'], array_map(static fn (SimStadtWorkflow $w): string => $templates->for($w)->name(), SimStadtWorkflow::cases()));
     }
 
     #[Test]

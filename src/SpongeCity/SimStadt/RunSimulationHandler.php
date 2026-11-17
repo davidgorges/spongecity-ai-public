@@ -28,6 +28,7 @@ final readonly class RunSimulationHandler
         private HamburgCityGml $cityGml,
         private SimStadtRunner $runner,
         private SimStadtResults $results,
+        private SimStadtTemplates $templates,
         private LoggerInterface $logger,
     ) {
     }
@@ -53,11 +54,12 @@ final readonly class RunSimulationHandler
 
                 return;
             }
-            $output = $this->runner->run($message->workflow, $extract['gml']);
+            $template = $this->templates->for($message->workflow);
+            $output = $this->runner->run($template, $extract['gml']);
             $simulation->recordResults(
                 $output['seconds'],
                 $this->results->summary($output['output']),
-                $this->results->buildings($output['csv'], $message->workflow, $centre),
+                $this->results->buildings($output['csv'], $template, $centre),
                 $this->assumptions($message, count($extract['buildings'])),
             );
             $this->run->apply($simulation, SimulationRun::FINISH);

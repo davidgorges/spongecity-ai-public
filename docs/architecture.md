@@ -397,10 +397,20 @@ rather than replacing it. Its tools are part of this application's MCP server
 simulate_buildings ─► Simulation (queued) + RunSimulation ─► Messenger transport "simstadt"
                                                                   │ worker
                      HamburgCityGml: LoD2 tiles (RemoteZip) ─► CityGML of the site's buildings
+                     SimStadtTemplates → the workflow's SimStadtTemplate
                      SimStadtRunner: docker run simstadt/simstadt:cli simstadt <Template> …
                      SimStadtResults: summary + one row per building (plan x/z)
 get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflow)
 ```
+
+- **Workflows and templates**: `SimStadtWorkflow` names what the agent can run (and describes it
+  to the agent); what SimStadt needs for it is a `SimStadtTemplate` service (`Template\HeatDemand`,
+  `HeatDemandWithShadow`, `PvPotential`): the template's name, the result columns, whether rows
+  are roof surfaces, the sort key. They are tagged with the workflow's value as their index, and
+  `SimStadtTemplates` finds one through a service locator (`#[AutowireLocator]`). A new workflow
+  is an enum case and one template class.
+- **State**: `SimulationRun` is a state machine like `PlanImport` (`queued → running → done |
+  failed`); it stores the run in every status it enters, so the agent can poll it.
 
 - **SimStadt runs in its own Docker image** (`SIMSTADT_IMAGE`, default `simstadt/simstadt:cli`:
   Java, INSEL and simstadtpy). Nothing is installed on the host: INSEL has `/usr/local/insel`

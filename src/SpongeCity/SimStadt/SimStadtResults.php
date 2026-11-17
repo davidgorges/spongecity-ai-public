@@ -19,8 +19,6 @@ final readonly class SimStadtResults
     private const string OUTPUT_FILES = 'Output files:';
     private const int MAX_BUILDINGS = 40;
     private const float MILLIMETRES_PER_METRE = 1000.0;
-    /** the result key the buildings are sorted by, largest first */
-    private const array SORT_BY = ['heating_and_hot_water_kwh_per_a', 'pv_yield_mwh_per_a'];
 
     /**
      * @return array<string, string> e.g. "Yearly Heating demand" → "7205388 kWh / a"
@@ -43,7 +41,7 @@ final readonly class SimStadtResults
     /**
      * @return list<array<string, int|float|string|null>> one row per building, largest first
      */
-    public function buildings(string $csv, SimStadtWorkflow $workflow, GeoPoint $centre): array
+    public function buildings(string $csv, SimStadtTemplate $template, GeoPoint $centre): array
     {
         $lines = array_values(array_filter(preg_split('/\R/', $csv) ?: [], static fn (string $l): bool => '' !== trim($l)));
         if (count($lines) < 2) {
@@ -59,19 +57,19 @@ final readonly class SimStadtResults
                 continue;
             }
             $row = array_combine($header, $values);
-            $id = $row[$workflow->idColumn()] ?? '';
+            $id = $row[$template->idColumn()] ?? '';
             if ('' === $id) {
                 continue;
             }
             $building = $rows[$id] ?? ['id' => $id, '_positions' => []];
-            foreach ($workflow->columns() as $column => $key) {
+            foreach ($template->columns() as $column => $key) {
                 $value = $row[$column] ?? null;
                 if (null === $value || '' === $value) {
                     continue;
                 }
                 if (is_numeric($value)) {
                     // roof surfaces of one building add up; a building's own row is taken as is
-                    $building[$key] = $workflow->perSurface() ? ($building[$key] ?? 0) + (float) $value : (float) $value;
+                    $building[$key] = $template->perSurface() ? ($building[$key] ?? 0) + (float) $value : (float) $value;
                 } else {
                     $building[$key] ??= $value;
                 }
@@ -90,15 +88,8 @@ final readonly class SimStadtResults
 
             return array_map(static fn (mixed $v): mixed => is_float($v) ? round($v, 1) : $v, $b);
         }, array_values($rows));
-        $sortKey = null;
-        foreach (self::SORT_BY as $key) {
-            if ([] !== $buildings && array_key_exists($key, $buildings[0])) {
-                $sortKey = $key;
-            }
-        }
-        if (null !== $sortKey) {
-            usort($buildings, static fn (array $a, array $b): int => ($b[$sortKey] ?? 0) <=> ($a[$sortKey] ?? 0));
-        }
+        $sortBy = $template->sortBy();
+        usort($buildings, static fn (array $a, array $b): int => ($b[$sortBy] ?? 0) <=> ($a[$sortBy] ?? 0));
 
         return array_slice($buildings, 0, self::MAX_BUILDINGS);
     }

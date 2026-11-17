@@ -46,7 +46,7 @@ final readonly class SimStadtRunner
     /**
      * @return array{output: string, csv: string, seconds: float}
      */
-    public function run(SimStadtWorkflow $workflow, string $cityGml): array
+    public function run(SimStadtTemplate $template, string $cityGml): array
     {
         $name = 'run_'.bin2hex(random_bytes(6));
         [$input, $result, $project] = [$name.'.gml', $name.'.csv', $name];
@@ -61,7 +61,7 @@ final readonly class SimStadtRunner
                 '-e', 'LOCALE='.self::LOCALE,
                 '-v', $this->repository.':'.self::MOUNT,
                 $this->image,
-                'simstadt', $workflow->template(), self::MOUNT.'/'.$input,
+                'simstadt', $template->name(), self::MOUNT.'/'.$input,
                 '--project-path', self::MOUNT.'/'.$project,
                 '--save', self::MOUNT.'/'.$result,
             ];
@@ -75,7 +75,7 @@ final readonly class SimStadtRunner
                     return ['output' => $process->getOutput(), 'csv' => $csv, 'seconds' => microtime(true) - $start];
                 }
                 if ($attempt >= self::ATTEMPTS || !str_contains($log, self::TRANSIENT)) {
-                    throw new \RuntimeException(sprintf('SimStadt %s failed (exit %s): %s', $workflow->template(), $process->getExitCode() ?? '?', substr($log, -self::TAIL_BYTES)));
+                    throw new \RuntimeException(sprintf('SimStadt %s failed (exit %s): %s', $template->name(), $process->getExitCode() ?? '?', substr($log, -self::TAIL_BYTES)));
                 }
             }
         } finally {
