@@ -35,9 +35,16 @@ final class InterventionBuilder
     public const string MATERIAL_PAVERS = 'permeable_pavers';
     public const string MATERIAL_GRAVEL = 'permeable_gravel';
     public const string MATERIAL_GRASS_PAVERS = 'permeable_grass';
+    /** what the view needs beyond a part's shape: its kind and, for a rain garden, its depth in metres */
+    public const string APPEARANCE_KIND = 'kind';
+    public const string APPEARANCE_DEPTH = 'depth';
+    public const string APPEARANCE_PAVING = 'paving';
+    private const float MILLIMETRES_PER_METRE = 1000.0;
 
     /** layers of the ground, millimetres: the plot lies lowest, interventions on top of existing paving */
     private const int PLOT_TOP = 4;
+    /** an area with another surface than the plot's lies just above it, under the interventions */
+    private const int AREA_TOP = 9;
     private const int PLOT_THICKNESS = 40;
     private const int LAYER_THICKNESS = 40;
     private const int PERMEABLE_TOP = 14;
@@ -103,6 +110,18 @@ final class InterventionBuilder
             $part = Slab::onGround(self::LABEL_PREFIX.O::PLOT, $material, Site::points($plot), self::PLOT_THICKNESS, self::PLOT_TOP - self::PLOT_THICKNESS);
             // the whole plot frames the camera, but it is not an article: counted false keeps it off the bill
             $assembly->add(new Part(SpongeCitySku::PLOT, $part->label, $part->shape, $part->material, $part->position, $part->rotation, counted: false, draped: true));
+
+            // the plot's areas whose ground is another (a lawn, a gravel court): context, not on the bill
+            foreach ($site->ofType(O::AREA) as $area) {
+                $areaSurface = is_string($area[O::SURFACE] ?? null) ? $area[O::SURFACE] : $surface;
+                if ($areaSurface === $surface || !isset(self::SURFACE_COLORS[$areaSurface]) || count(Site::points($area)) < 3) {
+                    continue;
+                }
+                $areaMaterial = self::MATERIAL_PLOT_PREFIX.$areaSurface;
+                $assembly->material($areaMaterial, new Material(self::SURFACE_COLORS[$areaSurface] ?? self::SURFACE_COLORS[O::SURFACE_ASPHALT], roughness: 0.95));
+                $slab = Slab::onGround(self::LABEL_PREFIX.O::AREA, $areaMaterial, Site::points($area), self::LAYER_THICKNESS, self::AREA_TOP - self::LAYER_THICKNESS);
+                $assembly->add(new Part(SpongeCitySku::PLOT, $slab->label, $slab->shape, $slab->material, $slab->position, $slab->rotation, counted: false, draped: true));
+            }
         }
 
         foreach ($site->objects as $object) {
@@ -139,7 +158,11 @@ final class InterventionBuilder
 
         return match ($type) {
             O::NEWTREE => [new Part(SpongeCitySku::TREE, $label, Model::ofHeight(GardenModels::TREES, self::TREE_VARIANT, $num(O::HEIGHT)), position: new Vector3($num(O::X), 0, $num(O::Z)))],
-            O::RAINGARDEN => $this->slab(SpongeCitySku::RAINGARDEN, $label, self::MATERIAL_RAINGARDEN, $points, self::RAINGARDEN_TOP, $area),
+            // the view draws a basin of its ponding depth, planted, with water in it
+            O::RAINGARDEN => $this->slab(SpongeCitySku::RAINGARDEN, $label, self::MATERIAL_RAINGARDEN, $points, self::RAINGARDEN_TOP, $area, [
+                self::APPEARANCE_KIND => O::RAINGARDEN,
+                self::APPEARANCE_DEPTH => $num(O::STORAGE) / self::MILLIMETRES_PER_METRE,
+            ]),
             O::PLANTING => $this->slab(SpongeCitySku::PLANTING, $label, self::MATERIAL_PLANTING, $points, self::PLANTING_TOP, $area),
             O::PERMEABLE => $this->slab(
                 self::PERMEABLE_SKU[$object[O::KIND] ?? O::KIND_PAVERS] ?? SpongeCitySku::PERMEABLE_PAVERS,
@@ -148,6 +171,8 @@ final class InterventionBuilder
                 $points,
                 self::PERMEABLE_TOP,
                 $area,
+                // the view lays its pavers (or grass pavers, or gravel) at their real size, with an edging
+                [self::APPEARANCE_KIND => O::PERMEABLE, self::APPEARANCE_PAVING => is_string($object[O::KIND] ?? null) ? $object[O::KIND] : O::KIND_PAVERS],
             ),
             O::SHADESAIL => [new Part(
                 SpongeCitySku::SHADESAIL,
@@ -167,11 +192,11 @@ final class InterventionBuilder
      *
      * @return list<Part>
      */
-    private function slab(string $sku, string $label, string $material, array $points, int $top, Measure $measure): array
+    private function slab(string $sku, string $label, string $material, array $points, int $top, Measure $measure, ?array $appearance = null): array
     {
         $slab = Slab::onGround($label, $material, $points, self::LAYER_THICKNESS, $top - self::LAYER_THICKNESS);
 
-        return [new Part($sku, $label, $slab->shape, $material, $slab->position, $slab->rotation, $measure)];
+        return [new Part($sku, $label, $slab->shape, $material, $slab->position, $slab->rotation, $measure, appearance: $appearance)];
     }
 
     private function materials(Assembly $assembly): void

@@ -6,11 +6,14 @@ namespace App\Twig\Components;
 
 use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\DataSource;
+use App\SpongeCity\Placement\Placements;
+use App\SpongeCity\Placement\Zone;
 use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
 use App\SpongeCity\PlanEvaluator;
+use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Scene\SceneSerializer;
 use Core\Configurator\Site\Site;
@@ -38,6 +41,25 @@ final class PlanWorkspace
     /** the keys of plotMap() */
     public const string MAP_PLOT = 'plot';
     public const string MAP_BUILDINGS = 'buildings';
+    public const string MAP_TREES = 'trees';
+    public const string MAP_INTERVENTIONS = 'interventions';
+    public const string MAP_ZONES = 'zones';
+    public const string MAP_EQUIPMENT = 'equipment';
+    public const string ACTION_SET_ZONE_USE = 'setZoneUse';
+    public const string ACTION_SET_ZONE_SURFACE = 'setZoneSurface';
+    public const string ACTION_CLOSE_ZONE = 'closeZone';
+    /** the live prop the map sets when a zone is clicked */
+    public const string PROP_ZONE = 'zone';
+    /** play equipment: marked on the map with a click, then its kind chosen, turned or removed */
+    public const string ACTION_ADD_EQUIPMENT = 'addEquipment';
+    public const string ACTION_SET_EQUIPMENT_KIND = 'setEquipmentKind';
+    public const string ACTION_TURN_EQUIPMENT = 'turnEquipment';
+    public const string ACTION_REMOVE_EQUIPMENT = 'removeEquipment';
+    public const string ACTION_CLOSE_EQUIPMENT = 'closeEquipment';
+    /** the live prop the map sets when play equipment is clicked */
+    public const string PROP_EQUIPMENT = 'equipment';
+    /** one press of "turn" */
+    public const int EQUIPMENT_TURN_STEP = 45;
     public const string EVENT_PLAN_CHANGED = 'plan:changed';
     /** ?debug=1: frame stats overlay, scene and camera on window (bin/render-loop uses them) */
     public const string QUERY_DEBUG = 'debug';
@@ -58,6 +80,17 @@ final class PlanWorkspace
     #[LiveProp]
     public array $history = [];
 
+    /** @var list<Zone>|null */
+    private ?array $zones = null;
+
+    /** the zone selected on the plot map, whose use can be set */
+    #[LiveProp(writable: true, onUpdated: 'onZoneSelected')]
+    public ?string $zone = null;
+
+    /** the play equipment selected on the plot map */
+    #[LiveProp(writable: true, onUpdated: 'onEquipmentSelected')]
+    public ?string $equipment = null;
+
     public function __construct(
         private readonly PlanStore $plans,
         private readonly PlanEvaluator $evaluator,
@@ -65,6 +98,7 @@ final class PlanWorkspace
         private readonly SceneSerializer $serializer,
         private readonly SiteEditor $editor,
         private readonly SiteConditionsStore $conditions,
+        private readonly Placements $placements,
     ) {
     }
 
@@ -190,10 +224,11 @@ final class PlanWorkspace
     }
 
     /**
-     * What the plot map draws: the plot's outline and, around it, the buildings' footprints
-     * (plan millimetres [x, z], x east, z south).
+     * What the plot map draws (plan millimetres, x east, z south): the plot's outline, the
+     * buildings' footprints and the existing trees' crowns around it, and the planned
+     * interventions: an outline each, or a new tree's position and crown.
      *
-     * @return array{plot: list<array{float, float}>, buildings: list<list<array{float, float}>>}
+     * @return array{plot: list<array{float, float}>, buildings: list<list<array{float, float}>>, trees: list<array{x: float, z: float, r: float}>, interventions: list<array{id: string, type: string, label: string|null, points?: list<array{float, float}>, x?: float, z?: float, r?: float}>}
      */
     public function plotMap(): array
     {
@@ -203,7 +238,225 @@ final class PlanWorkspace
         return [
             self::MAP_PLOT => [] === $plots ? [] : Site::points($plots[0]),
             self::MAP_BUILDINGS => array_values(array_filter(array_map(Site::points(...), $site->ofType(O::BUILDING)), static fn (array $points): bool => count($points) >= 3)),
+            self::MAP_TREES => array_map(static fn (array $tree): array => ['x' => (float) $tree[O::X], 'z' => (float) $tree[O::Z], 'r' => self::crownRadius($tree)], $site->ofType(O::TREE)),
+            self::MAP_INTERVENTIONS => array_values(array_map(fn (array $object): array => [
+                'id' => (string) $object[O::ID],
+                'type' => $object[O::TYPE],
+                'label' => is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : null,
+                ...(O::NEWTREE === $object[O::TYPE]
+                    ? ['x' => (float) $object[O::X], 'z' => (float) $object[O::Z], 'r' => self::crownRadius($object)]
+                    : ['points' => Site::points($object)]),
+            ], array_filter($site->objects, static fn (array $object): bool => in_array($object[O::TYPE], O::INTERVENTIONS, true)))),
+            self::MAP_ZONES => array_map(static fn (Zone $zone): array => $zone->toArray(), $this->zones()),
+            self::MAP_EQUIPMENT => array_map(static fn (array $item): array => self::equipmentRow($item), $site->ofType(O::EQUIPMENT)),
         ];
+    }
+
+    /**
+     * @param array<string, mixed> $item
+     *
+     * @return array{id: string, kind: string, label: string|null, x: float, z: float, points: list<array{float, float}>, look: string}
+     */
+    private static function equipmentRow(array $item): array
+    {
+        return [
+            'id' => (string) $item[O::ID],
+            'kind' => (string) $item[O::KIND],
+            'label' => is_string($item[O::LABEL] ?? null) ? $item[O::LABEL] : null,
+            'x' => (float) $item[O::X],
+            'z' => (float) $item[O::Z],
+            // the fall zone
+            'points' => array_map(static fn (array $p): array => [round($p[0]), round($p[1])], Site::outlinesOf($item)[0]),
+            'look' => (string) ($item[O::LOOK] ?? O::LOOK_DATA),
+        ];
+    }
+
+    /** a zone was clicked: the equipment's panel gives way */
+    public function onZoneSelected(): void
+    {
+        if (null !== $this->zone) {
+            $this->equipment = null;
+        }
+    }
+
+    /** equipment was clicked: the zone's panel gives way */
+    public function onEquipmentSelected(): void
+    {
+        if (null !== $this->equipment) {
+            $this->zone = null;
+        }
+    }
+
+    /**
+     * The play equipment selected on the map, or null.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function selectedEquipment(): ?array
+    {
+        if (null === $this->equipment) {
+            return null;
+        }
+        foreach (Site::fromJson($this->plan()->siteJson())->ofType(O::EQUIPMENT) as $item) {
+            if ($item[O::ID] === $this->equipment) {
+                return [...self::equipmentRow($item), 'width' => (int) $item[O::WIDTH], 'depth' => (int) $item[O::DEPTH]];
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function equipmentKinds(): array
+    {
+        return O::EQUIPMENT_KINDS;
+    }
+
+    /** the person marked play equipment on the map (plan millimetres): it is selected, to say what it is */
+    #[LiveAction]
+    public function addEquipment(#[LiveArg] int $x, #[LiveArg] int $z): void
+    {
+        $this->equipment = $this->editor->add($this->planId, [O::equipment(O::EQUIPMENT_OTHER, $x, $z, look: O::LOOK_USER)])['ids'][0] ?? null;
+        $this->zone = null;
+        $this->zones = null;
+    }
+
+    /** what the selected equipment is: its fall zone becomes that kind's */
+    #[LiveAction]
+    public function setEquipmentKind(#[LiveArg] string $id, #[LiveArg] string $kind): void
+    {
+        $item = $this->equipmentById($id);
+        if (null === $item || !in_array($kind, O::EQUIPMENT_KINDS, true)) {
+            return;
+        }
+        $sized = O::equipment($kind, (int) $item[O::X], (int) $item[O::Z], (int) $item[O::TURN], O::LOOK_USER);
+        $this->editor->update($this->planId, $id, array_intersect_key($sized, array_flip([O::KIND, O::WIDTH, O::DEPTH, O::HEIGHT, O::LOOK])));
+        $this->zones = null;
+    }
+
+    /** the selected equipment turned by a step: a swing swings one way */
+    #[LiveAction]
+    public function turnEquipment(#[LiveArg] string $id): void
+    {
+        $item = $this->equipmentById($id);
+        if (null === $item) {
+            return;
+        }
+        // -180…180 as the field has it
+        $turn = ((int) $item[O::TURN] + self::EQUIPMENT_TURN_STEP + 180) % 360 - 180;
+        $this->editor->update($this->planId, $id, [O::TURN => $turn, O::LOOK => O::LOOK_USER]);
+        $this->zones = null;
+    }
+
+    #[LiveAction]
+    public function removeEquipment(#[LiveArg] string $id): void
+    {
+        if (null !== $this->equipmentById($id)) {
+            $this->editor->remove($this->planId, $id);
+        }
+        $this->equipment = null;
+        $this->zones = null;
+    }
+
+    #[LiveAction]
+    public function closeEquipment(): void
+    {
+        $this->equipment = null;
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function equipmentById(string $id): ?array
+    {
+        foreach (Site::fromJson($this->plan()->siteJson())->ofType(O::EQUIPMENT) as $item) {
+            if ($item[O::ID] === $id) {
+                return $item;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The zone selected on the map, or null.
+     *
+     * @return array<string, mixed>|null
+     */
+    public function selectedZone(): ?array
+    {
+        if (null === $this->zone) {
+            return null;
+        }
+        foreach ($this->zones() as $zone) {
+            if ($zone->id === $this->zone) {
+                return $zone->toArray();
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * The plot's zones, read once per request (the map and the selection both need them).
+     *
+     * @return list<Zone>
+     */
+    private function zones(): array
+    {
+        return $this->zones ??= $this->placements->zones($this->plan());
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function zoneUses(): array
+    {
+        return O::AREA_USES;
+    }
+
+    /** the person says what the selected zone is used for */
+    #[LiveAction]
+    public function setZoneUse(#[LiveArg] string $zone, #[LiveArg] string $use): void
+    {
+        $this->zone = $this->placements->describeZone($this->plan(), $zone, use: $use) ?? $this->zone;
+        $this->zones = null;
+    }
+
+    /** the person says what the selected zone's ground is today */
+    #[LiveAction]
+    public function setZoneSurface(#[LiveArg] string $zone, #[LiveArg] string $surface): void
+    {
+        $this->zone = $this->placements->describeZone($this->plan(), $zone, surface: $surface) ?? $this->zone;
+        $this->zones = null;
+    }
+
+    /**
+     * @return list<string>
+     */
+    public function zoneSurfaces(): array
+    {
+        return O::SURFACES;
+    }
+
+    #[LiveAction]
+    public function closeZone(): void
+    {
+        $this->zone = null;
+    }
+
+    /**
+     * @param array<string, mixed> $tree
+     *
+     * @return float millimetres: the recorded crown, else the mature crown the impact calculation assumes
+     */
+    private static function crownRadius(array $tree): float
+    {
+        $diameter = is_numeric($tree[O::DIAMETER] ?? null) ? (float) $tree[O::DIAMETER] : 0.0;
+
+        return round($diameter > 0 ? $diameter / 2 : (is_numeric($tree[O::HEIGHT] ?? null) ? (float) $tree[O::HEIGHT] : 0.0) * ImpactCalculator::CANOPY_RADIUS_SHARE);
     }
 
     public function minPlotCorners(): int

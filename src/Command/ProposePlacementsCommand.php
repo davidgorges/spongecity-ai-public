@@ -60,7 +60,7 @@ final readonly class ProposePlacementsCommand
         $io->title(sprintf('%s on %s (%.1f s)', $type, $plan->title, microtime(true) - $started));
         foreach ($proposal->candidates as $candidate) {
             $io->section($candidate->id);
-            $io->definitionList(...array_map(static fn (string $key, mixed $value): array => [$key => is_bool($value) ? ($value ? 'yes' : 'no') : (string) ($value ?? '–')], array_keys($candidate->metrics), $candidate->metrics));
+            $io->definitionList(...array_map(static fn (string $key, mixed $value): array => [$key => match (true) { is_bool($value) => $value ? 'yes' : 'no', is_array($value) => implode(', ', $value), default => (string) ($value ?? '–') }], array_keys($candidate->metrics), $candidate->metrics));
             $io->listing($candidate->reasons);
             if ([] !== $candidate->warnings) {
                 $io->warning($candidate->warnings);

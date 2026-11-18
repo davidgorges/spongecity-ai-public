@@ -30,6 +30,17 @@ final class SiteBuilder
     private const string WATER = 'site_water';
     private const string COPING = 'site_coping';
     private const string DOOR = 'site_door';
+    /** play equipment, barely there: it marks ground that is taken, it is not what the plan is about */
+    private const string EQUIPMENT_ZONE = 'site_equipment_zone';
+    private const string EQUIPMENT_BODY = 'site_equipment';
+    private const string EQUIPMENT_ZONE_COLOUR = '#f1d77a';
+    private const string EQUIPMENT_BODY_COLOUR = '#f6f1e6';
+    private const float EQUIPMENT_ZONE_OPACITY = 0.12;
+    private const float EQUIPMENT_BODY_OPACITY = 0.07;
+    /** the fall zone's wash lies above the plot's layers (millimetres), the block takes this share of its width and depth */
+    private const int EQUIPMENT_ZONE_TOP = 25;
+    private const int EQUIPMENT_ZONE_THICKNESS = 10;
+    private const float EQUIPMENT_BODY_SHARE = 0.45;
     private const int PAVING = 40;
     /** paving stands this far above the lawn */
     private const int SURFACE = 10;
@@ -119,6 +130,7 @@ final class SiteBuilder
             O::CYLINDER => [Slab::onGround($label, $this->colour('solid', $text(O::COLOR)), self::circle($num(O::X), $num(O::Z), $num(O::DIAMETER) / 2), $num(O::HEIGHT), $num(O::Y))],
             O::PRISM => [Slab::onGround($label, $this->colour('solid', $text(O::COLOR)), $points, $num(O::HEIGHT), $num(O::Y))],
             O::ROAD => $this->road($label, $points, $num(O::WIDTH), O::ROAD_FOOTWAY === $text(O::KIND)),
+            O::EQUIPMENT => $this->equipment($label, Site::outlinesOf($object)[0], $num(O::X), $num(O::Z), $num(O::HEIGHT)),
             O::BUILDING => $this->footprint($label, $points, $num(O::HEIGHT), Facade::tryFrom($text(O::FACADE)) ?? Facade::Plaster, $text(O::COLOR), $text(O::ROOF), $text(O::ROOF_COLOR), (int) $num(O::STOREYS), Site::parts($object), $num(O::PITCH), Site::model($object)),
             default => [],
         };
@@ -455,6 +467,26 @@ final class SiteBuilder
         ];
 
         return array_map(static fn (Part $part): Part => $part->placedAt($x, $z, $angle), $parts);
+    }
+
+    /**
+     * Play equipment as a hint, not a model: its fall zone a faint wash on the ground, the
+     * equipment a nearly transparent block in its middle. Both follow the terrain.
+     *
+     * @param list<array{float, float}> $fallZone
+     *
+     * @return list<Part>
+     */
+    private function equipment(string $label, array $fallZone, float $x, float $z, float $height): array
+    {
+        $this->assembly->material(self::EQUIPMENT_ZONE, new Material(self::EQUIPMENT_ZONE_COLOUR, roughness: 1.0, opacity: self::EQUIPMENT_ZONE_OPACITY));
+        $this->assembly->material(self::EQUIPMENT_BODY, new Material(self::EQUIPMENT_BODY_COLOUR, roughness: 0.6, opacity: self::EQUIPMENT_BODY_OPACITY));
+        $body = array_map(static fn (array $p): array => [$x + ($p[0] - $x) * self::EQUIPMENT_BODY_SHARE, $z + ($p[1] - $z) * self::EQUIPMENT_BODY_SHARE], $fallZone);
+
+        return [
+            Slab::onGround($label, self::EQUIPMENT_ZONE, $fallZone, self::EQUIPMENT_ZONE_THICKNESS, self::EQUIPMENT_ZONE_TOP - self::EQUIPMENT_ZONE_THICKNESS),
+            Slab::onGround($label, self::EQUIPMENT_BODY, $body, $height),
+        ];
     }
 
     /**

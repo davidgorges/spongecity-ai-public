@@ -20,6 +20,55 @@ const MIN_TOUCH_TARGET = 44;
 const COARSE_POINTER = '(any-pointer: coarse)';
 /** an edge shorter than this on screen (CSS pixels) gets no handle to add a corner: it would sit on the corners */
 const MIN_EDGE_FOR_INSERT = 40;
+/** the stripes of permeable paving, CSS pixels apart */
+const HATCH_PIXELS = 4;
+/** a tree's trunk on the map, CSS pixels */
+const TRUNK_PIXELS = 1.5;
+
+/** the site object types the map draws (SiteObject) */
+export const RAINGARDEN = 'raingarden';
+export const PLANTING = 'planting';
+export const PERMEABLE = 'permeable';
+export const SHADESAIL = 'shadesail';
+export const NEWTREE = 'newtree';
+export const EXISTING_TREE = 'tree';
+/** play equipment (SiteObject::EQUIPMENT): its fall zone, which nothing planned may take */
+export const EQUIPMENT = 'equipment';
+/** the equipment's own spot in its fall zone, CSS pixels */
+const EQUIPMENT_DOT_PIXELS = 3;
+/** where a zone's use comes from (Zone::ASSUMED): drawn dashed, it is a guess */
+export const ZONE_ASSUMED = 'assumed';
+
+/** zones by use (SiteObject::AREA_USES): a light wash under everything planned */
+export const ZONE_STYLES = {
+    yard: { fill: '#cbbf9f', stroke: '#8f8264' },
+    parking: { fill: '#8ea3b9', stroke: '#566d86' },
+    access: { fill: '#d98585', stroke: '#a24848' },
+    sport: { fill: '#e7a15c', stroke: '#b26a22' },
+    play: { fill: '#ebc94d', stroke: '#a88713' },
+    quiet: { fill: '#b6a5de', stroke: '#7562a8' },
+    green: { fill: '#8cc477', stroke: '#4f8a3a' },
+};
+const ZONE_FILL_OPACITY = 0.28;
+const ZONE_SELECTED_FILL_OPACITY = 0.5;
+
+/** the ground first, then what stands above it */
+const SURFACES = [PERMEABLE, PLANTING, RAINGARDEN];
+const ABOVE = [SHADESAIL, NEWTREE];
+
+/**
+ * How each kind of object looks on the map and in its legend: map colours, the same in the
+ * light and the dark theme (like a printed plan), close to how the 3D view shows them.
+ */
+export const STYLES = {
+    [RAINGARDEN]: { fill: '#3f8fa8', fillOpacity: 0.6, stroke: '#1f6378' },
+    [PLANTING]: { fill: '#6c9b46', fillOpacity: 0.55, stroke: '#46702a' },
+    [PERMEABLE]: { fill: '#c2b49a', fillOpacity: 0.7, stroke: '#8d7d60', hatch: true },
+    [SHADESAIL]: { fill: '#e8c872', fillOpacity: 0.35, stroke: '#b98a1e', dashed: true },
+    [NEWTREE]: { fill: '#3f8a3a', fillOpacity: 0.5, stroke: '#24611f' },
+    [EXISTING_TREE]: { fill: '#6f9a5a', fillOpacity: 0.18, stroke: '#6f9a5a', strokeOpacity: 0.5 },
+    [EQUIPMENT]: { fill: '#ebc94d', fillOpacity: 0.3, stroke: '#a88713', dashed: true },
+};
 
 /**
  * Draws the plot (the analysed area) in plan, north up, into an SVG: a grid,
@@ -36,6 +85,13 @@ export class PlotMapView {
     /** read once: every drag frame redraws the map */
     #coarse = matchMedia(COARSE_POINTER);
     #id;
+    /** what is drawn around and on the plot, unchanged while a corner is dragged */
+    #trees = [];
+    #interventions = [];
+    #zones = [];
+    #selectedZone = null;
+    #equipment = [];
+    #selectedEquipment = null;
 
     /**
      * @param {SVGSVGElement} svg
@@ -46,6 +102,28 @@ export class PlotMapView {
         this.#texts = texts;
         this.#id = svg.id || 'plot-map';
         this.#format = new Intl.NumberFormat(document.documentElement.lang || undefined, { maximumFractionDigits: 1 });
+    }
+
+    /**
+     * @param {{x: number, z: number, r: number}[]} trees the existing trees' crowns
+     * @param {{id: string, type: string, label: ?string, points?: number[][], x?: number, z?: number, r?: number}[]} interventions
+     * @param {{id: string, use: string, source: string, label: string, points: number[][]}[]} zones the plot's zones (SurfaceZones)
+     * @param {?string} selectedZone
+     * @param {{id: string, kind: string, label: ?string, x: number, z: number, points: number[][]}[]} equipment play equipment with its fall zone
+     * @param {?string} selectedEquipment
+     */
+    setContext(trees, interventions, zones = [], selectedZone = null, equipment = [], selectedEquipment = null) {
+        this.#trees = trees;
+        this.#interventions = interventions;
+        this.#zones = zones;
+        this.#selectedZone = selectedZone;
+        this.#equipment = equipment;
+        this.#selectedEquipment = selectedEquipment;
+    }
+
+    /** the name a person reads for an intervention: its label, else its kind */
+    name(intervention) {
+        return intervention.label || this.#texts.types?.[intervention.type] || intervention.type;
     }
 
     metres(millimetres) {
@@ -96,14 +174,42 @@ export class PlotMapView {
             'vector-effect': 'non-scaling-stroke',
         })));
 
+        // the analysed area's tint lies at the bottom: the zones and everything planned show through it
         this.#svg.append(el('polygon', {
             points: polygonPoints(points),
-            class: invalid ? 'pointer-events-none fill-destructive/10 stroke-destructive' : 'pointer-events-none fill-primary/15 stroke-primary',
-            'stroke-width': 2.5,
+            class: invalid ? 'pointer-events-none fill-destructive/10' : `pointer-events-none ${this.#zones.length > 0 ? 'fill-primary/5' : 'fill-primary/15'}`,
+            stroke: 'none',
+        }));
+
+        // the zones over it, each a target: a click or Enter selects it to set its use
+        this.#zones.forEach((zone) => this.#svg.append(this.#zone(zone)));
+
+        const hatch = `${this.#id}-hatch`;
+        defs.append(this.#hatch(hatch, HATCH_PIXELS / pixels));
+        const trunk = TRUNK_PIXELS / pixels;
+        this.#trees.forEach((tree) => this.#svg.append(this.#tree(tree, STYLES[EXISTING_TREE], trunk, this.#texts.existingTree)));
+        this.#interventions
+            .filter((item) => SURFACES.includes(item.type))
+            .sort((a, b) => SURFACES.indexOf(a.type) - SURFACES.indexOf(b.type))
+            .forEach((item) => this.#svg.append(this.#surface(item, hatch)));
+        // play equipment over the ground it takes, each a target to say what it is
+        this.#equipment.forEach((item) => this.#svg.append(this.#equipmentItem(item, EQUIPMENT_DOT_PIXELS / pixels)));
+
+        // only its line above them, with the handles to reshape it
+        this.#svg.append(el('polygon', {
+            points: polygonPoints(points),
+            fill: 'none',
+            class: invalid ? 'pointer-events-none stroke-destructive' : 'pointer-events-none stroke-primary',
+            'stroke-width': 2,
             'stroke-linejoin': 'round',
             'vector-effect': 'non-scaling-stroke',
             'data-plot-map-target': 'outline',
         }));
+
+        // sails and new trees stand above the ground: over the plot's outline, under its handles
+        this.#interventions
+            .filter((item) => ABOVE.includes(item.type))
+            .forEach((item) => this.#svg.append(item.type === NEWTREE ? this.#tree(item, STYLES[NEWTREE], trunk, this.name(item)) : this.#surface(item, hatch)));
 
         // a corner can be added in the middle of every edge long enough on screen (not while one is dragged)
         if (active === null) {
@@ -151,6 +257,108 @@ export class PlotMapView {
         });
 
         this.#svg.append(this.#north(minX, minZ, font), this.#scaleBar(minX, minZ, width, height, font), this.#tip(font));
+    }
+
+    #zone(zone) {
+        const style = ZONE_STYLES[zone.use] ?? ZONE_STYLES.yard;
+        const selected = zone.id === this.#selectedZone;
+        const name = this.#texts.zone?.replace('%name%', zone.label) ?? zone.label;
+
+        return el('polygon', {
+            points: polygonPoints(zone.points),
+            fill: style.fill,
+            'fill-opacity': selected ? ZONE_SELECTED_FILL_OPACITY : ZONE_FILL_OPACITY,
+            stroke: selected ? 'currentColor' : style.stroke,
+            'stroke-width': selected ? 2.5 : 1,
+            'stroke-linejoin': 'round',
+            'vector-effect': 'non-scaling-stroke',
+            ...(zone.source === ZONE_ASSUMED && !selected ? { 'stroke-dasharray': '3 3' } : {}),
+            class: `cursor-pointer outline-none transition-[fill-opacity] hover:[fill-opacity:0.5] focus-visible:[fill-opacity:0.5] ${selected ? 'text-foreground' : ''}`,
+            tabindex: 0,
+            role: 'button',
+            'aria-label': name,
+            'aria-pressed': String(selected),
+            'data-zone': zone.id,
+            'data-action': `click->${CONTROLLER}#selectZone keydown->${CONTROLLER}#selectZoneByKey`,
+            [`data-${CONTROLLER}-zone-param`]: zone.id,
+        }, null, name);
+    }
+
+    /** Play equipment: its fall zone, dashed, and a dot where it stands. */
+    #equipmentItem(item, dot) {
+        const style = STYLES[EQUIPMENT];
+        const selected = item.id === this.#selectedEquipment;
+        const kind = this.#texts.kinds?.[item.kind] ?? item.kind;
+        const name = this.#texts.equipment?.replace('%name%', item.label || kind) ?? kind;
+        const group = el('g', {
+            class: `cursor-pointer outline-none [&:hover>polygon]:[fill-opacity:0.55] [&:focus-visible>polygon]:[fill-opacity:0.55] ${selected ? 'text-foreground' : ''}`,
+            tabindex: 0,
+            role: 'button',
+            'aria-label': name,
+            'aria-pressed': String(selected),
+            'data-type': EQUIPMENT,
+            'data-id': item.id,
+            'data-action': `click->${CONTROLLER}#selectEquipment keydown->${CONTROLLER}#selectEquipmentByKey`,
+            [`data-${CONTROLLER}-equipment-param`]: item.id,
+        });
+        group.append(
+            el('polygon', {
+                points: polygonPoints(item.points),
+                fill: style.fill,
+                'fill-opacity': selected ? 0.55 : style.fillOpacity,
+                stroke: selected ? 'currentColor' : style.stroke,
+                'stroke-width': selected ? 2.5 : 1.2,
+                'stroke-dasharray': selected ? 'none' : '3 2',
+                'stroke-linejoin': 'round',
+                'vector-effect': 'non-scaling-stroke',
+                class: 'transition-[fill-opacity]',
+            }, null, name),
+            el('circle', { cx: item.x, cy: item.z, r: dot, fill: style.stroke, class: 'pointer-events-none' }),
+        );
+
+        return group;
+    }
+
+    /** An outline intervention, with its name for a pointer resting on it. */
+    #surface(item, hatch) {
+        const style = STYLES[item.type];
+        // a click goes through to the zone under it: what it is used for is what the map edits
+        const group = el('g', { 'data-type': item.type, 'data-id': item.id, class: 'pointer-events-none' });
+        const attributes = {
+            points: polygonPoints(item.points ?? []),
+            fill: style.fill,
+            'fill-opacity': style.fillOpacity,
+            stroke: style.stroke,
+            'stroke-width': 1.5,
+            'stroke-linejoin': 'round',
+            'vector-effect': 'non-scaling-stroke',
+            ...(style.dashed ? { 'stroke-dasharray': '4 3' } : {}),
+        };
+        group.append(el('polygon', attributes, null, this.name(item)));
+        if (style.hatch) {
+            group.append(el('polygon', { points: attributes.points, fill: `url(#${hatch})`, class: 'pointer-events-none' }));
+        }
+
+        return group;
+    }
+
+    /** A tree: its crown, and its trunk as a dot. */
+    #tree({ id, x, z, r }, style, trunk, name) {
+        const group = el('g', { 'data-type': style === STYLES[NEWTREE] ? NEWTREE : EXISTING_TREE, ...(id ? { 'data-id': id } : {}), class: 'pointer-events-none' });
+        group.append(
+            el('circle', { cx: x, cy: z, r: Math.max(r, trunk * 2), fill: style.fill, 'fill-opacity': style.fillOpacity, stroke: style.stroke, 'stroke-opacity': style.strokeOpacity ?? 1, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }, null, name),
+            el('circle', { cx: x, cy: z, r: trunk, fill: style.stroke, class: 'pointer-events-none' }),
+        );
+
+        return group;
+    }
+
+    /** Stripes for permeable paving, a few pixels apart whatever the zoom. */
+    #hatch(id, spacing) {
+        const pattern = el('pattern', { id, width: spacing, height: spacing, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' });
+        pattern.append(el('path', { d: `M0 0V${spacing}`, stroke: STYLES[PERMEABLE].stroke, 'stroke-opacity': 0.55, 'stroke-width': 1, 'vector-effect': 'non-scaling-stroke' }));
+
+        return pattern;
     }
 
     /** The plot in the middle with room around it, in the shape of the box (4:3 by default). */
@@ -253,7 +461,8 @@ function polygonPoints(points) {
     return points.map(([x, z]) => `${x},${z}`).join(' ');
 }
 
-function el(name, attributes = {}, content = null) {
+/** An SVG element; with a title, a pointer resting on it names it (and assistive technology reads it). */
+function el(name, attributes = {}, content = null, title = null) {
     const node = document.createElementNS(SVG, name);
     for (const [key, value] of Object.entries(attributes)) {
         node.setAttribute(key, String(value));
@@ -261,8 +470,45 @@ function el(name, attributes = {}, content = null) {
     if (content !== null) {
         node.textContent = content;
     }
+    if (title !== null) {
+        node.append(el('title', {}, title));
+    }
 
     return node;
+}
+
+/**
+ * The legend of what the map shows besides the plot: the zones' uses, then the kinds of objects on it.
+ *
+ * @param {HTMLElement} list a <ul>
+ * @param {string[]} uses the zones' uses on the map
+ * @param {string[]} types the kinds of objects on the map
+ * @param {(key: string) => string} name
+ */
+export function renderLegend(list, uses, types, name) {
+    const zoneEntries = Object.keys(ZONE_STYLES).filter((use) => uses.includes(use))
+        .map((use) => ({ key: use, style: { ...ZONE_STYLES[use], fillOpacity: ZONE_SELECTED_FILL_OPACITY }, round: false }));
+    const objectEntries = Object.keys(STYLES).filter((type) => types.includes(type))
+        .map((type) => ({ key: type, style: STYLES[type], round: type === NEWTREE || type === EXISTING_TREE }));
+    list.replaceChildren(...[...zoneEntries, ...objectEntries].map(({ key, style, round }) => {
+        const item = document.createElement('li');
+        item.className = 'flex items-center gap-1.5';
+        const swatch = document.createElementNS(SVG, 'svg');
+        swatch.setAttribute('viewBox', '0 0 12 12');
+        swatch.setAttribute('class', 'size-3 shrink-0');
+        swatch.setAttribute('aria-hidden', 'true');
+        swatch.append(el(round ? 'circle' : 'rect', {
+            ...(round ? { cx: 6, cy: 6, r: 5 } : { x: 1, y: 1, width: 10, height: 10, rx: 1.5 }),
+            fill: style.fill,
+            'fill-opacity': Math.max(style.fillOpacity, 0.35),
+            stroke: style.stroke,
+            'stroke-width': 1.2,
+            ...(style.dashed ? { 'stroke-dasharray': '2 1.5' } : {}),
+        }));
+        item.append(swatch, document.createTextNode(name(key)));
+
+        return item;
+    }));
 }
 
 function text(content, attributes) {

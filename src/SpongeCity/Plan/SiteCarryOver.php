@@ -27,7 +27,8 @@ final readonly class SiteCarryOver
         $objects = $this->editor->site($planId)->objects;
 
         return new CarriedOver(
-            array_values(array_filter($objects, static fn (array $o): bool => in_array($o[O::TYPE] ?? null, O::INTERVENTIONS, true))),
+            // the interventions, the uses a person set on the plot's zones and the equipment they marked (look "user")
+            array_values(array_filter($objects, static fn (array $o): bool => in_array($o[O::TYPE] ?? null, O::INTERVENTIONS, true) || (in_array($o[O::TYPE] ?? null, [O::AREA, O::EQUIPMENT], true) && O::LOOK_USER === ($o[O::LOOK] ?? null)))),
             array_values(array_filter($objects, static fn (array $o): bool => O::BUILDING === ($o[O::TYPE] ?? null) && O::LOOK_USER === ($o[O::LOOK] ?? null))),
         );
     }

@@ -59,8 +59,23 @@ final readonly class SiteImporter
     private const array PLOT_PRIORITY = [self::TAG_LEISURE => 3, self::TAG_AMENITY => 2, self::TAG_LANDUSE => 1];
 
 
+    /** ground areas kept on the plot at most, the largest first */
+    private const int MAX_AREAS = 20;
+    public const string TAG_PLAYGROUND = 'playground';
+    /** playground=* (OpenStreetMap) → SiteObject's equipment kinds; any other value is "other" */
+    private const array EQUIPMENT_KINDS = [
+        'swing' => O::EQUIPMENT_SWING, 'basketswing' => O::EQUIPMENT_SWING, 'slide' => O::EQUIPMENT_SLIDE,
+        'climbingframe' => O::EQUIPMENT_CLIMBING, 'climbing_frame' => O::EQUIPMENT_CLIMBING, 'structure' => O::EQUIPMENT_CLIMBING,
+        'climbingwall' => O::EQUIPMENT_CLIMBING, 'roundabout' => O::EQUIPMENT_CAROUSEL, 'seesaw' => O::EQUIPMENT_SEESAW,
+        'springy' => O::EQUIPMENT_SPRING,
+    ];
+    private const int MAX_EQUIPMENT = 30;
+    /** an area counts as the plot's when at least this share of it lies on the plot */
+    private const float AREA_ON_PLOT_SHARE = 0.5;
+
     public function __construct(
         private BuildingTags $tags = new BuildingTags(),
+        private AreaTags $areaTags = new AreaTags(),
     ) {
     }
 
@@ -77,19 +92,31 @@ final readonly class SiteImporter
         $buildings = [];
         $trees = [];
         $roads = [];
+        $areas = [];
+        $equipment = [];
 
         foreach ($elements as $element) {
             $tags = is_array($element['tags'] ?? null) ? $element['tags'] : [];
             if ('node' === ($element['type'] ?? null)) {
                 if (isset($element['lat'], $element['lon'])) {
                     [$x, $z] = $projection->toPlan((float) $element['lat'], (float) $element['lon']);
+                    $kind = $this->tag($tags, self::TAG_PLAYGROUND);
+                    if ('' !== $kind) {
+                        $equipment[] = [...O::equipment(self::EQUIPMENT_KINDS[$kind] ?? O::EQUIPMENT_OTHER, (int) $x, (int) $z), O::LABEL => $this->name($tags)];
+                        continue;
+                    }
                     $trees[] = [O::TYPE => O::TREE, O::X => $x, O::Z => $z, O::HEIGHT => $this->height($tags, self::DEFAULT_TREE_METRES), O::DIAMETER => $this->crown($tags), O::LABEL => $this->treeLabel($tags)];
                 }
                 continue;
             }
             $points = $this->outline($element, $projection);
             $highway = $this->tag($tags, self::TAG_HIGHWAY);
-            if (isset(self::ROAD_WIDTHS[$highway]) && !isset($tags[self::TAG_BUILDING])) {
+            $area = isset($tags[self::TAG_BUILDING]) || count($points) < 3 ? null : $this->areaTags->of($tags);
+            if (null !== $area) {
+                $areas[] = [O::TYPE => O::AREA, O::POINTS => self::clipOutlineToReach($points), O::USE => $area['use'], O::SURFACE => $area['surface'], O::LABEL => $this->name($tags)];
+            }
+            // a pedestrian or service area is drawn by its outline, not as a street along it
+            if (isset(self::ROAD_WIDTHS[$highway]) && !isset($tags[self::TAG_BUILDING]) && !$this->areaTags->isHighwayArea($tags)) {
                 foreach (self::clipToReach($points) as $piece) {
                     $roads[] = [O::TYPE => O::ROAD, O::POINTS => $piece, O::WIDTH => self::ROAD_WIDTHS[$highway], O::KIND => in_array($highway, self::FOOTWAYS, true) ? O::ROAD_FOOTWAY : O::ROAD_CARRIAGEWAY];
                 }
@@ -127,7 +154,10 @@ final readonly class SiteImporter
         usort($buildings, $nearest);
         usort($roads, $nearest);
         usort($trees, static fn (array $a, array $b): int => hypot($a[O::X], $a[O::Z]) <=> hypot($b[O::X], $b[O::Z]));
-        array_push($objects, ...array_slice($buildings, 0, self::MAX_BUILDINGS), ...array_slice($trees, 0, self::MAX_TREES), ...array_slice($roads, 0, self::MAX_ROADS));
+        array_push($objects, ...array_slice($buildings, 0, self::MAX_BUILDINGS), ...array_slice($trees, 0, self::MAX_TREES), ...array_slice($roads, 0, self::MAX_ROADS), ...self::onPlot($areas, $plot));
+        // the plot's play equipment: what stands outside it is not the plan's business
+        $onPlot = array_filter($equipment, static fn (array $e): bool => Polygon::contains($plot, $e[O::X], $e[O::Z]));
+        array_push($objects, ...array_slice(array_values($onPlot), 0, self::MAX_EQUIPMENT));
 
         return new SiteImport(SiteType::encode($objects), $usedFallback, count($buildings), count($trees), Polygon::area($plot) / 1_000_000);
     }
@@ -241,6 +271,30 @@ final readonly class SiteImporter
         $distances = array_map(static fn (array $p): float => hypot((float) $p[0], (float) $p[1]), $points);
 
         return [] === $distances ? 0.0 : min($distances);
+    }
+
+    /**
+     * The areas that lie (mostly) on the plot, not the plot itself, the largest first.
+     *
+     * @param list<array<string, mixed>>  $areas
+     * @param list<array{0: int, 1: int}> $plot
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function onPlot(array $areas, array $plot): array
+    {
+        $kept = [];
+        foreach ($areas as $area) {
+            $points = $area[O::POINTS];
+            $size = count($points) >= 3 ? Polygon::area($points) : 0.0;
+            if ($size <= 0.0 || $points === $plot || Polygon::overlapArea($points, $plot) < $size * self::AREA_ON_PLOT_SHARE) {
+                continue;
+            }
+            $kept[] = [$size, $area];
+        }
+        usort($kept, static fn (array $a, array $b): int => $b[0] <=> $a[0]);
+
+        return array_map(static fn (array $k): array => $k[1], array_slice($kept, 0, self::MAX_AREAS));
     }
 
     /**

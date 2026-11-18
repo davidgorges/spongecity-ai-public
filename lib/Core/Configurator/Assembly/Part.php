@@ -28,6 +28,7 @@ final readonly class Part
      * @param bool         $decor   staging the customer can switch off (never on the BOM)
      * @param bool         $counted false for a further piece of an article that another part already counts
      * @param bool         $draped  lies on the ground: the view follows the terrain with it
+     * @param array<string, mixed>|null $appearance how the view draws it, beyond its shape (a rain garden: its depth); metres
      */
     public function __construct(
         public ?string $sku,
@@ -40,6 +41,7 @@ final readonly class Part
         public bool $decor = false,
         public bool $counted = true,
         public bool $draped = false,
+        public ?array $appearance = null,
     ) {
         $this->measure = $measure ?? Measure::piece();
     }
@@ -67,6 +69,7 @@ final readonly class Part
             $this->decor,
             $this->counted,
             $this->draped,
+            $this->appearance,
         );
     }
 
@@ -88,13 +91,14 @@ final readonly class Part
             $this->decor,
             $this->counted,
             $this->draped,
+            $this->appearance,
         );
     }
 
     /** The part as one that lies on the ground (see the class comment). */
     public function drapedOverTerrain(): self
     {
-        return new self($this->sku, $this->label, $this->shape, $this->material, $this->position, $this->rotation, $this->measure, $this->decor, $this->counted, true);
+        return new self($this->sku, $this->label, $this->shape, $this->material, $this->position, $this->rotation, $this->measure, $this->decor, $this->counted, true, $this->appearance);
     }
 
     public function isOnBom(): bool

@@ -102,7 +102,7 @@ final readonly class Site
 
         return match ($object[O::TYPE]) {
             O::HOUSE, O::OUTBUILDING => [self::rectangle($num(O::X), $num(O::Z), $num(O::TURN), $num(O::WIDTH), $num(O::DEPTH), true)],
-            O::POOL, O::BOX => [self::rectangle($num(O::X), $num(O::Z), $num(O::TURN), $num(O::WIDTH), $num(O::DEPTH), false)],
+            O::POOL, O::BOX, O::EQUIPMENT => [self::rectangle($num(O::X), $num(O::Z), $num(O::TURN), $num(O::WIDTH), $num(O::DEPTH), false)],
             O::CYLINDER => [self::circle($num(O::X), $num(O::Z), $num(O::DIAMETER) / 2)],
             O::TREE, O::NEWTREE => [self::circle($num(O::X), $num(O::Z), self::TREE_RADIUS)],
             O::HEDGE, O::WALL => self::bands($points, $num(O::THICKNESS)),

@@ -14,7 +14,7 @@ final readonly class Candidate
 {
     /**
      * @param array<string, mixed>       $object   the site object to add (type, points, fields)
-     * @param array<string, int|float|string|bool|null> $metrics  what it achieves, in the units its keys name
+     * @param array<string, mixed>       $metrics  what it achieves, in the units its keys name
      * @param list<string>               $reasons  why here, each with its source
      * @param list<string>               $warnings what to check or say
      */
@@ -25,6 +25,18 @@ final readonly class Candidate
         public array $reasons,
         public array $warnings = [],
     ) {
+    }
+
+    /** the same candidate with one more metric */
+    public function withMetric(string $key, mixed $value): self
+    {
+        return new self($this->id, $this->object, [...$this->metrics, $key => $value], $this->reasons, $this->warnings);
+    }
+
+    /** the same candidate under the id it gets once the candidates are ranked */
+    public function withId(string $id): self
+    {
+        return new self($id, $this->object, $this->metrics, $this->reasons, $this->warnings);
     }
 
     /**

@@ -8,12 +8,15 @@ use App\SpongeCity\Conditions\InfiltrationPotential;
 use App\SpongeCity\Terrain\TerrainAnalysis;
 use Core\Configurator\Product\SpongeCity\Impact\GroundClass;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
+use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Site\SiteObject as O;
 use Symfony\Component\DependencyInjection\Attribute\AsTaggedItem;
 
 /**
  * Rain gardens where water runs: the terrain decides where the sealed ground drains to, the
- * candidates sit on those flow paths, as low as the rules allow, sized to what reaches them.
+ * candidates sit on those flow paths, as low as the rules allow, sized to what reaches them, and
+ * shaped like a basin the ground would hold: grown from the flow path over the free ground, its
+ * outline rounded (CellOutline), not a rectangle.
  *
  * The rules (assumptions(), with their sources) rule out ground before anything is scored:
  * buildings and the clearance from their walls (wider where the garden infiltrates, since its
@@ -44,12 +47,19 @@ final readonly class RainGardenSiting implements InterventionSiting
     private const float NEAR_RADIUS_METRES = 30.0;
     /** within this of a low spot, the candidate sits in it */
     private const float LOW_SPOT_REACH_METRES = 4.0;
-    private const array ANGLES = [0, 30, 60, 90, 120, 150];
-    /** up to a long strip across the flow, which catches what runs down a slope side by side */
-    private const array ASPECTS = [1.0, 1.6, 2.5, 4.0];
-    /** where the seed may lie in the rectangle, as shares of its sides from the centre */
-    private const array SEED_OFFSETS = [0.0, -0.3, 0.3];
+    /**
+     * The basin fills from its seed like water would, lowest ground first; each metre away from the
+     * seed counts as this much higher, so it stays compact on flat ground and follows the contour
+     * (across the flow) on a slope, instead of running out in tongues.
+     */
+    private const float COMPACTNESS_METRES_PER_METRE = 0.03;
     private const array SHRINK = [1.0, 0.75, 0.5, 0.35];
+    /** when the smoothed edge strays onto ruled-out ground, the basin gives up the cells beside it this often */
+    private const int REPAIRS = 6;
+    /** grown again this often when it came out smaller than this share of the wanted area */
+    private const int TOP_UPS = 3;
+    private const float TOP_UP_BELOW = 0.95;
+    private const int CLEAN_PASSES = 6;
     /** sized again to what the shape catches, at most this often, when that asks for this much more */
     private const int RESIZES = 2;
     private const float RESIZE_ABOVE = 1.2;
@@ -90,9 +100,9 @@ final readonly class RainGardenSiting implements InterventionSiting
             ++$tried;
             $cell = $context->ground->cellAt($sx, $sz);
             if (null === $cell || !$allowed[$cell]) {
-                continue; // the rectangle holds its seed: no use trying around a seed on ruled-out ground
+                continue; // the basin grows from its seed: none on ruled-out ground
             }
-            $fit = $this->fit($context, $allowed, $sx, $sz, $request->areaM2 ?? $accumulation * self::SIZE_SHARE_OF_CATCHMENT);
+            $fit = $this->shape($context, $allowed, $cell, $request->areaM2 ?? $accumulation * self::SIZE_SHARE_OF_CATCHMENT);
             if (null === $fit) {
                 continue;
             }
@@ -102,7 +112,7 @@ final readonly class RainGardenSiting implements InterventionSiting
                 if ($wanted <= $fit['area'] * self::RESIZE_ABOVE) {
                     break;
                 }
-                $larger = $this->fit($context, $allowed, $sx, $sz, $wanted);
+                $larger = $this->shape($context, $allowed, $cell, $wanted);
                 if (null === $larger || $larger['area'] <= $fit['area']) {
                     break;
                 }
@@ -135,56 +145,297 @@ final readonly class RainGardenSiting implements InterventionSiting
     }
 
     /**
-     * The best rectangle around a seed that fits on allowed ground: largest flow through it, then
-     * the most compact. Tried at the wanted size, then smaller.
+     * The basin around a seed cell: grown over allowed ground the way water fills it, traced and
+     * smoothed into a soft outline that keeps to allowed ground. At the wanted size, else smaller.
      *
      * @param list<bool> $allowed per open-ground cell
      *
-     * @return array{metres: list<array{0: float, 1: float}>, area: float}|null
+     * @return array{metres: list<array{0: float, 1: float}>, area: float, seed: int}|null
      */
-    private function fit(PlacementContext $context, array $allowed, float $sx, float $sz, float $wanted): ?array
+    private function shape(PlacementContext $context, array $allowed, int $seed, float $wanted): ?array
     {
-        $runoff = $context->runoff;
-        \assert(null !== $runoff);
+        $ground = $context->ground;
+        $cellArea = OpenGround::CELL_METRES ** 2;
         $target = max(self::MIN_AREA_M2, min(self::MAX_AREA_M2, $wanted));
         foreach (self::SHRINK as $shrink) {
-            $area = $target * $shrink;
-            if ($area < self::MIN_AREA_M2 && $shrink < 1.0) {
+            $wantedHere = $target * $shrink;
+            $count = (int) round($wantedHere / $cellArea);
+            if ($count * $cellArea < self::MIN_AREA_M2 && $shrink < 1.0) {
                 break;
             }
             $best = null;
-            foreach (self::ASPECTS as $aspect) {
-                $length = sqrt($area * $aspect);
-                $width = $area / $length;
-                foreach (self::ANGLES as $angle) {
-                    [$cos, $sin] = [cos(deg2rad($angle)), sin(deg2rad($angle))];
-                    foreach (self::SEED_OFFSETS as $u) {
-                        foreach (self::SEED_OFFSETS as $v) {
-                            // the seed sits at (u, v) of the rectangle's half sides: its centre is the other way
-                            $cx = $sx - ($u * $length * $cos - $v * $width * $sin);
-                            $cz = $sz - ($u * $length * $sin + $v * $width * $cos);
-                            $corners = [];
-                            foreach ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as [$a, $b]) {
-                                $corners[] = [$cx + $a * $length / 2 * $cos - $b * $width / 2 * $sin, $cz + $a * $length / 2 * $sin + $b * $width / 2 * $cos];
-                            }
-                            if (!$this->allowed($context->ground, $allowed, $corners)) {
-                                continue;
-                            }
-                            // what really drains into it; then the most compact, the seed nearest its middle
-                            $score = $runoff->catchmentOfNodes($runoff->nodesIn($corners)) - $aspect - hypot($u, $v);
-                            if (null === $best || $score > $best['score']) {
-                                $best = ['metres' => $corners, 'area' => $area, 'score' => $score];
-                            }
-                        }
-                    }
+            // the rounded, repaired outline comes out a little smaller than its cells: grow by the shortfall
+            for ($topUp = 0; $topUp <= self::TOP_UPS; ++$topUp) {
+                $basin = $this->basin($context, $allowed, $seed, $count);
+                if (null !== $basin && (null === $best || $basin['area'] > $best['area'])) {
+                    $best = $basin;
                 }
+                if (null === $basin || $basin['area'] >= $wantedHere * self::TOP_UP_BELOW || $basin['cells'] < $count) {
+                    break; // big enough, or the free ground around the seed is used up
+                }
+                $count = (int) ceil($count * $wantedHere / $basin['area']);
             }
             if (null !== $best) {
-                return ['metres' => $best['metres'], 'area' => $best['area']];
+                return ['metres' => $best['metres'], 'area' => $best['area'], 'seed' => $seed];
             }
         }
 
         return null;
+    }
+
+    /**
+     * One basin of a number of cells around the seed: grown, traced, and where its rounded edge
+     * strays onto ruled-out ground, the cells there given up and traced again.
+     *
+     * @param list<bool> $allowed
+     *
+     * @return array{metres: list<array{0: float, 1: float}>, area: float, cells: int}|null cells: how many were grown
+     */
+    private function basin(PlacementContext $context, array $allowed, int $seed, int $count): ?array
+    {
+        $ground = $context->ground;
+        $cells = $this->grow($context, $allowed, $seed, $count);
+        $grown = count($cells);
+        for ($try = 0; $try <= self::REPAIRS && [] !== $cells; ++$try) {
+            $outline = CellOutline::of($ground, $cells);
+            $area = [] === $outline ? 0.0 : Polygon::area($outline);
+            if ($area < self::MIN_AREA_M2) {
+                return null;
+            }
+            $strays = $this->strays($ground, $allowed, $outline);
+            if ([] === $strays) {
+                return ['metres' => $outline, 'area' => $area, 'cells' => $grown];
+            }
+            $cells = $this->clean($ground, $allowed, $this->withoutAround($ground, $cells, $strays), $seed);
+        }
+
+        return null;
+    }
+
+    /**
+     * Fills allowed cells from the seed, lowest (and nearest) first, up to a number of cells; a set
+     * without holes or corner-only contacts, so it has one clean outline.
+     *
+     * @param list<bool> $allowed
+     *
+     * @return array<int, true>
+     */
+    private function grow(PlacementContext $context, array $allowed, int $seed, int $count): array
+    {
+        $ground = $context->ground;
+        $terrain = $context->terrain;
+        [$sx, $sz] = $ground->centre($seed);
+        $cost = static function (int $cell) use ($ground, $terrain, $sx, $sz): float {
+            [$x, $z] = $ground->centre($cell);
+
+            return (null === $terrain ? 0.0 : $terrain->heightAt($x, $z)) + self::COMPACTNESS_METRES_PER_METRE * hypot($x - $sx, $z - $sz);
+        };
+        $queue = new \SplPriorityQueue();
+        $queue->setExtractFlags(\SplPriorityQueue::EXTR_DATA);
+        $queued = [$seed => true];
+        $order = 0;
+        $queue->insert($seed, [-$cost($seed), $order]);
+        $cells = [];
+        while (count($cells) < $count && !$queue->isEmpty()) {
+            $cell = $queue->extract();
+            $cells[$cell] = true;
+            foreach ($this->neighbours($ground, $cell) as $next) {
+                if (!isset($queued[$next]) && $allowed[$next]) {
+                    $queued[$next] = true;
+                    $queue->insert($next, [-$cost($next), --$order]);
+                }
+            }
+        }
+
+        return $this->clean($ground, $allowed, $cells, $seed);
+    }
+
+    /**
+     * Makes a cell set one clean shape: enclosed gaps filled where allowed (else the cells around
+     * them given up), corner-only contacts joined or cut, only the part connected to the seed.
+     *
+     * @param list<bool>       $allowed
+     * @param array<int, true> $cells
+     *
+     * @return array<int, true>
+     */
+    private function clean(OpenGround $ground, array $allowed, array $cells, int $seed): array
+    {
+        for ($pass = 0; $pass < self::CLEAN_PASSES && [] !== $cells; ++$pass) {
+            $changed = false;
+            foreach ($this->holes($ground, $cells) as $hole) {
+                $changed = true;
+                if ([] === array_filter($hole, static fn (int $c): bool => !$allowed[$c])) {
+                    foreach ($hole as $c) {
+                        $cells[$c] = true;
+                    }
+                    continue;
+                }
+                // a tree's root zone or a path inside: open the ring around it instead
+                foreach ($hole as $c) {
+                    foreach ($this->neighbours($ground, $c) as $n) {
+                        unset($cells[$n]);
+                    }
+                }
+            }
+            $columns = $ground->columns;
+            foreach (array_keys($cells) as $cell) {
+                [$c, $r] = [$cell % $columns, intdiv($cell, $columns)];
+                foreach ([-1, 1] as $dc) {
+                    $diagonal = $r + 1 < $ground->rows && $c + $dc >= 0 && $c + $dc < $columns ? ($r + 1) * $columns + $c + $dc : null;
+                    $side = $r * $columns + $c + $dc;
+                    $below = ($r + 1) * $columns + $c;
+                    if (null === $diagonal || !isset($cells[$diagonal]) || isset($cells[$side]) || isset($cells[$below])) {
+                        continue;
+                    }
+                    $changed = true;
+                    if ($allowed[$side]) {
+                        $cells[$side] = true;
+                    } elseif ($allowed[$below]) {
+                        $cells[$below] = true;
+                    } else {
+                        unset($cells[$diagonal]);
+                    }
+                }
+            }
+            if (!$changed) {
+                break;
+            }
+        }
+
+        return $this->connected($ground, $cells, $seed);
+    }
+
+    /**
+     * Gaps enclosed by the set: every run of cells outside it that the border of its frame cannot reach.
+     *
+     * @param array<int, true> $cells
+     *
+     * @return list<list<int>>
+     */
+    private function holes(OpenGround $ground, array $cells): array
+    {
+        if ([] === $cells) {
+            return [];
+        }
+        $columns = $ground->columns;
+        $cs = array_map(static fn (int $cell): int => $cell % $columns, array_keys($cells));
+        $rs = array_map(static fn (int $cell): int => intdiv($cell, $columns), array_keys($cells));
+        [$minC, $maxC, $minR, $maxR] = [min($cs), max($cs), min($rs), max($rs)];
+        $outside = [];
+        $stack = [];
+        for ($r = $minR; $r <= $maxR; ++$r) {
+            for ($c = $minC; $c <= $maxC; ++$c) {
+                $cell = $r * $columns + $c;
+                if (!isset($cells[$cell]) && ($r === $minR || $r === $maxR || $c === $minC || $c === $maxC)) {
+                    $outside[$cell] = true;
+                    $stack[] = $cell;
+                }
+            }
+        }
+        $inFrame = static fn (int $cell): bool => $cell % $columns >= $minC && $cell % $columns <= $maxC && intdiv($cell, $columns) >= $minR && intdiv($cell, $columns) <= $maxR;
+        while ([] !== $stack) {
+            foreach ($this->neighbours($ground, array_pop($stack)) as $n) {
+                if ($inFrame($n) && !isset($cells[$n]) && !isset($outside[$n])) {
+                    $outside[$n] = true;
+                    $stack[] = $n;
+                }
+            }
+        }
+        $holes = [];
+        $seen = [];
+        for ($r = $minR; $r <= $maxR; ++$r) {
+            for ($c = $minC; $c <= $maxC; ++$c) {
+                $cell = $r * $columns + $c;
+                if (isset($cells[$cell]) || isset($outside[$cell]) || isset($seen[$cell])) {
+                    continue;
+                }
+                $hole = [];
+                $stack = [$cell];
+                $seen[$cell] = true;
+                while ([] !== $stack) {
+                    $hole[] = $current = array_pop($stack);
+                    foreach ($this->neighbours($ground, $current) as $n) {
+                        if (!isset($cells[$n]) && !isset($outside[$n]) && !isset($seen[$n])) {
+                            $seen[$n] = true;
+                            $stack[] = $n;
+                        }
+                    }
+                }
+                $holes[] = $hole;
+            }
+        }
+
+        return $holes;
+    }
+
+    /**
+     * The set without its cells next to (or on) the given cells.
+     *
+     * @param array<int, true> $cells
+     * @param list<int>        $around
+     *
+     * @return array<int, true>
+     */
+    private function withoutAround(OpenGround $ground, array $cells, array $around): array
+    {
+        $columns = $ground->columns;
+        foreach ($around as $cell) {
+            [$c, $r] = [$cell % $columns, intdiv($cell, $columns)];
+            for ($dr = -1; $dr <= 1; ++$dr) {
+                for ($dc = -1; $dc <= 1; ++$dc) {
+                    if ($c + $dc >= 0 && $c + $dc < $columns && $r + $dr >= 0 && $r + $dr < $ground->rows) {
+                        unset($cells[($r + $dr) * $columns + $c + $dc]);
+                    }
+                }
+            }
+        }
+
+        return $cells;
+    }
+
+    /**
+     * The part of the set connected (side by side) to the seed, or to its first cell when the seed is gone.
+     *
+     * @param array<int, true> $cells
+     *
+     * @return array<int, true>
+     */
+    private function connected(OpenGround $ground, array $cells, int $seed): array
+    {
+        if ([] === $cells) {
+            return [];
+        }
+        $start = isset($cells[$seed]) ? $seed : (int) array_key_first($cells);
+        $kept = [$start => true];
+        $stack = [$start];
+        while ([] !== $stack) {
+            foreach ($this->neighbours($ground, array_pop($stack)) as $n) {
+                if (isset($cells[$n]) && !isset($kept[$n])) {
+                    $kept[$n] = true;
+                    $stack[] = $n;
+                }
+            }
+        }
+
+        return $kept;
+    }
+
+    /**
+     * @return list<int> the cells sharing a side with a cell
+     */
+    private function neighbours(OpenGround $ground, int $cell): array
+    {
+        $columns = $ground->columns;
+        [$c, $r] = [$cell % $columns, intdiv($cell, $columns)];
+        $neighbours = [];
+        foreach ([[1, 0], [-1, 0], [0, 1], [0, -1]] as [$dc, $dr]) {
+            if ($c + $dc >= 0 && $c + $dc < $columns && $r + $dr >= 0 && $r + $dr < $ground->rows) {
+                $neighbours[] = ($r + $dr) * $columns + $c + $dc;
+            }
+        }
+
+        return $neighbours;
     }
 
     /**
@@ -195,15 +446,32 @@ final readonly class RainGardenSiting implements InterventionSiting
      */
     private function allowed(OpenGround $ground, array $allowed, array $outline): bool
     {
-        // the outline's corners first, then a fine raster inside it
+        return [] !== $outline && [] === $this->strays($ground, $allowed, $outline);
+    }
+
+    /**
+     * The ruled-out cells an outline touches (by its corners, edges and a raster inside).
+     *
+     * @param list<bool>                      $allowed per open-ground cell
+     * @param list<array{0: float, 1: float}> $outline
+     *
+     * @return list<int>
+     */
+    private function strays(OpenGround $ground, array $allowed, array $outline): array
+    {
+        $strays = [];
         foreach ($this->samples($outline) as [$x, $z]) {
             $cell = $ground->cellAt($x, $z);
-            if (null === $cell || !$allowed[$cell]) {
-                return false;
+            if (null === $cell) {
+                // off the grid: the plot's edge is near, its outermost cell stands for it
+                $cell = $ground->cellAt(max($ground->originX, min($x, $ground->originX + $ground->columns - 0.5)), max($ground->originZ, min($z, $ground->originZ + $ground->rows - 0.5)));
+            }
+            if (null !== $cell && !$allowed[$cell]) {
+                $strays[$cell] = true;
             }
         }
 
-        return true;
+        return array_keys($strays);
     }
 
     /**
@@ -250,19 +518,29 @@ final readonly class RainGardenSiting implements InterventionSiting
     }
 
     /**
-     * @param list<array{0: float, 1: float}> $outline a convex outline (the candidates are rectangles)
+     * Points to check an outline by: its corners, its edges every SAMPLE_METRES, and a raster inside.
+     *
+     * @param list<array{0: float, 1: float}> $outline
      *
      * @return list<array{0: float, 1: float}>
      */
     private function samples(array $outline): array
     {
         $samples = $outline;
-        [$a, $b, , $d] = $outline;
-        $steps = static fn (array $p, array $q): int => max(1, (int) ceil(hypot($q[0] - $p[0], $q[1] - $p[1]) / self::SAMPLE_METRES));
-        [$nu, $nv] = [$steps($a, $b), $steps($a, $d)];
-        for ($i = 0; $i <= $nu; ++$i) {
-            for ($j = 0; $j <= $nv; ++$j) {
-                $samples[] = [$a[0] + ($b[0] - $a[0]) * $i / $nu + ($d[0] - $a[0]) * $j / $nv, $a[1] + ($b[1] - $a[1]) * $i / $nu + ($d[1] - $a[1]) * $j / $nv];
+        $count = count($outline);
+        foreach ($outline as $i => [$ax, $az]) {
+            [$bx, $bz] = $outline[($i + 1) % $count];
+            $steps = max(1, (int) ceil(hypot($bx - $ax, $bz - $az) / self::SAMPLE_METRES));
+            for ($k = 1; $k < $steps; ++$k) {
+                $samples[] = [$ax + ($bx - $ax) * $k / $steps, $az + ($bz - $az) * $k / $steps];
+            }
+        }
+        [$minX, $maxX, $minZ, $maxZ] = Polygon::bounds($outline);
+        for ($x = $minX + self::SAMPLE_METRES / 2; $x < $maxX; $x += self::SAMPLE_METRES) {
+            for ($z = $minZ + self::SAMPLE_METRES / 2; $z < $maxZ; $z += self::SAMPLE_METRES) {
+                if (Polygon::contains($outline, $x, $z)) {
+                    $samples[] = [$x, $z];
+                }
             }
         }
 
@@ -280,7 +558,7 @@ final readonly class RainGardenSiting implements InterventionSiting
     }
 
     /**
-     * @param array{metres: list<array{0: float, 1: float}>, area: float} $fit
+     * @param array{metres: list<array{0: float, 1: float}>, area: float, seed: int} $fit
      */
     private function candidate(PlacementContext $context, string $id, array $fit, PlacementRequest $request): ?Candidate
     {
@@ -291,11 +569,9 @@ final readonly class RainGardenSiting implements InterventionSiting
         if ($catchment < self::MIN_CATCHMENT_M2) {
             return null;
         }
-        $cx = array_sum(array_column($fit['metres'], 0)) / 4;
-        $cz = array_sum(array_column($fit['metres'], 1)) / 4;
-        $cell = $context->ground->cellAt($cx, $cz);
-        \assert(null !== $cell);
-        $potential = $context->infiltrationAt($cell);
+        // the seed lies inside, the centre of a curved outline may not
+        [$cx, $cz] = $context->ground->centre($fit['seed']);
+        $potential = $context->infiltrationAt($fit['seed']);
         $infiltrates = $this->infiltrates($potential);
         $wall = min(array_map(static function (array $p) use ($context): float {
             $c = $context->ground->cellAt($p[0], $p[1]);
@@ -419,7 +695,7 @@ final readonly class RainGardenSiting implements InterventionSiting
             sprintf('Where water runs: steepest descent on the DGM1 terrain model (2 m), around buildings; roofs drain through their downpipes. Kerbs, gutters and drains are not in the model and may send water elsewhere: confirm on site.'),
             'All open ground of the plot counts as sealed (its surface), except planned interventions.',
             sprintf('Infiltrating rain gardens (where the Versickerungspotentialkarte says possible or likely) keep %.0f m from buildings (DWA-A 138: 1.5 times the depth of a cellar that is not waterproofed); lined ones %.0f m.', self::INFILTRATING_CLEARANCE_METRES, self::LINED_CLEARANCE_METRES),
-            sprintf('Not in tree root zones (crown plus %.1f m, DIN 18920), on streets or paths, at the plot edge, on other interventions or in low spots that are probably built.', OpenGround::ROOT_ZONE_BEYOND_CROWN_METRES),
+            sprintf('Not in tree root zones (crown plus %.1f m, DIN 18920), on streets or paths, at the plot edge, on other interventions, on play or sports areas, in the fall zones of play equipment (DIN EN 1176) or in low spots that are probably built.', OpenGround::ROOT_ZONE_BEYOND_CROWN_METRES),
             sprintf('Sized to about %d %% of the sealed area that drains into it (%d to %d m²), with %d mm ponding.', (int) round(self::SIZE_SHARE_OF_CATCHMENT * 100), (int) self::MIN_AREA_M2, (int) self::MAX_AREA_M2, self::PONDING_MM),
         ];
     }

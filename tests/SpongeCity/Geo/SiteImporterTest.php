@@ -110,6 +110,62 @@ final class SiteImporterTest extends TestCase
         self::assertCount(1, $building[O::MODEL][O::MODEL_WALLS]);
     }
 
+    #[Test]
+    public function theGroundAreasOnTheSchoolyardComeWithTheirUseAndSurface(): void
+    {
+        // a schoolyard around the point; on it a car park, a pitch, a service area and lawn; a car park next door
+        $square = static fn (float $south, float $west, float $size): array => array_map(
+            static fn (array $p): array => ['lat' => self::LATITUDE + $p[0], 'lon' => self::LONGITUDE + $p[1]],
+            [[$south, $west], [$south, $west + $size], [$south + $size, $west + $size], [$south + $size, $west], [$south, $west]],
+        );
+        $way = static fn (array $tags, array $geometry): array => ['type' => 'way', 'tags' => $tags, 'geometry' => $geometry];
+        $import = (new SiteImporter())->import(new GeoPoint(self::LATITUDE, self::LONGITUDE, 'Test'), [
+            $way(['amenity' => 'school', 'name' => 'Schule'], $square(-0.0005, -0.0008, 0.001)),
+            $way(['amenity' => 'parking', 'surface' => 'paving_stones'], $square(-0.0004, -0.0007, 0.0002)),
+            $way(['leisure' => 'pitch'], $square(0.0001, -0.0004, 0.0003)),
+            $way(['highway' => 'service', 'area' => 'yes'], $square(-0.0004, 0.0001, 0.0002)),
+            $way(['landuse' => 'grass'], $square(0.0002, -0.0006, 0.0002)),
+            $way(['amenity' => 'parking'], $square(0.002, 0.002, 0.0002)),
+        ]);
+
+        /** @var array{objects: list<array<string, mixed>>} $site */
+        $site = json_decode((new SiteType())->normalize($import->siteJson), true, flags: \JSON_THROW_ON_ERROR);
+        $areas = array_values(array_filter($site['objects'], static fn (array $o): bool => O::AREA === $o[O::TYPE]));
+        $uses = array_combine(array_column($areas, O::USE), array_column($areas, O::SURFACE));
+        ksort($uses);
+
+        self::assertSame([O::AREA_ACCESS => O::SURFACE_ASPHALT, O::AREA_GREEN => O::SURFACE_LAWN, O::AREA_PARKING => O::SURFACE_CONCRETE, O::AREA_SPORT => O::SURFACE_ASPHALT], $uses, 'the car park next door is not on the plot');
+        self::assertSame([], array_values(array_filter($site['objects'], static fn (array $o): bool => O::ROAD === $o[O::TYPE])), 'a service area is no street along its outline');
+        self::assertSame('Schule', array_values(array_filter($site['objects'], static fn (array $o): bool => O::PLOT === $o[O::TYPE]))[0][O::LABEL]);
+    }
+
+    #[Test]
+    public function playEquipmentOnThePlotIsImportedWithItsFallZone(): void
+    {
+        $square = static fn (float $south, float $west, float $size): array => array_map(
+            static fn (array $p): array => ['lat' => self::LATITUDE + $p[0], 'lon' => self::LONGITUDE + $p[1]],
+            [[$south, $west], [$south, $west + $size], [$south + $size, $west + $size], [$south + $size, $west], [$south, $west]],
+        );
+        $node = static fn (array $tags, float $north, float $east): array => ['type' => 'node', 'tags' => $tags, 'lat' => self::LATITUDE + $north, 'lon' => self::LONGITUDE + $east];
+        $import = (new SiteImporter())->import(new GeoPoint(self::LATITUDE, self::LONGITUDE, 'Test'), [
+            ['type' => 'way', 'tags' => ['amenity' => 'school'], 'geometry' => $square(-0.0005, -0.0008, 0.001)],
+            $node(['playground' => 'swing'], 0.0001, 0.0001),
+            $node(['playground' => 'sandpit'], -0.0001, 0.0001),
+            $node(['natural' => 'tree'], 0.0002, -0.0001),
+            // the neighbour's slide
+            $node(['playground' => 'slide'], 0.003, 0.003),
+        ]);
+
+        /** @var array{objects: list<array<string, mixed>>} $site */
+        $site = json_decode((new SiteType())->normalize($import->siteJson), true, flags: \JSON_THROW_ON_ERROR);
+        $equipment = array_values(array_filter($site['objects'], static fn (array $o): bool => O::EQUIPMENT === $o[O::TYPE]));
+
+        self::assertSame([O::EQUIPMENT_SWING, O::EQUIPMENT_OTHER], array_column($equipment, O::KIND), 'unknown kinds are "other"; the neighbour\'s is left out');
+        self::assertSame(O::EQUIPMENT_SIZES[O::EQUIPMENT_SWING][0], $equipment[0][O::WIDTH]);
+        self::assertSame(O::LOOK_DATA, $equipment[0][O::LOOK]);
+        self::assertCount(1, array_filter($site['objects'], static fn (array $o): bool => O::TREE === $o[O::TYPE]), 'equipment is no tree');
+    }
+
     /**
      * @param array<string, string>     $tags
      * @param list<array{float, float}> $ring    latitude/longitude offsets, closed; a small square when null

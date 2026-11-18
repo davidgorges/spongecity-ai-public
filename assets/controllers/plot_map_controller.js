@@ -1,6 +1,6 @@
 import { Controller } from '@hotwired/stimulus';
 import { getComponent } from '@symfony/ux-live-component';
-import { PlotMapView, area, crossesItself } from '../configurator/plot_map_view.js';
+import { PlotMapView, area, crossesItself, renderLegend, EXISTING_TREE, EQUIPMENT } from '../configurator/plot_map_view.js';
 
 /** the element of the live component this map belongs to */
 const LIVE_ROOT = '[data-controller~="live"]';
@@ -16,9 +16,14 @@ const FOCUS_OUT = 'focusout';
 const POINTER_LEAVE = 'pointerleave';
 const FOCUS_VISIBLE = ':focus-visible';
 const HOVER = ':hover';
+/** the map's cursor while play equipment is being marked */
+const PLACING_CLASS = 'cursor-crosshair';
+/** play equipment is put on the 10 cm grid */
+const EQUIPMENT_SNAP = 100;
 
 /**
- * The plot map: the analysed area in plan with the buildings around it. Its corners
+ * The plot map: the analysed area in plan with the buildings and trees around it and the
+ * planned interventions on it (with a legend of what is shown). Its corners
  * are dragged (they line up with other corners and the buildings' corners; Alt: free),
  * nudged with the arrow keys, added in the middle of an edge and removed with a double
  * click or Delete. Every change is sent to the PlanWorkspace live component, whose
@@ -33,10 +38,19 @@ const HOVER = ':hover';
  *   </div>
  */
 export default class extends Controller {
-    static targets = ['map', 'handle', 'outline', 'tip', 'area', 'status', 'undo'];
+    static targets = ['map', 'handle', 'outline', 'tip', 'area', 'status', 'undo', 'legend', 'place'];
     static values = {
         plot: Array,
         buildings: Array,
+        trees: Array,
+        interventions: Array,
+        zones: Array,
+        zone: String,
+        zoneProp: String,
+        equipment: Array,
+        selectedEquipment: String,
+        equipmentProp: String,
+        addEquipmentAction: String,
         action: String,
         minCorners: Number,
         maxCorners: Number,
@@ -64,9 +78,12 @@ export default class extends Controller {
     #preview = null;
     /** the pointer is over the map or the focus in it */
     #engaged = false;
+    /** the next click on the map marks play equipment there */
+    #placing = false;
 
     connect() {
         this.#view = new PlotMapView(this.mapTarget, this.textsValue);
+        this.#syncContext();
         this.#points = this.plotValue.map((p) => [...p]);
         this.#resize = new ResizeObserver(() => this.#drag || this.#draw());
         this.#resize.observe(this.mapTarget);
@@ -117,6 +134,102 @@ export default class extends Controller {
         if (this.#view && !this.#drag) {
             this.#draw();
         }
+    }
+
+    /** the agent or the person planned, moved or removed something: the map shows it at once */
+    interventionsValueChanged() {
+        this.#contextChanged();
+    }
+
+    treesValueChanged() {
+        this.#contextChanged();
+    }
+
+    zonesValueChanged() {
+        this.#contextChanged();
+    }
+
+    zoneValueChanged() {
+        this.#contextChanged();
+    }
+
+    equipmentValueChanged() {
+        this.#contextChanged();
+    }
+
+    selectedEquipmentValueChanged() {
+        this.#contextChanged();
+    }
+
+    // play equipment: the button arms the map, a click on it marks the equipment there
+
+    togglePlacing() {
+        this.#setPlacing(!this.#placing);
+    }
+
+    stopPlacing() {
+        this.#setPlacing(false);
+    }
+
+    async place(event) {
+        if (!this.#placing) {
+            return;
+        }
+        this.#setPlacing(false);
+        const { x, y: z } = this.#mapPoint(event);
+        const snap = (value) => Math.round(value / EQUIPMENT_SNAP) * EQUIPMENT_SNAP;
+        this.#say(this.textsValue.placed);
+        const component = await getComponent(this.element.closest(LIVE_ROOT));
+        await component.action(this.addEquipmentActionValue, { x: snap(x), z: snap(z) });
+    }
+
+    async selectEquipment(event) {
+        if (this.#placing) {
+            return;
+        }
+        const id = event.params.equipment;
+        const component = await getComponent(this.element.closest(LIVE_ROOT));
+        component.set(this.equipmentPropValue, id === this.selectedEquipmentValue ? null : id, true);
+    }
+
+    selectEquipmentByKey(event) {
+        if (!KEYS_INSERT.includes(event.key)) {
+            return;
+        }
+        event.preventDefault();
+        this.selectEquipment(event);
+    }
+
+    #setPlacing(placing) {
+        this.#placing = placing;
+        this.mapTarget.classList.toggle(PLACING_CLASS, placing);
+        if (this.hasPlaceTarget) {
+            this.placeTarget.setAttribute('aria-pressed', String(placing));
+        }
+        if (placing) {
+            this.#say(this.textsValue.placing);
+        }
+    }
+
+    // the zones: a click (or Enter) selects one, the panel under the map sets its use
+
+    async selectZone(event) {
+        // marking play equipment: the click is the map's
+        if (this.#placing) {
+            return;
+        }
+        const id = event.params.zone;
+        const component = await getComponent(this.element.closest(LIVE_ROOT));
+        // a second click on the selected zone lets it go
+        component.set(this.zonePropValue, id === this.zoneValue ? null : id, true);
+    }
+
+    selectZoneByKey(event) {
+        if (!KEYS_INSERT.includes(event.key)) {
+            return;
+        }
+        event.preventDefault();
+        this.selectZone(event);
     }
 
     /**
@@ -268,6 +381,33 @@ export default class extends Controller {
     }
 
     // internals
+
+    #contextChanged() {
+        if (!this.#view) {
+            return;
+        }
+        this.#syncContext();
+        // while a corner is held the drag redraws every frame, with the new context
+        if (!this.#drag) {
+            this.#draw();
+        }
+    }
+
+    #syncContext() {
+        this.#view.setContext(this.treesValue, this.interventionsValue, this.zonesValue, this.zoneValue || null, this.equipmentValue, this.selectedEquipmentValue || null);
+        if (this.hasLegendTarget) {
+            const uses = [...new Set(this.zonesValue.map((zone) => zone.use))];
+            const types = [
+                ...new Set(this.interventionsValue.map((item) => item.type)),
+                ...(this.treesValue.length > 0 ? [EXISTING_TREE] : []),
+                ...(this.equipmentValue.length > 0 ? [EQUIPMENT] : []),
+            ];
+            const named = { [EXISTING_TREE]: this.textsValue.existingTree, [EQUIPMENT]: this.textsValue.equipmentLegend };
+            const name = (key) => this.textsValue.uses?.[key] ?? named[key] ?? this.textsValue.types?.[key] ?? key;
+            renderLegend(this.legendTarget, uses, types, name);
+            this.legendTarget.hidden = uses.length + types.length === 0;
+        }
+    }
 
     #startDrag(event, index, points, inserted = false) {
         if (this.#drag || event.button > 0) {

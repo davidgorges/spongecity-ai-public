@@ -23,7 +23,8 @@ const STEP = 2;
 const MAX_CORNERS = 40;
 /** opacities at rest and while the plot is being edited */
 const ALPHA = {
-    rest: { curtain: 0.35, glow: 0.35, fill: 0.12, xray: 0.4 },
+    // at rest a hint, so what is planned shows in its own colours; bright while the map is in use
+    rest: { curtain: 0.25, glow: 0.2, fill: 0.05, xray: 0.35 },
     editing: { curtain: 0.6, glow: 0.55, fill: 0.22, xray: 0.65 },
 };
 const RENDER_ORDER = 6;
@@ -57,7 +58,8 @@ export class PlotHighlight {
      * @param {number[][]|null} points the plot's corners [x, z], metres
      * @param {{heightAt: (x: number, z: number) => number, drape: (g: THREE.BufferGeometry) => THREE.BufferGeometry}} terrain
      */
-    setOutline(points, terrain) {
+    /** @param {number[][][]} holes outlines inside the plot it leaves open (the rain gardens' basins) */
+    setOutline(points, terrain, holes = []) {
         this.#clear();
         if (!points || points.length < 3) {
             return;
@@ -68,7 +70,7 @@ export class PlotHighlight {
         corners.forEach((corner, i) => corner.set(...(points[Math.min(i, points.length - 1)])));
         this.#fillMaterial.uniforms.count.value = Math.min(points.length, MAX_CORNERS);
 
-        const fill = new THREE.Mesh(this.#fill(points, terrain), this.#fillMaterial);
+        const fill = new THREE.Mesh(this.#fill(points, terrain, holes), this.#fillMaterial);
         const curtain = new THREE.Mesh(this.#curtain(path, ground), this.#curtainMaterial);
         const linePositions = [...path, path[0]].flatMap(([x, z]) => [x, ground(x, z) + 0.02, z]);
         const line = new Line2(new LineGeometry().setPositions(linePositions), this.#lineMaterial);
@@ -130,11 +132,13 @@ export class PlotHighlight {
     }
 
     /** The whole plot, tinted: its outline triangulated and laid over the terrain. */
-    #fill(points, terrain) {
+    #fill(points, terrain, holes) {
         const contour = points.map(([x, z]) => new THREE.Vector2(x, z));
-        const positions = THREE.ShapeUtils.triangulateShape(contour, [])
+        const inside = holes.filter((hole) => hole.every(([x, z]) => contains(points, x, z)));
+        const all = [...points, ...inside.flat()];
+        const positions = THREE.ShapeUtils.triangulateShape(contour, inside.map((hole) => hole.map(([x, z]) => new THREE.Vector2(x, z))))
             .flat()
-            .flatMap((i) => [points[i][0], LIFT, points[i][1]]);
+            .flatMap((i) => [all[i][0], LIFT, all[i][1]]);
 
         return terrain.drape(geometry(positions, null));
     }
@@ -243,4 +247,16 @@ function densify(points) {
     });
 
     return path;
+}
+
+function contains(points, x, z) {
+    let inside = false;
+    points.forEach(([ax, az], i) => {
+        const [bx, bz] = points[(i + 1) % points.length];
+        if ((az > z) !== (bz > z) && x < ax + ((bx - ax) * (z - az)) / (bz - az)) {
+            inside = !inside;
+        }
+    });
+
+    return inside;
 }

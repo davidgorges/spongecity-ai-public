@@ -150,6 +150,10 @@
 
         {# the plot map: the analysed area drawn over the buildings around it #}
         {% set plot_map = this.plotMap %}
+        {% set equipment_kinds = {} %}
+        {% for kind in this.equipmentKinds %}
+            {% set equipment_kinds = equipment_kinds|merge({(kind): ('plan.equipment.kind.' ~ kind)|trans({}, 'spongecity')}) %}
+        {% endfor %}
         {% if plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')]|length >= this.minPlotCorners %}
             <section
                 class="flex flex-col gap-2 border-b border-border p-4"
@@ -157,6 +161,15 @@
                 {{ stimulus_controller('plot-map', {
                     plot: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')],
                     buildings: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_BUILDINGS')],
+                    trees: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_TREES')],
+                    interventions: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_INTERVENTIONS')],
+                    zones: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_ZONES')],
+                    zone: this.zone ?? '',
+                    zoneProp: constant('App\\Twig\\Components\\PlanWorkspace::PROP_ZONE'),
+                    equipment: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_EQUIPMENT')],
+                    selectedEquipment: this.equipment ?? '',
+                    equipmentProp: constant('App\\Twig\\Components\\PlanWorkspace::PROP_EQUIPMENT'),
+                    addEquipmentAction: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_ADD_EQUIPMENT'),
                     action: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_RESHAPE_PLOT'),
                     minCorners: this.minPlotCorners,
                     maxCorners: this.maxPlotCorners,
@@ -164,6 +177,29 @@
                         corner: 'plan.plot_map.corner'|trans({}, 'spongecity'),
                         insert: 'plan.plot_map.insert'|trans({}, 'spongecity'),
                         north: 'plan.plot_map.north'|trans({}, 'spongecity'),
+                        existingTree: 'plan.plot_map.existing_tree'|trans({}, 'spongecity'),
+                        zone: 'plan.zones.select'|trans({}, 'spongecity'),
+                        equipment: 'plan.equipment.select'|trans({}, 'spongecity'),
+                        equipmentLegend: 'plan.equipment.legend'|trans({}, 'spongecity'),
+                        placing: 'plan.equipment.placing'|trans({}, 'spongecity'),
+                        placed: 'plan.equipment.placed'|trans({}, 'spongecity'),
+                        kinds: equipment_kinds,
+                        uses: {
+                            yard: 'plan.zones.use.yard'|trans({}, 'spongecity'),
+                            parking: 'plan.zones.use.parking'|trans({}, 'spongecity'),
+                            access: 'plan.zones.use.access'|trans({}, 'spongecity'),
+                            sport: 'plan.zones.use.sport'|trans({}, 'spongecity'),
+                            play: 'plan.zones.use.play'|trans({}, 'spongecity'),
+                            quiet: 'plan.zones.use.quiet'|trans({}, 'spongecity'),
+                            green: 'plan.zones.use.green'|trans({}, 'spongecity'),
+                        },
+                        types: {
+                            newtree: 'plan.measures.type.newtree'|trans({}, 'spongecity'),
+                            raingarden: 'plan.measures.type.raingarden'|trans({}, 'spongecity'),
+                            permeable: 'plan.measures.type.permeable'|trans({}, 'spongecity'),
+                            planting: 'plan.measures.type.planting'|trans({}, 'spongecity'),
+                            shadesail: 'plan.measures.type.shadesail'|trans({}, 'spongecity'),
+                        },
                         saved: 'plan.plot_map.message.saved'|trans({}, 'spongecity'),
                         added: 'plan.plot_map.message.added'|trans({}, 'spongecity'),
                         removed: 'plan.plot_map.message.removed'|trans({}, 'spongecity'),
@@ -174,7 +210,7 @@
                         tooMany: 'plan.plot_map.message.too_many'|trans({'%count%': this.maxPlotCorners}, 'spongecity'),
                     },
                 }) }}
-                data-action="keydown->plot-map#shortcut pointerenter->plot-map#engage pointerleave->plot-map#disengage focusin->plot-map#engage focusout->plot-map#disengage pointermove@window->plot-map#drag pointerup@window->plot-map#drop pointercancel@window->plot-map#cancelDrag"
+                data-action="keydown->plot-map#shortcut keydown.esc->plot-map#stopPlacing pointerenter->plot-map#engage pointerleave->plot-map#disengage focusin->plot-map#engage focusout->plot-map#disengage pointermove@window->plot-map#drag pointerup@window->plot-map#drop pointercancel@window->plot-map#cancelDrag"
             >
                 <div class="flex items-center justify-between gap-2">
                     <h2 id="plot-map-title" class="flex items-center gap-2 font-heading text-sm font-semibold">
@@ -183,6 +219,11 @@
                     </h2>
                     <div class="flex items-center gap-2" data-live-ignore>
                         <span class="font-mono text-xs text-muted-foreground" data-plot-map-target="area"></span>
+                        {% set mark_label = 'plan.equipment.mark'|trans({}, 'spongecity') %}
+                        <twig:Button variant="ghost" size="icon-xs" title="{{ mark_label }}" aria-pressed="false" data-plot-map-target="place" data-action="plot-map#togglePlacing">
+                            <twig:ux:icon name="lucide:baby" aria-hidden="true" />
+                            <span class="sr-only">{{ mark_label }}</span>
+                        </twig:Button>
                         {% set undo_label = 'plan.plot_map.undo'|trans({}, 'spongecity') %}
                         <twig:Button variant="ghost" size="icon-xs" title="{{ undo_label }}" data-plot-map-target="undo" data-action="plot-map#undo" disabled>
                             <twig:ux:icon name="lucide:undo-2" aria-hidden="true" />
@@ -199,10 +240,103 @@
                         aria-label="{{ 'plan.plot_map.label'|trans({}, 'spongecity') }}"
                         aria-describedby="plot-map-hint"
                         data-plot-map-target="map"
+                        data-action="click->plot-map#place"
                     ></svg>
                     <p class="sr-only" role="status" aria-live="polite" data-plot-map-target="status"></p>
+                    <ul class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground" aria-label="{{ 'plan.plot_map.legend'|trans({}, 'spongecity') }}" data-plot-map-target="legend" hidden></ul>
                 </div>
-                <p id="plot-map-hint" class="text-xs text-muted-foreground">{{ 'plan.plot_map.hint'|trans({}, 'spongecity') }}</p>
+                {# the selected zone: what it is used for decides what its surface may become #}
+                {% set zone = this.selectedZone %}
+                {% if zone %}
+                    <div class="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3" role="region" aria-labelledby="zone-title">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex flex-col">
+                                <h3 id="zone-title" class="text-sm font-medium">{{ zone.label }}</h3>
+                                <p class="text-xs text-muted-foreground">
+                                    {{ ('plan.zones.source.' ~ zone.source)|trans({}, 'spongecity') }} · {{ zone.area_m2|number_format(0, ',', '.') }} m² · {{ ('plan.zones.surface.' ~ zone.surface)|trans({}, 'spongecity') }}
+                                </p>
+                            </div>
+                            {% set close_label = 'plan.zones.close'|trans({}, 'spongecity') %}
+                            <twig:Button variant="ghost" size="icon-xs" aria-label="{{ close_label }}" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_ZONE') }}">
+                                <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                            </twig:Button>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5" role="group" aria-label="{{ 'plan.zones.use_label'|trans({}, 'spongecity') }}">
+                            {% for use in this.zoneUses %}
+                                <twig:Button
+                                    variant="{{ use == zone.use ? 'default' : 'outline' }}"
+                                    size="xs"
+                                    aria-pressed="{{ use == zone.use ? 'true' : 'false' }}"
+                                    data-action="live#action"
+                                    data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_ZONE_USE') }}"
+                                    data-live-zone-param="{{ zone.id }}"
+                                    data-live-use-param="{{ use }}"
+                                >{{ ('plan.zones.use.' ~ use)|trans({}, 'spongecity') }}</twig:Button>
+                            {% endfor %}
+                        </div>
+                        <p class="text-xs text-muted-foreground">{{ ('plan.zones.means.' ~ zone.use)|trans({}, 'spongecity') }}</p>
+                        <p id="zone-surface-label" class="text-xs font-medium">{{ 'plan.zones.surface_label'|trans({}, 'spongecity') }}</p>
+                        <div class="flex flex-wrap gap-1.5" role="group" aria-labelledby="zone-surface-label">
+                            {% for surface in this.zoneSurfaces %}
+                                <twig:Button
+                                    variant="{{ surface == zone.surface ? 'default' : 'outline' }}"
+                                    size="xs"
+                                    aria-pressed="{{ surface == zone.surface ? 'true' : 'false' }}"
+                                    data-action="live#action"
+                                    data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_ZONE_SURFACE') }}"
+                                    data-live-zone-param="{{ zone.id }}"
+                                    data-live-surface-param="{{ surface }}"
+                                >{{ ('plan.zones.surface.' ~ surface)|trans({}, 'spongecity') }}</twig:Button>
+                            {% endfor %}
+                        </div>
+                        {% if zone.surface == constant('Core\\Configurator\\Site\\SiteObject::SURFACE_UNKNOWN') %}
+                            <p class="text-xs text-muted-foreground">{{ 'plan.zones.unknown_hint'|trans({}, 'spongecity') }}</p>
+                        {% endif %}
+                    </div>
+                {% endif %}
+                {# the selected play equipment: what it is decides its fall zone, which nothing planned may take #}
+                {% set item = this.selectedEquipment %}
+                {% if item %}
+                    <div class="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3" role="region" aria-labelledby="equipment-title">
+                        <div class="flex items-start justify-between gap-2">
+                            <div class="flex flex-col">
+                                <h3 id="equipment-title" class="text-sm font-medium">{{ item.label ?? ('plan.equipment.kind.' ~ item.kind)|trans({}, 'spongecity') }}</h3>
+                                <p class="text-xs text-muted-foreground">
+                                    {{ ('plan.equipment.source.' ~ item.look)|trans({}, 'spongecity') }} · {{ 'plan.equipment.fall_zone'|trans({'%width%': (item.width / 1000)|number_format(1, ',', '.'), '%depth%': (item.depth / 1000)|number_format(1, ',', '.')}, 'spongecity') }}
+                                </p>
+                            </div>
+                            {% set close_label = 'plan.zones.close'|trans({}, 'spongecity') %}
+                            <twig:Button variant="ghost" size="icon-xs" aria-label="{{ close_label }}" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_EQUIPMENT') }}">
+                                <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                            </twig:Button>
+                        </div>
+                        <div class="flex flex-wrap gap-1.5" role="group" aria-label="{{ 'plan.equipment.kind_label'|trans({}, 'spongecity') }}">
+                            {% for kind in this.equipmentKinds %}
+                                <twig:Button
+                                    variant="{{ kind == item.kind ? 'default' : 'outline' }}"
+                                    size="xs"
+                                    aria-pressed="{{ kind == item.kind ? 'true' : 'false' }}"
+                                    data-action="live#action"
+                                    data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_EQUIPMENT_KIND') }}"
+                                    data-live-id-param="{{ item.id }}"
+                                    data-live-kind-param="{{ kind }}"
+                                >{{ ('plan.equipment.kind.' ~ kind)|trans({}, 'spongecity') }}</twig:Button>
+                            {% endfor %}
+                        </div>
+                        <p class="text-xs text-muted-foreground">{{ 'plan.equipment.means'|trans({}, 'spongecity') }}</p>
+                        <div class="flex flex-wrap gap-1.5">
+                            <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_TURN_EQUIPMENT') }}" data-live-id-param="{{ item.id }}">
+                                <twig:ux:icon name="lucide:rotate-cw" aria-hidden="true" />
+                                {{ 'plan.equipment.turn'|trans({'%degrees%': constant('App\\Twig\\Components\\PlanWorkspace::EQUIPMENT_TURN_STEP')}, 'spongecity') }}
+                            </twig:Button>
+                            <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_REMOVE_EQUIPMENT') }}" data-live-id-param="{{ item.id }}">
+                                <twig:ux:icon name="lucide:trash-2" aria-hidden="true" />
+                                {{ 'plan.equipment.remove'|trans({}, 'spongecity') }}
+                            </twig:Button>
+                        </div>
+                    </div>
+                {% endif %}
+                <p id="plot-map-hint" class="text-xs text-muted-foreground">{{ 'plan.plot_map.hint'|trans({}, 'spongecity') }} {{ 'plan.zones.hint'|trans({}, 'spongecity') }} {{ 'plan.equipment.hint'|trans({}, 'spongecity') }}</p>
             </section>
         {% endif %}
 

@@ -19,6 +19,30 @@ import { ProductMask } from './product_mask.js';
 import { InfiltrationOverlay } from './site_conditions.js';
 import { TerrainField } from './terrain.js';
 import { PlotHighlight } from './plot_highlight.js';
+import { RAIN_GARDEN, RainGardens } from './rain_garden.js';
+import { PERMEABLE, PermeableSurfaces } from './permeable_surface.js';
+
+/**
+ * A ground layer with holes where outlines lie wholly on it (the rain gardens' basins): the part,
+ * with the outlines that are inside its profile.
+ */
+function withHoles(part, outlines) {
+    const inside = outlines.filter((outline) => outline.every(([x, z]) => pointInProfile(part.profile, x, z)));
+
+    return inside.length > 0 ? { ...part, holes: inside } : part;
+}
+
+function pointInProfile(profile, x, z) {
+    let inside = false;
+    profile.forEach(([ax, az], i) => {
+        const [bx, bz] = profile[(i + 1) % profile.length];
+        if ((az > z) !== (bz > z) && x < ax + ((bx - ax) * (z - az)) / (bz - az)) {
+            inside = !inside;
+        }
+    });
+
+    return inside;
+}
 
 /** Whether a model (or the node the model library wraps) keeps the grass off the ground under it. */
 function coversGround(model) {
@@ -168,6 +192,10 @@ export class SceneRenderer {
     #highlight = null;
     /** the analysed area marked on the ground; its outline as the plot map is editing it (metres), null: as the scene has it */
     #plotHighlight = new PlotHighlight();
+    /** rain gardens are drawn as planted basins, not as their parts' slabs */
+    #rainGardens = new RainGardens();
+    /** permeable surfaces are laid in their real material and size, with an edging */
+    #permeable = new PermeableSurfaces();
     #plotPreview = null;
     #plotPreviewFrame = 0;
     #reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -199,7 +227,7 @@ export class SceneRenderer {
                 models: environmentModels,
                 onChange: () => this.#requestRender(),
             });
-        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group);
+        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#rainGardens.group, this.#permeable.group);
         // see-through: the ambient occlusion pass would draw it as a solid wall (post_processing.js)
         this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group];
 
@@ -728,6 +756,7 @@ export class SceneRenderer {
         this.#renderer.shadowMap.type = tier.softShadows ? THREE.PCFSoftShadowMap : THREE.PCFShadowMap;
         this.#environment.setShadowMapSize(tier.shadowMapSize);
         this.#environment.setDetail(tier.detail);
+        this.#rainGardens.setDetail(tier.detail);
         if (this.#lastSceneData) {
             this.#syncMaterials(); // glass mode depends on the tier
             this.#rebuildContent(this.#lastSceneData.parts ?? []);
@@ -756,6 +785,7 @@ export class SceneRenderer {
         this.#terrain = new TerrainField(data);
         this.#governor.pause(SceneRenderer.SCENERY_SETTLE_MS);
         this.#environment.setTerrain?.(this.#terrain);
+        this.#openGroundUnderGardens();
         if (this.#lastSceneData) {
             this.#rebuildContent(this.#lastSceneData.parts ?? []);
         }
@@ -772,6 +802,15 @@ export class SceneRenderer {
         this.#requestRender();
 
         return !this.#terrain.isFlat;
+    }
+
+    /** the lawn under the site leaves the rain gardens' basins open (once: the openings follow the gardens) */
+    #openGroundUnderGardens() {
+        const lawn = this.#scene.getObjectByName('lawn');
+        if (lawn?.material && !lawn.material.userData.opensForGardens) {
+            lawn.material.userData.opensForGardens = true;
+            this.#rainGardens.openGround(lawn.material);
+        }
     }
 
     /** metres above the plan's origin at x/z (0 without terrain) */
@@ -844,7 +883,16 @@ export class SceneRenderer {
             .filter((part) => part.sku !== null && part.shape !== 'model')
             .map((part) => (this.#plotPreview && part.sku === SceneRenderer.SKU_PLOT ? { ...part, profile: this.#plotPreview } : part));
         this.#picker?.setParts(product);
-        this.#mergeInto(this.#content, product);
+        const gardens = product.filter((part) => part.appearance?.kind === RAIN_GARDEN);
+        this.#rainGardens.setGardens(gardens, this.#terrain);
+        this.#openGroundUnderGardens();
+        // the ground the basins are dug into is open where they lie
+        const outlines = gardens.map((part) => part.profile);
+        this.#permeable.setSurfaces(product.filter((part) => part.appearance?.kind === PERMEABLE), this.#terrain);
+        const rest = product
+            .filter((part) => part.appearance?.kind !== RAIN_GARDEN && part.appearance?.kind !== PERMEABLE)
+            .map((part) => (part.draped && part.shape === 'extrusion' ? withHoles(part, outlines) : part));
+        this.#mergeInto(this.#content, rest);
     }
 
     /**
@@ -871,7 +919,7 @@ export class SceneRenderer {
     /** The highlight along the plot's edge: the outline being edited, else the scene's plot. */
     #updatePlotHighlight() {
         const plot = (this.#lastSceneData?.parts ?? []).find((part) => part.sku === SceneRenderer.SKU_PLOT);
-        this.#plotHighlight.setOutline(this.#plotPreview ?? plot?.profile ?? null, this.#terrain);
+        this.#plotHighlight.setOutline(this.#plotPreview ?? plot?.profile ?? null, this.#terrain, this.#rainGardens.outlines);
     }
 
     #mergeInto(group, parts) {
@@ -1028,6 +1076,8 @@ export class SceneRenderer {
     dispose() {
         this.#looping = false;
         this.#conditions?.dispose();
+        this.#rainGardens.dispose();
+        this.#permeable.dispose();
         clearTimeout(this.#flickerTimer);
         this.#visibilityObserver.disconnect();
         this.#photo?.dispose();
@@ -1173,7 +1223,7 @@ export class SceneRenderer {
         if (part.shape === 'box') {
             geometry = this.#boxGeometry(part.size, material).clone();
         } else if (part.shape === 'extrusion') {
-            geometry = this.#extrusionGeometry(part.profile, part.depth, material, isLyingFlat(part.rotation));
+            geometry = this.#extrusionGeometry(part.profile, part.depth, material, isLyingFlat(part.rotation), part.holes ?? []);
         } else if (part.shape === 'wire_mesh') {
             geometry = this.#wireMeshGeometry(part, material).clone();
         } else {
@@ -1189,8 +1239,9 @@ export class SceneRenderer {
     }
 
     /** @param {boolean} upright standing on its outline (a building footprint, paving): walls get UVs along them */
-    #extrusionGeometry(profile, depth, material, upright) {
+    #extrusionGeometry(profile, depth, material, upright, holes = []) {
         const shape = new THREE.Shape(profile.map(([x, y]) => new THREE.Vector2(x, y)));
+        shape.holes = holes.map((hole) => new THREE.Path(hole.map(([x, y]) => new THREE.Vector2(x, y))));
         const geometry = new THREE.ExtrudeGeometry(shape, { depth, bevelEnabled: false }).translate(0, 0, -depth / 2);
         geometry.deleteAttribute('uv');
         geometry.setAttribute('uv', new THREE.BufferAttribute(new Float32Array(geometry.attributes.position.count * 2), 2));

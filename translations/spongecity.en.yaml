@@ -10,6 +10,8 @@ spongecity:
         surface_temperature: Surface temperature
     part:
         plot: Analysed area
+        area: Existing area
+        equipment: Play equipment
         newtree: Shade tree
         raingarden: Rain garden
         permeable: Permeable surface
@@ -77,6 +79,8 @@ plan:
         corner: Corner %number% of the analysed area
         insert: Add a corner between corners %number% and %next%
         north: North is up
+        existing_tree: Existing tree
+        legend: Legend
         undo: Undo
         message:
             saved: Analysed area changed, now %area%.
@@ -87,6 +91,63 @@ plan:
             crossing_short: Edges cross
             too_few: The analysed area needs at least %count% corners.
             too_many: The analysed area can have at most %count% corners.
+    zones:
+        hint: Click an area on the map to say what it is used for; that decides what its surface may become.
+        select: '%name%: set what it is used for'
+        close: Close
+        use_label: Used as
+        use:
+            yard: Yard
+            parking: Car park
+            access: Fire lane, deliveries
+            sport: Sports area
+            play: Play area
+            quiet: Quiet area
+            green: Green
+        means:
+            yard: Permeable pavers, along the façade or all of it; stays even for running and wheelchairs.
+            parking: Grass pavers that carry cars and let the rain through.
+            access: Stays passable for fire engines and deliveries.
+            sport: Keeps its own sports surface.
+            play: Keeps its own surfacing, for fall protection.
+            quiet: A water-bound gravel surface, or planting.
+            green: Already open ground.
+        source:
+            map: From OpenStreetMap
+            user: Set by you
+            assumed: Assumed (open ground between buildings and paths)
+        surface:
+            asphalt: asphalt
+            concrete: concrete or paving
+            gravel: gravel
+            lawn: lawn
+            soil: soil or sand
+            unknown: ground not known yet
+        surface_label: Ground today
+        unknown_hint: Nobody has said yet what this ground is. Until you do, it is never paved; it may be a lawn or a garden.
+    equipment:
+        mark: Mark play equipment
+        hint: Swings, slides and the like keep their fall zone free. Mark them with the play button, then click where they stand.
+        placing: Click on the map where the play equipment stands. Escape cancels.
+        placed: Play equipment marked. Say what it is below.
+        select: '%name%: play equipment and its fall zone'
+        legend: Play equipment (fall zone)
+        kind_label: What it is
+        fall_zone: fall zone %width% × %depth% m
+        means: Nothing is planned in its fall zone (DIN EN 1176), neither rain gardens nor paving.
+        turn: Turn %degrees%°
+        remove: Remove
+        source:
+            data: From OpenStreetMap
+            user: Marked by you
+        kind:
+            swing: Swing
+            slide: Slide
+            climbing: Climbing frame
+            carousel: Roundabout
+            seesaw: Seesaw
+            spring: Spring rider
+            other: Other
     impact:
         title: Measured effect
         today: today

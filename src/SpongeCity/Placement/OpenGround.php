@@ -25,6 +25,11 @@ final readonly class OpenGround
     public const string ROOT_ZONE = 'root zone of a tree';
     public const string PATH = 'street or path';
     public const string PLANNED = 'planned intervention';
+    public const string EQUIPMENT = 'play equipment (its fall zone, DIN EN 1176)';
+    /** play and sports areas keep their surfacing: no rain garden there (paving keeps off them by their use) */
+    public const string PLAY_AREA = 'play or sports area';
+    /** the uses of an area whose ground is a PLAY_AREA */
+    public const array PLAY_USES = [O::AREA_PLAY, O::AREA_SPORT];
 
     /** keep this far inside the plot outline */
     private const float PLOT_MARGIN_METRES = 1.0;
@@ -72,8 +77,20 @@ final readonly class OpenGround
 
             return [(float) $t[O::X] / self::MILLIMETRES_PER_METRE, (float) $t[O::Z] / self::MILLIMETRES_PER_METRE, $radius / self::MILLIMETRES_PER_METRE + self::ROOT_ZONE_BEYOND_CROWN_METRES];
         }, $ofType(O::TREE, O::NEWTREE));
-        $paths = array_map(static fn (array $r): array => ['line' => $metres(Site::points($r)), 'reach' => (float) ($r[O::WIDTH] ?? 0) / 2 / self::MILLIMETRES_PER_METRE + self::PATH_MARGIN_METRES], $ofType(O::ROAD));
-        $planned = array_map(static fn (array $o): array => $metres(Site::points($o)), $ofType(O::RAINGARDEN, O::PERMEABLE, O::PLANTING));
+        $paths = array_values(array_filter(array_map(static function (array $r) use ($metres): array {
+            $line = $metres(Site::points($r));
+
+            return ['line' => $line, 'reach' => (float) ($r[O::WIDTH] ?? 0) / 2 / self::MILLIMETRES_PER_METRE + self::PATH_MARGIN_METRES, 'bounds' => count($line) >= 2 ? Polygon::bounds($line) : null];
+        }, $ofType(O::ROAD)), static fn (array $p): bool => null !== $p['bounds']));
+        $planned = array_values(array_filter(
+            array_map(static fn (array $o): array => ['outline' => $metres(Site::points($o)), 'bounds' => count(Site::points($o)) >= 3 ? Polygon::bounds($metres(Site::points($o))) : null], $ofType(O::RAINGARDEN, O::PERMEABLE, O::PLANTING)),
+            static fn (array $o): bool => null !== $o['bounds'],
+        ));
+        $equipment = array_map(static fn (array $o): array => $metres(Site::outlinesOf($o)[0]), $ofType(O::EQUIPMENT));
+        $playAreas = array_map(
+            static fn (array $o): array => $metres(Site::points($o)),
+            array_filter($ofType(O::AREA), static fn (array $o): bool => in_array($o[O::USE] ?? null, self::PLAY_USES, true) && count(Site::points($o)) >= 3),
+        );
 
         [$minX, $maxX, $minZ, $maxZ] = Polygon::bounds($plot);
         $columns = (int) ceil(($maxX - $minX) / self::CELL_METRES);
@@ -90,9 +107,12 @@ final readonly class OpenGround
                     !Polygon::contains($plot, $x, $z) => self::OUTSIDE,
                     0.0 === $wall => self::BUILDING,
                     self::edgeDistance($plot, $x, $z, true) < self::PLOT_MARGIN_METRES => self::PLOT_EDGE,
-                    self::inAny($paths, static fn (array $p): bool => self::edgeDistance($p['line'], $x, $z, false) < $p['reach']) => self::PATH,
+                    self::inAny($paths, static fn (array $p): bool => self::near($p['bounds'], $x, $z, $p['reach']) && self::edgeDistance($p['line'], $x, $z, false) < $p['reach']) => self::PATH,
+                    // before the trees: paving under a tree's crown must not cover a fall zone either
+                    self::inAny($equipment, static fn (array $o): bool => Polygon::contains($o, $x, $z)) => self::EQUIPMENT,
                     self::inAny($trees, static fn (array $t): bool => hypot($t[0] - $x, $t[1] - $z) < $t[2]) => self::ROOT_ZONE,
-                    self::inAny($planned, static fn (array $o): bool => count($o) >= 3 && (Polygon::contains($o, $x, $z) || self::edgeDistance($o, $x, $z, true) < self::PLANNED_MARGIN_METRES)) => self::PLANNED,
+                    self::inAny($planned, static fn (array $o): bool => self::near($o['bounds'], $x, $z, self::PLANNED_MARGIN_METRES) && (Polygon::contains($o['outline'], $x, $z) || self::edgeDistance($o['outline'], $x, $z, true) < self::PLANNED_MARGIN_METRES)) => self::PLANNED,
+                    self::inAny($playAreas, static fn (array $o): bool => Polygon::contains($o, $x, $z)) => self::PLAY_AREA,
                     default => null,
                 };
             }
@@ -162,6 +182,16 @@ final readonly class OpenGround
         }
 
         return $nearest;
+    }
+
+    /**
+     * Whether a point lies within $margin of a box (minX, maxX, minZ, maxZ): farther, nothing in it is nearer.
+     *
+     * @param array{0: float, 1: float, 2: float, 3: float} $bounds
+     */
+    private static function near(array $bounds, float $x, float $z, float $margin): bool
+    {
+        return $x >= $bounds[0] - $margin && $x <= $bounds[1] + $margin && $z >= $bounds[2] - $margin && $z <= $bounds[3] + $margin;
     }
 
     /**

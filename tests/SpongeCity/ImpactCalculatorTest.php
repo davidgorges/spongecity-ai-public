@@ -7,6 +7,7 @@ namespace App\Tests\SpongeCity;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\SiteImporter;
 use App\SpongeCity\PlanEvaluator;
+use Core\Configurator\Product\SpongeCity\Impact\GroundClass;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Scene\ModelCatalog;
 use Core\Configurator\Scene\SceneSerializer;
@@ -49,6 +50,21 @@ final class ImpactCalculatorTest extends KernelTestCase
             self::assertEqualsWithDelta($metric->baseline, $metric->design, 0.0001, $metric->key);
         }
         self::assertEqualsWithDelta(0.9, (float) $report->metric(ImpactCalculator::METRIC_PEAK_COEFFICIENT)?->baseline, 0.01);
+    }
+
+    #[Test]
+    public function aLawnOnTheMapIsNoAsphaltTodayAndAnInterventionOnItWins(): void
+    {
+        $lawn = [O::TYPE => O::AREA, O::POINTS => [[0, 0], [15000, 0], [15000, 15000], [0, 15000]], O::USE => O::AREA_GREEN, O::SURFACE => O::SURFACE_LAWN];
+        $asphalt = (new ImpactCalculator())->calculate($this->site([]), self::STORM);
+        $withLawn = (new ImpactCalculator())->calculate($this->site([$lawn]), self::STORM);
+        $rainGardenOnIt = (new ImpactCalculator())->calculate($this->site([$lawn, [O::TYPE => O::RAINGARDEN, O::POINTS => [[0, 0], [5000, 0], [5000, 5000], [0, 5000]]]]), self::STORM);
+
+        // a quarter of the plot is lawn: it counts as permeable today, not as part of the plan
+        self::assertGreaterThan(20.0, (float) $withLawn->metric(ImpactCalculator::METRIC_PERMEABLE_SHARE)?->baseline);
+        self::assertSame(0.0, (float) $asphalt->metric(ImpactCalculator::METRIC_PERMEABLE_SHARE)?->baseline);
+        self::assertEqualsWithDelta($withLawn->metric(ImpactCalculator::METRIC_PERMEABLE_SHARE)?->baseline, $withLawn->metric(ImpactCalculator::METRIC_PERMEABLE_SHARE)?->design, 0.0001);
+        self::assertGreaterThan(20.0, $rainGardenOnIt->areasSquareMetres[GroundClass::RainGarden->value] ?? 0.0, 'the garden lies on the lawn, and counts');
     }
 
     #[Test]
@@ -111,6 +127,25 @@ final class ImpactCalculatorTest extends KernelTestCase
     /**
      * @param list<array<string, mixed>> $interventions
      */
+    #[Test]
+    public function aBuildingShadesTheGroundOnItsFarSideFromTheSunAsFarAsItsHeightReaches(): void
+    {
+        $plot = [O::TYPE => O::PLOT, O::POINTS => [[-15000, -15000], [15000, -15000], [15000, 15000], [-15000, 15000]], O::SURFACE => O::SURFACE_ASPHALT];
+        // 10 m high along the plot's west side: the sun (south-west, 52° high) throws its shadow 7.8 m to the north-east
+        $west = [O::TYPE => O::BUILDING, O::POINTS => [[-25000, -15000], [-15000, -15000], [-15000, 15000], [-25000, 15000]], O::HEIGHT => 10000];
+        // as high along the east side: its shadow falls away from the plot
+        $east = [O::TYPE => O::BUILDING, O::POINTS => [[15000, -15000], [25000, -15000], [25000, 15000], [15000, 15000]], O::HEIGHT => 10000];
+        $shade = static fn (array $objects): float => (float) (new ImpactCalculator())
+            ->calculate(Site::fromJson((new SiteType())->normalize(['objects' => [$plot, ...$objects]])), self::STORM)
+            ->metric(ImpactCalculator::METRIC_SHADE)?->baseline;
+
+        self::assertSame(0.0, $shade([]));
+        // a band of about 5.5 m (7.8 m along the diagonal) of the 30 m plot, less the corner it misses
+        self::assertEqualsWithDelta(16.0, $shade([$west]), 2.5);
+        self::assertSame(0.0, $shade([$east]), 'its shadow lies outside the plot');
+        self::assertGreaterThan($shade([$west]) + 1.0, $shade([$west, [O::TYPE => O::TREE, O::X => 5000, O::Z => 0, O::HEIGHT => 12000, O::DIAMETER => 8000]]), 'a tree crown adds its shadow');
+    }
+
     private function site(array $interventions): Site
     {
         $plot = [O::TYPE => O::PLOT, O::POINTS => [[-15000, -15000], [15000, -15000], [15000, 15000], [-15000, 15000]], O::SURFACE => O::SURFACE_ASPHALT];

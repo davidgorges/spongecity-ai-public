@@ -34,6 +34,7 @@ final class PlacementContext
         public readonly array $objects,
         public readonly OpenGround $ground,
         public readonly ?RunoffModel $runoff,
+        public readonly ?Terrain $terrain,
         public readonly SiteConditions $conditions,
         public readonly array $lowSpots,
         public readonly int $stormMillimetres,
@@ -64,7 +65,7 @@ final class PlacementContext
             $lowSpots = $analysis->ofPlot($terrain, $plot, $buildings)['low_spots'] ?? [];
         }
 
-        return new self($planId, $objects, OpenGround::of($objects), $runoff, $conditions, $lowSpots, $stormMillimetres);
+        return new self($planId, $objects, OpenGround::of($objects), $runoff, $terrain, $conditions, $lowSpots, $stormMillimetres);
     }
 
     /** the infiltration class of the map at a cell of the open ground */

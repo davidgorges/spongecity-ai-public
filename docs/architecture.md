@@ -408,8 +408,13 @@ the geometry and applies the planning rules:
   `catchmentOfNodes()` scores any shape by what really drains into it.
 - `InterventionSiting` (tagged, indexed by type, behind a `ServiceLocator` in `Placements`): one
   per type. `RainGardenSiting` walks the flow paths from the largest, skips water a garden already
-  catches, fits rectangles around the path (6 angles, up to a 4:1 strip across the flow) on allowed
-  ground and sizes them to ~12 % of their catchment (8 to 150 m²). Clearance from buildings: 6 m
+  catches, and grows a basin from the path's cell the way water fills the ground: lowest cells
+  first, a little pull towards the seed so it stays compact (on a slope it spreads along the
+  contour, across the flow, like a swale). It only takes allowed cells, so it bends around root
+  zones and paths. `CellOutline` traces the cells, straightens the staircase and rounds it
+  (Chaikin) into a soft edge of at most 40 corners; where the rounded edge strays onto ruled-out
+  ground, the cells beside it are given up and it is traced again, and it is topped up when it
+  came out smaller than wanted. Sized to ~12 % of its catchment (8 to 150 m²). Clearance from buildings: 6 m
   where the Versickerungspotentialkarte says infiltration is possible or likely (DWA-A 138, cellars
   unknown), 2 m for a lined garden elsewhere. No terrain, no candidate.
 - `Candidate` carries the object to add, metrics (area, catchment, storage, inflow and retained
@@ -419,8 +424,37 @@ the geometry and applies the planning rules:
 - The candidates are shaped so a solver can pick among them later (each has its effect and cost
   drivers); today the agent picks.
 
-`symfony console app:plan:propose <plan> [--area=60] [--near=x,z] [--place=raingarden-1]` shows what
-the agent gets on a real plan.
+**Zones and permeable surfaces.** Paving is not dropped on a yard as a patch: a hard surface becomes
+another, zone by zone, the way landscape architects plan it.
+
+- `area` site objects are the plot's ground areas with a `use` (`yard`, `parking`, `access` = fire
+  lane and deliveries, `sport`, `play`, `quiet`, `green`) and a `surface`. The import takes them from
+  OpenStreetMap inside the plot (`AreaTags`: parking, pitches, playgrounds, service and pedestrian
+  areas, grass; a highway area is no longer imported as a street along its outline). A person says
+  what a zone is used for and what its ground is today on the plot map (or the agent,
+  `describe_zone`): that is an area with `look: user`,
+  carried over a re-import. The impact calculation counts an area's surface (a lawn is no asphalt
+  today); the 3D view draws areas whose surface differs from the plot's.
+- `SurfaceZones` reads the plot as zones: the areas first (the user's over the map's), then each
+  coherent piece of open ground between buildings and paths, taken as a yard of **unknown** ground
+  (`source: assumed`, `surface: unknown`): the plot's surface is a default, not a fact, and such
+  ground is as likely a lawn or a garden as asphalt. Unknown ground is never paved; the proposal says
+  so and the agent asks.
+  A 1 m drip strip along every wall belongs to no zone; ground under trees and planned
+  interventions does. `CellOutline` draws zones and paving with straight lines (rounded only for
+  basins) and cuts a slit to an enclosed building, so every outline is one polygon.
+- `PermeableSiting`: the use decides the material (yard: permeable pavers, car park: grass pavers,
+  quiet area: water-bound gravel) or that it stays (access lanes stay passable, DIN 14090; sports and
+  play surfaces are their own; green is open already). Per zone its alternatives side by side: a
+  band along the façade (6 m, the middle of a yard stays open for play), the trees' root zones
+  (gravel, no deep excavation), the whole zone. Each with the runoff it removes in the design storm,
+  its slope (above 5 % the base needs terraces), infiltration (limited: drained base) and whether its
+  water fed a planned rain garden. What is kept and why is in `excluded_share_of_plot`.
+- The plot map shows the zones under the interventions (dashed when assumed); a click selects one
+  (the `zone` live prop) and a row of uses under the map sets it (`PlanWorkspace::setZoneUse`).
+
+`symfony console app:plan:propose <plan> [--type=permeable] [--area=60] [--near=x,z] [--place=raingarden-1]`
+shows what the agent gets on a real plan.
 
 Tools are stateless: the plan id is part of every call (`PlanAssistant` prefixes each user message
 with `plan_id: …`). The system prompt tells the agent to look first, design with tools, measure

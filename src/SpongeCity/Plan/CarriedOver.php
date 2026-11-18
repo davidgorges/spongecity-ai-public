@@ -10,7 +10,7 @@ namespace App\SpongeCity\Plan;
 final readonly class CarriedOver
 {
     /**
-     * @param list<array<string, mixed>> $interventions the planned interventions
+     * @param list<array<string, mixed>> $interventions the planned interventions, and the areas whose use a person set
      * @param list<array<string, mixed>> $looks         buildings whose façade a person corrected
      */
     public function __construct(

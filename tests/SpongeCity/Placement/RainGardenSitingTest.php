@@ -15,6 +15,8 @@ use App\SpongeCity\Terrain\Terrain;
 use App\SpongeCity\Terrain\TerrainGrid;
 use App\SpongeCity\Terrain\TerrainStore;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
+use App\SpongeCity\Placement\OpenGround;
+use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
 use PHPUnit\Framework\Attributes\Test;
@@ -43,8 +45,22 @@ final class RainGardenSitingTest extends KernelTestCase
         self::assertSame('raingarden-1', $first['id']);
         self::assertTrue(Polygon::contains($first[O::POINTS], 20000, 10000), 'in the bowl');
         self::assertGreaterThan(2000, $first['metrics']['catchment_m2'], 'most of the yard drains to it');
-        self::assertSame(150.0, $first['metrics']['area_m2'], 'sized to its catchment, at most 150 m²');
+        self::assertEqualsWithDelta(150.0, $first['metrics']['area_m2'], 6.0, 'sized to its catchment, at most 150 m² (a little less once its edge is rounded)');
+        self::assertGreaterThan(8, count($first[O::POINTS]), 'a rounded basin, not a rectangle');
+        self::assertLessThanOrEqual(O::MAX_POINTS, count($first[O::POINTS]));
         self::assertCount(1, $proposal['candidates'], 'all the water ends in one bowl: a second garden would only take from the first');
+    }
+
+    #[Test]
+    public function onAnEvenSlopeTheGardenFollowsTheContourAcrossTheFlow(): void
+    {
+        // the yard falls 3 cm per metre to the south, where the water leaves it over the edge
+        $candidate = $this->tools()->proposePlacements($this->plan(slope: true)->id, O::RAINGARDEN, areaM2: 60.0)['candidates'][0];
+
+        $xs = array_column($candidate[O::POINTS], 0);
+        $zs = array_column($candidate[O::POINTS], 1);
+        self::assertGreaterThan(1.5 * (max($zs) - min($zs)), max($xs) - min($xs), 'wider along the contour than down the slope, like a swale');
+        self::assertGreaterThan(20000, min($zs), 'at the foot of the yard');
     }
 
     #[Test]
@@ -69,6 +85,38 @@ final class RainGardenSitingTest extends KernelTestCase
         foreach ($candidate[O::POINTS] as [$x, $z]) {
             self::assertGreaterThanOrEqual(4000, hypot($x - self::TREE[0], $z - self::TREE[1]), 'outside the crown plus 1.5 m');
         }
+    }
+
+    #[Test]
+    public function aSwingInTheBowlKeepsItsFallZone(): void
+    {
+        $plan = $this->plan(bowl: [20.0, 10.0]);
+        $editor = static::getContainer()->get(SiteEditor::class);
+        $editor->add($plan->id, [O::equipment(O::EQUIPMENT_SWING, 20000, 10000)]);
+        $fallZone = Site::outlinesOf($editor->site($plan->id)->ofType(O::EQUIPMENT)[0])[0];
+
+        $proposal = $this->tools()->proposePlacements($plan->id, O::RAINGARDEN);
+
+        self::assertNotEmpty($proposal['candidates'], 'the water still gathers beside it');
+        foreach ($proposal['candidates'] as $candidate) {
+            self::assertEqualsWithDelta(0.0, Polygon::overlapArea($candidate[O::POINTS], $fallZone) / 1e6, 1.0, 'not in the fall zone');
+        }
+        self::assertArrayHasKey(OpenGround::EQUIPMENT, $proposal['excluded_share_of_plot']);
+    }
+
+    #[Test]
+    public function aPlayAreaGetsNoRainGarden(): void
+    {
+        $plan = $this->plan(bowl: [20.0, 10.0]);
+        $playground = [[10000, 0], [30000, 0], [30000, 20000], [10000, 20000]];
+        static::getContainer()->get(SiteEditor::class)->add($plan->id, [[O::TYPE => O::AREA, O::POINTS => $playground, O::USE => O::AREA_PLAY, O::SURFACE => O::SURFACE_SOIL]]);
+
+        $proposal = $this->tools()->proposePlacements($plan->id, O::RAINGARDEN);
+
+        foreach ($proposal['candidates'] as $candidate) {
+            self::assertEqualsWithDelta(0.0, Polygon::overlapArea($candidate[O::POINTS], $playground) / 1e6, 1.0, 'off the playground');
+        }
+        self::assertArrayHasKey(OpenGround::PLAY_AREA, $proposal['excluded_share_of_plot']);
     }
 
     #[Test]
@@ -120,7 +168,7 @@ final class RainGardenSitingTest extends KernelTestCase
         $result = $this->tools()->proposePlacements($this->plan(bowl: null)->id, O::NEWTREE);
 
         self::assertStringContainsString('add_objects', $result['error']);
-        self::assertSame([O::RAINGARDEN], $result['types']);
+        self::assertEqualsCanonicalizing([O::RAINGARDEN, O::PERMEABLE], $result['types']);
     }
 
     #[Test]
@@ -136,9 +184,10 @@ final class RainGardenSitingTest extends KernelTestCase
     }
 
     /**
-     * @param array{0: float, 1: float}|null $bowl where the ground is lowest, plan metres; null: no terrain
+     * @param array{0: float, 1: float}|null $bowl  where the ground is lowest, plan metres; null: no terrain (unless slope)
+     * @param bool                           $slope instead of a bowl, ground falling evenly to the south
      */
-    private function plan(?array $bowl, ?string $infiltration = null): Plan
+    private function plan(?array $bowl = null, ?string $infiltration = null, bool $slope = false): Plan
     {
         $container = static::getContainer();
         $plans = $container->get(PlanStore::class);
@@ -149,12 +198,13 @@ final class RainGardenSitingTest extends KernelTestCase
             [O::TYPE => O::TREE, O::X => self::TREE[0], O::Z => self::TREE[1], O::HEIGHT => 12000, O::DIAMETER => 6000],
         ]]));
         $plans->save($plan);
-        if (null !== $bowl) {
-            // 2 m nodes from -60 to +60 m; the ground rises 3 cm per metre away from the bowl
+        if (null !== $bowl || $slope) {
+            // 2 m nodes from -60 to +60 m; the ground rises 3 cm per metre away from the bowl (or northwards)
             $heights = [];
             for ($r = 0; $r < 61; ++$r) {
                 for ($c = 0; $c < 61; ++$c) {
-                    $heights[] = (int) round(3 * hypot(-60 + 2 * $c - $bowl[0], -60 + 2 * $r - $bowl[1]));
+                    [$x, $z] = [-60 + 2 * $c, -60 + 2 * $r];
+                    $heights[] = (int) round(null === $bowl ? -3 * $z : 3 * hypot($x - $bowl[0], $z - $bowl[1]));
                 }
             }
             $grid = new TerrainGrid(-60.0, -60.0, 2.0, 61, 61, $heights);
