@@ -388,6 +388,39 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | `calculate_impact` | Metrics with bases, assumptions, warnings, cost. |
 | `simulate_buildings` / `get_building_simulation` | Hamburg only: a SimStadt run (heat demand, heat demand with shadow, PV potential) for the buildings within 100 m, started and polled (see "Building simulations"). |
 | `get_site_conditions` | Hamburg only: terrain of the plot (elevation, slope, where water runs and collects), infiltration potential as shares of the plot with their meaning, and the sources (publisher, date, licence, limitations) of the site's official layers. |
+| `propose_placements` / `place_candidate` | Where an intervention works, worked out by the server (rain gardens so far, see "Placing interventions"): candidates with metrics and reasons, then one placed by its id. |
+
+`add_objects` and `update_object` leave out any intervention that covers a building (more than
+0.5 m², `BuildingClearance`) or a tree planted inside one, and return it under `conflicts`;
+`get_site` gives the outline of every building on or touching the plot.
+
+### Placing interventions (`App\SpongeCity\Placement`)
+
+An LLM decides well *what* goes *where* ("a rain garden at the bottom of the yard") and badly
+which corners keep it off a wall. So the agent asks for candidates and chooses; the server does
+the geometry and applies the planning rules:
+
+- `OpenGround`: the plot on a 1 m grid, each cell with what rules it out (outside, plot edge,
+  building, path, tree root zone = crown + 1.5 m after DIN 18920, planned intervention) and its
+  distance to the nearest wall.
+- `RunoffModel`: D8 steepest descent on the DGM1 fine grid (2 m) inside the plot, around buildings;
+  planned rain gardens keep what reaches them. A node's accumulation is the sealed area upstream;
+  `catchmentOfNodes()` scores any shape by what really drains into it.
+- `InterventionSiting` (tagged, indexed by type, behind a `ServiceLocator` in `Placements`): one
+  per type. `RainGardenSiting` walks the flow paths from the largest, skips water a garden already
+  catches, fits rectangles around the path (6 angles, up to a 4:1 strip across the flow) on allowed
+  ground and sizes them to ~12 % of their catchment (8 to 150 m²). Clearance from buildings: 6 m
+  where the Versickerungspotentialkarte says infiltration is possible or likely (DWA-A 138, cellars
+  unknown), 2 m for a lined garden elsewhere. No terrain, no candidate.
+- `Candidate` carries the object to add, metrics (area, catchment, storage, inflow and retained
+  water in the design storm, infiltration, lined, wall distance) and reasons; `Proposal` adds what
+  ruled out the plot's ground. `ProposalStore` keeps the latest per plan and type; `place_candidate`
+  checks the candidate against the plan as it is by then (`stillFits`) and adds it via `SiteEditor`.
+- The candidates are shaped so a solver can pick among them later (each has its effect and cost
+  drivers); today the agent picks.
+
+`symfony console app:plan:propose <plan> [--area=60] [--near=x,z] [--place=raingarden-1]` shows what
+the agent gets on a real plan.
 
 Tools are stateless: the plan id is part of every call (`PlanAssistant` prefixes each user message
 with `plan_id: …`). The system prompt tells the agent to look first, design with tools, measure

@@ -32,14 +32,14 @@ final readonly class ImpactCalculator
     private const float SUN_ELEVATION = 52.0;
     private const float SUN_AZIMUTH_FROM_NORTH = 225.0;
     /** mature canopy radius as a share of the tree height, the crown starts at this share of the height */
-    private const float CANOPY_RADIUS_SHARE = 0.28;
+    public const float CANOPY_RADIUS_SHARE = 0.28;
     private const float CROWN_BASE_SHARE = 0.35;
     /** rain held on leaves and evaporated, millimetres */
     private const float CANOPY_INTERCEPTION_MM = 2.0;
     /** media storage above the ponding depth of a rain garden, metres of water */
-    private const float RAIN_GARDEN_MEDIA_STORAGE = 0.12;
+    public const float RAIN_GARDEN_MEDIA_STORAGE = 0.12;
     /** a rain garden should not drain more than this many times its own area */
-    private const float MAX_CATCHMENT_RATIO = 10.0;
+    public const float MAX_CATCHMENT_RATIO = 10.0;
     private const float SHADE_TEMPERATURE_REDUCTION = 12.0;
     private const float MILLIMETRES_PER_METRE = 1000.0;
     private const float SHADE_RAY_STEP_METRES = 1.5;
