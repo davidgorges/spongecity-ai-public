@@ -4,6 +4,7 @@ import { setPhotoTextureUrls } from '../configurator/photo_textures.js';
 import { TIER_STANDARD, TIER_ULTRA } from '../configurator/quality_tiers.js';
 import { MOODS_IN_ORDER } from '../configurator/outdoor_environment.js';
 import { webGlAvailable } from '../configurator/webgl_support.js';
+import { press } from '../configurator/press.js';
 
 const MILLIMETRES_PER_METRE = 1000;
 
@@ -520,7 +521,7 @@ export default class extends Controller {
             return;
         }
         this.#renderer.setDecorVisible(!this.#renderer.decorVisible);
-        this.decorTargets.forEach((button) => button.setAttribute('aria-pressed', this.#renderer.decorVisible ? 'true' : 'false'));
+        this.decorTargets.forEach((button) => press(button, this.#renderer.decorVisible));
     }
 
     toggleConditions() {
@@ -533,7 +534,7 @@ export default class extends Controller {
             return;
         }
         this.#renderer.setConditionsVisible(visible);
-        this.conditionsTargets.forEach((button) => button.setAttribute('aria-pressed', visible ? 'true' : 'false'));
+        this.conditionsTargets.forEach((button) => press(button, visible));
         this.legendTargets.forEach((legend) => { legend.hidden = !visible; });
     }
 
@@ -607,7 +608,7 @@ export default class extends Controller {
     #syncMoodButtons() {
         const mood = this.#renderer.mood;
         this.moodTargets.forEach((button) => {
-            button.setAttribute('aria-pressed', button.dataset.configuratorViewerMoodParam === mood ? 'true' : 'false');
+            press(button, button.dataset.configuratorViewerMoodParam === mood);
         });
         // the header (data-live-ignore) switches to light text on a dark backdrop in the evening
         this.headerTargets.forEach((header) => { header.dataset.mood = mood; });
@@ -622,7 +623,7 @@ export default class extends Controller {
     }
 
     #syncQualityButtons(high) {
-        this.qualityTargets.forEach((button) => button.setAttribute('aria-pressed', high ? 'true' : 'false'));
+        this.qualityTargets.forEach((button) => press(button, high));
     }
 
     #showStats() {

@@ -10,6 +10,9 @@ const INVALID = 'plan.chat.invalid';
  * and after a while during the wait, so the user watches the design appear.
  *
  *   <section data-controller="plan-chat" data-plan-chat-url-value="/plan/…/chat" data-live-ignore>
+ *
+ * A new message is a copy of the template for its role (user, assistant, error: a Bubble each),
+ * its text put into the element marked data-text.
  */
 export default class extends Controller {
     static targets = ['messages', 'input', 'submit', 'status', 'template'];
@@ -76,8 +79,8 @@ export default class extends Controller {
     }
 
     #append(role, text) {
-        const node = this.templateTarget.content.firstElementChild.cloneNode(true);
-        node.dataset.role = role;
+        const template = this.templateTargets.find((candidate) => candidate.dataset.role === role) ?? this.templateTarget;
+        const node = template.content.firstElementChild.cloneNode(true);
         node.querySelector('[data-text]').textContent = text;
         this.messagesTarget.append(node);
         this.#scrollDown();

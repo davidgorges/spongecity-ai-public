@@ -34,6 +34,8 @@ const EVENT_OPENED = 'opened';
 const EVENT_CLOSED = 'closed';
 /** dispatched as plan-context-menu:highlight, detail {object} (PlanObjects row, or null): the view marks it */
 const EVENT_HIGHLIGHT = 'highlight';
+/** an armed delete: the item template styles itself destructive by it */
+const VARIANT_DESTRUCTIVE = 'destructive';
 
 /**
  * What is clicked in the 3D view, and its context menu. Both events (from configurator-viewer)
@@ -49,13 +51,15 @@ const EVENT_HIGHLIGHT = 'highlight';
  *   server's rules near the point (PlanWorkspace::addHere), which says what it did.
  *
  * The menu is a role="menu" of buttons: arrow keys move, Escape closes and gives the view
- * back its focus, a click elsewhere closes it.
+ * back its focus, a click elsewhere closes it. Its parts are copies of server-rendered templates
+ * (the Toolkit's DropdownMenu: a label, an item, a separator, a group label), their text put into
+ * the element marked data-text.
  *
  * While it is open the view marks the object it is about; once it closes, the one whose side
  * panel is open (the `highlighted` value: the workspace's selected intervention, equipment or zone).
  */
 export default class extends Controller {
-    static targets = ['menu'];
+    static targets = ['menu', 'label', 'item', 'separator', 'group'];
     static values = {
         objects: Array,
         plot: Array,
@@ -218,8 +222,7 @@ export default class extends Controller {
         const texts = this.textsValue;
         const name = object?.name ?? texts.nothing;
         this.menuTarget.setAttribute('aria-label', texts.label.replace('%name%', name));
-        const header = element('div', 'px-2 pt-1.5 pb-1 font-medium', name);
-        const children = [header];
+        const children = [this.#part(this.labelTarget, name)];
 
         if (object?.can.includes(CAN_DELETE)) {
             let armed = false;
@@ -227,8 +230,8 @@ export default class extends Controller {
                 if (!armed) {
                     // the second click deletes: nothing is lost by a slip
                     armed = true;
-                    remove.querySelector('span').textContent = texts.confirmDelete;
-                    remove.classList.add('text-destructive');
+                    remove.querySelector('[data-text]').textContent = texts.confirmDelete;
+                    remove.dataset.variant = VARIANT_DESTRUCTIVE;
 
                     return;
                 }
@@ -237,8 +240,7 @@ export default class extends Controller {
             children.push(remove);
         }
         if (onPlot) {
-            children.push(element('div', 'my-1 h-px bg-border', null, { role: 'separator' }));
-            children.push(element('div', 'px-2 pt-1 text-xs text-muted-foreground', texts.addHere, { role: 'presentation' }));
+            children.push(this.#part(this.separatorTarget), this.#part(this.groupTarget, texts.addHere));
             this.addableValue.forEach((type) => {
                 children.push(this.#item(texts.add[type] ?? type, `add-${type}`, () => this.#act(this.actionsValue.add, { type, x: this.#at.x, z: this.#at.z })));
             });
@@ -247,11 +249,20 @@ export default class extends Controller {
     }
 
     #item(text, key, run) {
-        const button = element('button', 'flex w-full items-center rounded-md px-2 py-1.5 text-left outline-none hover:bg-accent focus-visible:bg-accent', null, { type: 'button', role: 'menuitem', tabindex: '-1', 'data-item': key });
-        button.append(element('span', '', text));
+        const button = this.#part(this.itemTarget, text);
+        button.dataset.item = key;
         button.addEventListener('click', run);
 
         return button;
+    }
+
+    #part(template, text = null) {
+        const node = template.content.firstElementChild.cloneNode(true);
+        if (text !== null) {
+            (node.querySelector('[data-text]') ?? node).textContent = text;
+        }
+
+        return node;
     }
 
     /** which of the workspace's props selects it: zones and play equipment have panels of their own */
@@ -293,15 +304,4 @@ export default class extends Controller {
         this.menuTarget.style.left = `${Math.max(EDGE_MARGIN, left)}px`;
         this.menuTarget.style.top = `${Math.max(EDGE_MARGIN, top)}px`;
     }
-}
-
-function element(name, className, text = null, attributes = {}) {
-    const node = document.createElement(name);
-    node.className = className;
-    if (text !== null) {
-        node.textContent = text;
-    }
-    Object.entries(attributes).forEach(([key, value]) => node.setAttribute(key, value));
-
-    return node;
 }

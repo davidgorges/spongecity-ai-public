@@ -20,8 +20,13 @@
         {% set placeholder = 'home.placeholder'|trans({}, 'spongecity') %}
         {% set submit_label = 'home.submit'|trans({}, 'spongecity') %}
         <form method="post" action="{{ path('home') }}" class="flex flex-col gap-3 sm:flex-row" {{ stimulus_controller('form-submit-disable') }} data-action="submit->form-submit-disable#busy">
-            <label for="place" class="sr-only">{{ 'home.label'|trans({}, 'spongecity') }}</label>
-            <twig:Input id="place" name="place" type="search" required autofocus autocomplete="off" placeholder="{{ placeholder }}" class="h-11 flex-1" />
+            <twig:Label for="place" class="sr-only">{{ 'home.label'|trans({}, 'spongecity') }}</twig:Label>
+            <twig:InputGroup class="h-11 flex-1">
+                <twig:InputGroup:Addon>
+                    <twig:ux:icon name="lucide:map-pin" aria-hidden="true" />
+                </twig:InputGroup:Addon>
+                <twig:InputGroup:Input id="place" name="place" type="search" required autofocus autocomplete="off" placeholder="{{ placeholder }}" />
+            </twig:InputGroup>
             <twig:Button type="submit" size="lg" data-form-submit-disable-target="button">
                 {{ submit_label }}
                 <twig:ux:icon name="lucide:arrow-right" aria-hidden="true" />

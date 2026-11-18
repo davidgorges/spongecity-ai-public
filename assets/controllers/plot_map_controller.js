@@ -1,6 +1,7 @@
 import { Controller } from '@hotwired/stimulus';
 import { getComponent } from '@symfony/ux-live-component';
 import { PlotMapView, area, crossesItself, renderLegend, EXISTING_TREE, EQUIPMENT } from '../configurator/plot_map_view.js';
+import { press } from '../configurator/press.js';
 
 /** the element of the live component this map belongs to */
 const LIVE_ROOT = '[data-controller~="live"]';
@@ -204,7 +205,7 @@ export default class extends Controller {
         this.#placing = placing;
         this.mapTarget.classList.toggle(PLACING_CLASS, placing);
         if (this.hasPlaceTarget) {
-            this.placeTarget.setAttribute('aria-pressed', String(placing));
+            press(this.placeTarget, placing);
         }
         if (placing) {
             this.#say(this.textsValue.placing);

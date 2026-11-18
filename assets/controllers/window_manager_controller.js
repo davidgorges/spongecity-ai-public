@@ -1,5 +1,6 @@
 import { Controller } from '@hotwired/stimulus';
 import { getComponent } from '@symfony/ux-live-component';
+import { press } from '../configurator/press.js';
 
 /** the element of the live component the windows belong to (it re-renders them) */
 const LIVE_ROOT = '[data-controller~="live"]';
@@ -23,7 +24,7 @@ const RIGHT = 'right';
 const BOTTOM_EDGE = 'bottom';
 
 /**
- * Windows over the 3D view (templates/plan/_window.html.twig): each is dragged by its title bar
+ * Windows over the 3D view (<twig:Plan:Window>, templates/components/Plan/Window.html.twig): each is dragged by its title bar
  * (or moved with the arrow keys on its grip), minimised to its title bar, closed and opened again
  * from the dock. Where they are and which are open is kept in this browser (storageKey); a window
  * with data-window-auto opens by itself when that value changes to a non-empty one (an object was
@@ -229,7 +230,7 @@ export default class extends Controller {
         this.dockTargets.forEach((button) => {
             const id = button.dataset.windowManagerIdParam;
             const open = floating ? Boolean(this.#state[id]?.open) : id === this.#active;
-            button.setAttribute('aria-pressed', String(open));
+            press(button, open);
         });
     }
 
@@ -272,7 +273,7 @@ export default class extends Controller {
         const element = this.#window(id);
         const frame = this.element.getBoundingClientRect();
         const width = element?.offsetWidth ?? 0;
-        const header = element?.querySelector('header')?.offsetHeight ?? 40;
+        const header = element?.querySelector('[data-window-header]')?.offsetHeight ?? 40;
 
         return [
             Math.round(Math.max(MARGIN / 2, Math.min(x, frame.width - width - MARGIN / 2))),

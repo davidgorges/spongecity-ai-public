@@ -542,7 +542,7 @@ get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflo
   `configurator_viewer_controller.js` updates the scene without moving the camera.
 - **Windows**: the view fills the screen; the agent's chat, the mini map, object details, the
   measured effect and the measures with their costs are windows over it
-  (`templates/plan/_window.html.twig`, embedded so their content keeps the component's context),
+  (`<twig:Plan:Window>`, `templates/components/Plan/Window.html.twig`: a Toolkit Card),
   opened from a dock. `window_manager_controller.js` drags them by their title bar (or moves them
   with the arrow keys on the grip), minimises, closes and stacks them, keeps them inside the view
   with their content scrolling, and remembers places and open windows in the browser
@@ -636,7 +636,16 @@ and writes screenshots and a report (errors, meshes, frame times, flicker) to
 - Translations in `translations/spongecity.<locale>.yaml` (domain `spongecity`); inside `<twig:…>`
   bodies pass the domain to `|trans`.
 - Run Composer and the console through the Symfony CLI (`symfony composer …`, `symfony console …`).
-- UI: Tailwind v4 with shadcn token names, the UX Toolkit components in `templates/components/`.
+- UI: Tailwind v4 with shadcn token names, the UX Toolkit components in `templates/components/`
+  (`ux:install <recipe> --kit=shadcn`). The workspace is built from them: Card (windows, panels),
+  ToggleGroup (a zone's use and surface, an object's options, the mood), Toggle (dock, overlay),
+  Slider (the storm, bound to its LiveProp by `slider_model_controller.js`), Bubble (chat), Item
+  and Table (measures, costs), Alert, Badge, Collapsible, Empty, InputGroup, and DropdownMenu
+  templates that `plan_context_menu_controller.js` copies for its menu. Inside a nested
+  component's content `this` is that component, so the workspace template reads its own values
+  through `workspace`. A Toggle that another controller presses (dock, mood, overlay, placing
+  equipment) is pressed through `assets/configurator/press.js`: the Toggle's controller would
+  otherwise reset aria-pressed when it connects.
   Build CSS with `symfony console tailwind:build`.
 
 ## Running it
