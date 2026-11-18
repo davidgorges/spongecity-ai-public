@@ -125,6 +125,30 @@ plan:
             unknown: ground not known yet
         surface_label: Ground today
         unknown_hint: Nobody has said yet what this ground is. Until you do, it is never paved; it may be a lawn or a garden.
+    rationale:
+        title: Why it is here
+        by:
+            agent: Placed by the agent
+            user: Chosen by you
+        reasons: The rules
+        warnings: To check
+        alternatives: What the agent also had in mind
+        agent_choice: The agent's choice
+        use: Use this instead
+        use_agent: Back to the agent's choice
+        preview: Hover to see it in the 3D view
+        no_longer_fits: That alternative no longer fits there (something stands there now). Nothing was changed.
+        badge: '%name%: why the agent placed it'
+        shape:
+            band: along the façade
+            trees: under the trees
+            zone: the whole zone
+        summary:
+            raingarden: '%area% m², takes the runoff of %catchment% m², holds %retained% m³'
+            permeable: '%kind% %shape%, %area% m², %removed% m³ less runoff'
+            newtree: Shade tree
+            planting: '%area% m² planting'
+            shadesail: Shade sail
     windows:
         dock: Windows
         chat: Planning agent

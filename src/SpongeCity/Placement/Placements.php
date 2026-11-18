@@ -7,6 +7,9 @@ namespace App\SpongeCity\Placement;
 use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\SiteEditor;
+use App\SpongeCity\Rationale\Alternative;
+use App\SpongeCity\Rationale\Rationale;
+use App\SpongeCity\Rationale\RationaleStore;
 use App\SpongeCity\Terrain\TerrainAnalysis;
 use App\SpongeCity\Terrain\TerrainStore;
 use Core\Configurator\Site\SiteObject as O;
@@ -25,6 +28,10 @@ final readonly class Placements
     /** bump when the zoning changes, so zones of the old one are not reused */
     private const int ZONES_VERSION = 1;
     private const string ZONES_KEY = 'spongecity_zones_v%d_%s';
+    /** a candidate's metric naming the others offered for the same ground (PermeableSiting) */
+    public const string ALTERNATIVES = 'alternatives';
+    /** a rationale keeps at most this many alternatives */
+    private const int MAX_ALTERNATIVES = 4;
 
     /**
      * @param ServiceLocator<InterventionSiting> $sitings
@@ -39,6 +46,7 @@ final readonly class Placements
         private SiteEditor $editor,
         private SurfaceZones $zones,
         private CacheInterface $cache,
+        private RationaleStore $rationales,
     ) {
     }
 
@@ -111,9 +119,12 @@ final readonly class Placements
     }
 
     /**
+     * Places a candidate and keeps why (Rationale): the agent's words for the person, the
+     * candidate's reasons, warnings and numbers, and the candidates it was chosen over.
+     *
      * @return array{placed: bool, id?: string, candidate?: string, error?: string, conflicts?: list<array<string, mixed>>}
      */
-    public function place(Plan $plan, string $candidateId, ?string $label = null): array
+    public function place(Plan $plan, string $candidateId, ?string $label = null, ?string $why = null, string $by = Rationale::BY_AGENT): array
     {
         $type = $this->typeOf($candidateId);
         $candidate = null === $type ? null : $this->proposals->find($plan->id, $type)?->candidate($candidateId);
@@ -128,8 +139,37 @@ final readonly class Placements
         if ([] === $result['ids']) {
             return ['placed' => false, 'error' => 'The candidate could not be added.', 'conflicts' => $result['conflicts']];
         }
+        $proposal = $this->proposals->find($plan->id, $type);
+        $this->rationales->record($plan->id, new Rationale(
+            $result['ids'][0],
+            Rationale::clean($why),
+            $candidate->reasons,
+            $candidate->warnings,
+            $candidate->metrics,
+            null === $proposal ? [] : self::alternatives($proposal, $candidate),
+            $by,
+            $candidateId,
+            Rationale::BY_AGENT === $by ? $candidateId : null,
+        ));
 
         return ['placed' => true, 'id' => $result['ids'][0], 'candidate' => $candidateId];
+    }
+
+    /**
+     * What the candidate was chosen over: the others offered for the same ground where the
+     * proposal names them (a zone's shapes), else the proposal's other candidates.
+     *
+     * @return list<Alternative>
+     */
+    private static function alternatives(Proposal $proposal, Candidate $chosen): array
+    {
+        $named = $chosen->metrics[self::ALTERNATIVES] ?? null;
+        $others = array_filter($proposal->candidates, static fn (Candidate $c): bool => $c->id !== $chosen->id && (!is_array($named) || in_array($c->id, $named, true)));
+
+        return array_values(array_map(
+            static fn (Candidate $c): Alternative => new Alternative($c->id, $c->object, $c->metrics, $c->reasons, $c->warnings),
+            array_slice($others, 0, self::MAX_ALTERNATIVES),
+        ));
     }
 
     private function context(Plan $plan): PlacementContext

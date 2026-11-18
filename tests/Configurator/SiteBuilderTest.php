@@ -164,6 +164,29 @@ final class SiteBuilderTest extends TestCase
         }, $part->shape->profile);
     }
 
+    #[Test]
+    public function aLowerRoofLevelsWallsStandBehindTheTallerOnesWhereTheyShareAFacade(): void
+    {
+        // the main block, and a top storey on its southern half, flush with its south, east and west walls
+        $main = [[0, 0], [10000, 0], [10000, 8000], [0, 8000]];
+        $top = [[0, 0], [10000, 0], [10000, 4000], [0, 4000]];
+        $assembly = (new SiteBuilder())->build($this->site([O::ROOF => Building::ROOF_FLAT, O::HEIGHT => 15000, O::PARTS => [
+            [O::POINTS => $main, O::HEIGHT => 9000],
+            [O::POINTS => $top, O::HEIGHT => 15000],
+        ]]));
+
+        $walls = array_values(array_filter($assembly->parts(), static fn ($p): bool => str_contains((string) $p->material, 'facade')));
+        $byHeight = [];
+        foreach ($walls as $wall) {
+            self::assertInstanceOf(Extrusion::class, $wall->shape);
+            $byHeight[(int) $wall->shape->depth] = $wall->shape->profile;
+        }
+        $xs = static fn (array $profile): array => [min(array_column($profile, 0)), max(array_column($profile, 0))];
+        // the taller level on its own outline; the lower one 3 cm inside it, behind its walls
+        self::assertEqualsWithDelta([0.0, 10000.0], $xs($byHeight[15000]), 0.5);
+        self::assertEqualsWithDelta([30.0, 9970.0], $xs($byHeight[9000]), 0.5);
+    }
+
     private function site(array $fields): Site
     {
         $building = [O::TYPE => O::BUILDING, O::POINTS => [[0, 0], [10000, 0], [10000, 8000], [0, 8000]], O::HEIGHT => self::HEIGHT, ...$fields];

@@ -6,6 +6,7 @@ namespace App\SpongeCity\Placement;
 
 use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\SiteEditor;
+use App\SpongeCity\Rationale\Rationale;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
@@ -76,7 +77,7 @@ final readonly class AddHere
         if (null === $candidate) {
             return ['outcome' => self::NOTHING_FITS, 'params' => ['%reason%' => $proposal->note ?? '']];
         }
-        $placed = $this->placements->place($plan, $candidate->id);
+        $placed = $this->placements->place($plan, $candidate->id, by: Rationale::BY_USER);
         $points = $candidate->object[O::POINTS];
         $distance = Polygon::contains($points, $x, $z) ? 0 : (int) round(hypot(
             array_sum(array_column($points, 0)) / count($points) - $x,
@@ -109,7 +110,7 @@ final readonly class AddHere
         // the clicked zone's gentlest option (they come gentlest first: along the façade, under the trees, all of it)
         foreach ($proposal->candidates as $candidate) {
             if ($zone->id === ($candidate->metrics['zone'] ?? null)) {
-                $placed = $this->placements->place($plan, $candidate->id);
+                $placed = $this->placements->place($plan, $candidate->id, by: Rationale::BY_USER);
 
                 return $this->added($placed['id'] ?? null, O::PERMEABLE, [
                     '%area%' => (int) round($candidate->metrics['area_m2']),

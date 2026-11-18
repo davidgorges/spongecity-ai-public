@@ -87,6 +87,8 @@ export default class extends Controller {
         conditionsUrl: String,
         /** JSON of the site's ground (height grids): loaded first, so the city is built on it once */
         terrainUrl: String,
+        /** badges over the objects the agent explained: {id, x, z, lift (plan millimetres), by, title} */
+        markers: { type: Array, default: [] },
     };
 
     static STORAGE_KEY = 'configurator-quality';
@@ -138,6 +140,7 @@ export default class extends Controller {
             return;
         }
         this.#renderer.update(this.sceneValue);
+        this.#applyMarkers();
         this.#loadScenery();
         this.#syncQualityButtons(high);
         this.#syncMoodButtons();
@@ -168,6 +171,28 @@ export default class extends Controller {
     sceneValueChanged() {
         this.closePhoto();
         this.#renderer?.update(this.sceneValue);
+    }
+
+    /** the agent placed, or a person swapped, an object it explained */
+    markersValueChanged() {
+        this.#applyMarkers();
+    }
+
+    #applyMarkers() {
+        this.#renderer?.setMarkers(this.markersValue.map((marker) => ({
+            ...marker,
+            x: marker.x / MILLIMETRES_PER_METRE,
+            z: marker.z / MILLIMETRES_PER_METRE,
+            lift: marker.lift / MILLIMETRES_PER_METRE,
+        })));
+    }
+
+    /**
+     * An alternative the agent had for the selected object (rationale:preview, detail {points}:
+     * its outline in plan millimetres, or null): shown in amber next to it.
+     */
+    previewAlternative({ detail: { points } }) {
+        this.#renderer?.previewAlternative(points ? { points: points.map(([x, z]) => [x / MILLIMETRES_PER_METRE, z / MILLIMETRES_PER_METRE]) } : null);
     }
 
     async takePhoto() {
@@ -327,13 +352,19 @@ export default class extends Controller {
             this.unhover();
             return;
         }
-        const part = this.#renderer.pickAt(event.clientX, event.clientY);
-        if (!part) {
+        // a badge first: it explains the object it floats over
+        const marker = this.#renderer.markerAt(event.clientX, event.clientY);
+        this.canvasTarget.style.cursor = marker ? 'pointer' : '';
+        const part = marker ? null : this.#renderer.pickAt(event.clientX, event.clientY);
+        if (!marker && !part) {
             this.unhover();
             return;
         }
+        if (marker) {
+            this.#renderer.clearPick();
+        }
         const bounds = this.element.getBoundingClientRect();
-        this.tooltipTarget.textContent = `${part.label} · ${part.sku}`;
+        this.tooltipTarget.textContent = marker ? marker.title : `${part.label} · ${part.sku}`;
         this.tooltipTarget.style.left = `${event.clientX - bounds.left + 14}px`;
         this.tooltipTarget.style.top = `${event.clientY - bounds.top + 14}px`;
         this.tooltipTarget.hidden = false;
@@ -401,6 +432,8 @@ export default class extends Controller {
                 above: point.above,
                 // a model that was hit (a tree), by where it stands
                 model: point.model ? { x: Math.round(point.model.x * MILLIMETRES_PER_METRE), z: Math.round(point.model.z * MILLIMETRES_PER_METRE) } : null,
+                // a badge over an object the agent explained: that object
+                marker: point.marker,
             } : null,
         }));
     }

@@ -109,7 +109,7 @@ final readonly class PermeableSiting implements InterventionSiting
             usort($zoneOptions, static fn (array $a, array $b): int => self::SHAPE_ORDER[$a['shape']] <=> self::SHAPE_ORDER[$b['shape']]);
             $ids = array_map(static fn (int $i): string => self::ID_PREFIX.(count($candidates) + $i + 1), array_keys($zoneOptions));
             foreach ($zoneOptions as $i => $option) {
-                $candidates[] = $option['candidate']->withId($ids[$i])->withMetric('alternatives', array_values(array_diff($ids, [$ids[$i]])));
+                $candidates[] = $option['candidate']->withId($ids[$i])->withMetric(Placements::ALTERNATIVES, array_values(array_diff($ids, [$ids[$i]])));
             }
         }
 

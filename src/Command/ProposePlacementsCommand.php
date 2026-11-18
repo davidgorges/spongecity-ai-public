@@ -41,10 +41,12 @@ final readonly class ProposePlacementsCommand
         int $count = PlacementRequest::DEFAULT_COUNT,
         #[Option(description: 'Place this candidate of the proposal (e.g. raingarden-1)')]
         ?string $place = null,
+        #[Option(description: 'With --place: why, as the agent would tell the user (shown over it in the 3D view)')]
+        ?string $why = null,
     ): int {
         $plan = $this->plans->get($id);
         if (null !== $place) {
-            $result = $this->placements->place($plan, $place);
+            $result = $this->placements->place($plan, $place, why: $why);
             $result['placed'] ? $io->success(sprintf('Placed %s as %s', $place, $result['id'] ?? '')) : $io->error($result['error'] ?? 'Not placed');
 
             return $result['placed'] ? Command::SUCCESS : Command::FAILURE;

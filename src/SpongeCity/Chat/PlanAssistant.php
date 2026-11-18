@@ -48,6 +48,10 @@ final readonly class PlanAssistant
         // the plan id travels with every message: the tools are stateless
         $bag = $bag->with(Message::ofUser(sprintf("plan_id: %s\n\n%s", $planId, $message)));
 
+        // the session is locked while it is open: a turn takes a minute, and the page's own requests
+        // meanwhile (the re-renders that show the design appear) would wait for it until they time
+        // out. Closed for the turn, opened again to keep its answer.
+        $this->requests->getSession()->save();
         $reply = $this->agent->call($bag)->asText();
 
         $history[] = ['role' => self::ROLE_USER, 'content' => $message];

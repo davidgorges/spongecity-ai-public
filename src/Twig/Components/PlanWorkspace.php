@@ -14,6 +14,9 @@ use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanObjects;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
+use App\SpongeCity\Rationale\Alternative;
+use App\SpongeCity\Rationale\Rationale;
+use App\SpongeCity\Rationale\RationaleStore;
 use App\SpongeCity\PlanEvaluator;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
@@ -78,6 +81,10 @@ final class PlanWorkspace
         O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000]],
         O::SHADESAIL => [O::Y => [2500, 3200, 4000]],
     ];
+    /** "use this instead" on an alternative the agent had for an object */
+    public const string ACTION_USE_ALTERNATIVE = 'useAlternative';
+    /** millimetres: a rationale's badge floats this far above its object (above a tree's crown, a sail) */
+    public const int MARKER_ABOVE = 1500;
     public const string NOTICE_TEXT = 'text';
     public const string NOTICE_OK = 'ok';
     private const string DOMAIN = 'spongecity';
@@ -134,6 +141,7 @@ final class PlanWorkspace
         private readonly PlanObjects $objects,
         private readonly AddHere $addHere,
         private readonly TranslatorInterface $translator,
+        private readonly RationaleStore $rationales,
     ) {
     }
 
@@ -239,6 +247,7 @@ final class PlanWorkspace
     public function removeObject(#[LiveArg] string $id): void
     {
         $this->editor->remove($this->planId, $id);
+        $this->rationales->forget($this->planId, $id);
         foreach (['selected', 'equipment'] as $prop) {
             if ($this->{$prop} === $id) {
                 $this->{$prop} = null;
@@ -342,10 +351,122 @@ final class PlanWorkspace
                 'facts' => $row['facts'],
                 'fields' => $fields,
                 'removable' => in_array(PlanObjects::CAN_DELETE, $row['can'], true),
+                'rationale' => $this->rationale($row['id']),
             ];
         }
 
         return null;
+    }
+
+    /**
+     * Where the badges of the objects the agent explained float in the 3D view: over the middle of
+     * each, MARKER_ABOVE over its top (plan millimetres).
+     *
+     * @return list<array{id: string, x: float, z: float, lift: float, by: string, title: string}>
+     */
+    public function markers(): array
+    {
+        $rationales = $this->rationales->of($this->planId);
+        $markers = [];
+        foreach ($this->pickables() as $object) {
+            $rationale = $rationales->for($object['id']);
+            if (null === $rationale) {
+                continue;
+            }
+            [$x, $z] = isset($object['points'])
+                ? [array_sum(array_column($object['points'], 0)) / count($object['points']), array_sum(array_column($object['points'], 1)) / count($object['points'])]
+                : [$object['x'], $object['z']];
+            $markers[] = [
+                'id' => $object['id'],
+                'x' => round($x),
+                'z' => round($z),
+                'lift' => (float) ($object['top'] ?? 0) + self::MARKER_ABOVE,
+                'by' => $rationale->by,
+                'title' => $this->translator->trans('plan.rationale.badge', ['%name%' => $object['name']], self::DOMAIN),
+            ];
+        }
+
+        return $markers;
+    }
+
+    /**
+     * Why an object is in the plan, ready to read: the agent's words, the reasons and warnings, and
+     * the alternatives with a summary and their outline (to preview them in the view).
+     *
+     * @return array{why: string|null, by: string, reasons: list<string>, warnings: list<string>, alternatives: list<array{id: string, summary: string, points: list<array{0: int|float, 1: int|float}>, agent: bool}>}|null
+     */
+    private function rationale(string $id): ?array
+    {
+        $rationale = $this->rationales->of($this->planId)->for($id);
+        if (null === $rationale) {
+            return null;
+        }
+
+        return [
+            'why' => $rationale->why,
+            'by' => $rationale->by,
+            'reasons' => $rationale->reasons,
+            'warnings' => $rationale->warnings,
+            'alternatives' => array_map(fn (Alternative $alternative): array => [
+                'id' => $alternative->id,
+                'summary' => $this->summary($alternative),
+                'points' => Site::points($alternative->object),
+                'agent' => $alternative->id === $rationale->agentCandidate,
+            ], $rationale->alternatives),
+        ];
+    }
+
+    /** an alternative in a line: its kind, shape and size, and what it does for the water */
+    private function summary(Alternative $alternative): string
+    {
+        $metrics = $alternative->metrics;
+        $parameters = [
+            '%area%' => (int) round((float) ($metrics['area_m2'] ?? 0)),
+            '%catchment%' => (int) round((float) ($metrics['catchment_m2'] ?? 0), -1),
+            '%retained%' => number_format((float) ($metrics['retained_m3'] ?? 0), 1),
+            '%removed%' => number_format((float) ($metrics['runoff_removed_m3'] ?? 0), 1),
+            '%kind%' => isset($metrics['kind']) ? $this->translator->trans('plan.object.kind.'.$metrics['kind'], [], self::DOMAIN) : '',
+            '%shape%' => isset($metrics['shape']) ? $this->translator->trans('plan.rationale.shape.'.$metrics['shape'], [], self::DOMAIN) : '',
+        ];
+
+        return $this->translator->trans('plan.rationale.summary.'.($alternative->object[O::TYPE] ?? ''), $parameters, self::DOMAIN);
+    }
+
+    /**
+     * A person takes one of the alternatives the agent had for an object instead (or the agent's
+     * choice back): the object is replaced by it, and its rationale says whose choice it is now.
+     */
+    #[LiveAction]
+    public function useAlternative(#[LiveArg] string $id, #[LiveArg] string $alternative): void
+    {
+        $rationale = $this->rationales->of($this->planId)->for($id);
+        $taken = $rationale?->alternative($alternative);
+        $current = null;
+        foreach (Site::fromJson($this->plan()->siteJson())->objects as $object) {
+            $current = $object[O::ID] === $id ? $object : $current;
+        }
+        if (null === $rationale || null === $taken || null === $current) {
+            return;
+        }
+        $this->editor->remove($this->planId, $id);
+        $added = $this->editor->add($this->planId, [$taken->object])['ids'][0] ?? null;
+        unset($current[O::ID]);
+        if (null === $added) {
+            // it no longer fits (something was built there since): the object stays as it was
+            $restored = $this->editor->add($this->planId, [$current])['ids'][0] ?? null;
+            if (null !== $restored) {
+                $this->rationales->forget($this->planId, $id);
+                $this->rationales->record($this->planId, new Rationale($restored, $rationale->why, $rationale->reasons, $rationale->warnings, $rationale->metrics, $rationale->alternatives, $rationale->by, $rationale->candidate, $rationale->agentCandidate));
+                $this->selected = $restored;
+            }
+            $this->notice = [self::NOTICE_TEXT => $this->translator->trans('plan.rationale.no_longer_fits', [], self::DOMAIN), self::NOTICE_OK => false];
+
+            return;
+        }
+        $this->rationales->forget($this->planId, $id);
+        $this->rationales->record($this->planId, $rationale->swappedFor($taken, $added, $current));
+        $this->selected = $added;
+        $this->zones = null;
     }
 
     /** a field of the intervention open for editing, set to one of the values offered */

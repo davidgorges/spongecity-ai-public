@@ -40,7 +40,7 @@
     <section
         class="relative h-[45svh] shrink-0 bg-muted lg:absolute lg:inset-0 lg:h-auto"
         aria-label="{{ viewer_label }}"
-        data-action="pointermove->configurator-viewer#hover plot-map:preview@window->configurator-viewer#previewPlot plan-context-menu:opened@window->configurator-viewer#holdHover plan-context-menu:closed@window->configurator-viewer#releaseHover plan-context-menu:highlight@window->configurator-viewer#highlightObject"
+        data-action="pointermove->configurator-viewer#hover plot-map:preview@window->configurator-viewer#previewPlot plan-context-menu:opened@window->configurator-viewer#holdHover plan-context-menu:closed@window->configurator-viewer#releaseHover plan-context-menu:highlight@window->configurator-viewer#highlightObject rationale:preview@window->configurator-viewer#previewAlternative"
         {{ stimulus_controller('configurator-viewer', {
             scene: this.scene,
             skies: configurator_skies(),
@@ -52,6 +52,7 @@
             surroundingsUrl: path(constant('App\\Controller\\Plan\\SurroundingsController::ROUTE'), {id: plan.id}),
             conditionsUrl: path(constant('App\\Controller\\Plan\\ConditionsController::ROUTE'), {id: plan.id}),
             terrainUrl: path(constant('App\\Controller\\Plan\\TerrainController::ROUTE'), {id: plan.id}),
+            markers: this.markers,
         }) }}
     >
         <div
@@ -410,6 +411,55 @@
                                     {% endfor %}
                                 </div>
                             {% endfor %}
+                            {# why the agent placed it, and what else it had in mind #}
+                            {% set rationale = object.rationale %}
+                            {% if rationale %}
+                                <div class="flex flex-col gap-2 rounded-md border border-border bg-background p-2.5" role="group" aria-labelledby="rationale-title">
+                                    <p id="rationale-title" class="flex items-center gap-1.5 text-xs font-medium">
+                                        <twig:ux:icon name="lucide:sparkles" class="size-3.5 text-primary" aria-hidden="true" />
+                                        {{ 'plan.rationale.title'|trans({}, 'spongecity') }}
+                                        <span class="font-normal text-muted-foreground">· {{ ('plan.rationale.by.' ~ rationale.by)|trans({}, 'spongecity') }}</span>
+                                    </p>
+                                    {% if rationale.why %}
+                                        <blockquote class="border-l-2 border-primary/50 pl-2 text-sm">{{ rationale.why }}</blockquote>
+                                    {% endif %}
+                                    {% if rationale.reasons is not empty %}
+                                        <details class="text-xs">
+                                            <summary class="cursor-pointer select-none text-muted-foreground">{{ 'plan.rationale.reasons'|trans({}, 'spongecity') }}</summary>
+                                            <ul class="mt-1 flex list-disc flex-col gap-1 pl-4">
+                                                {% for reason in rationale.reasons %}<li>{{ reason }}</li>{% endfor %}
+                                            </ul>
+                                        </details>
+                                    {% endif %}
+                                    {% for warning in rationale.warnings %}
+                                        <p class="flex gap-1.5 text-xs" role="note">
+                                            <twig:ux:icon name="lucide:triangle-alert" class="mt-0.5 size-3 shrink-0 text-warning" aria-hidden="true" />
+                                            {{ warning }}
+                                        </p>
+                                    {% endfor %}
+                                    {% if rationale.alternatives is not empty %}
+                                        <p class="text-xs font-medium">{{ 'plan.rationale.alternatives'|trans({}, 'spongecity') }}</p>
+                                        <ul class="flex flex-col gap-1.5" {{ stimulus_controller('rationale') }} aria-describedby="rationale-preview-hint">
+                                            {% for alternative in rationale.alternatives %}
+                                                <li
+                                                    class="flex items-center gap-2 rounded-md border border-dashed border-amber-500/60 px-2 py-1.5 text-xs hover:bg-amber-500/10 focus-within:bg-amber-500/10"
+                                                    data-rationale-points-param="{{ alternative.points|json_encode }}"
+                                                    data-action="mouseenter->rationale#preview mouseleave->rationale#unpreview focusin->rationale#preview focusout->rationale#unpreview"
+                                                >
+                                                    <span class="min-w-0 flex-1">
+                                                        {% if alternative.agent %}<strong class="font-medium">{{ 'plan.rationale.agent_choice'|trans({}, 'spongecity') }}:</strong>{% endif %}
+                                                        {{ alternative.summary }}
+                                                    </span>
+                                                    <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_USE_ALTERNATIVE') }}" data-live-id-param="{{ object.id }}" data-live-alternative-param="{{ alternative.id }}">
+                                                        {{ (alternative.agent ? 'plan.rationale.use_agent' : 'plan.rationale.use')|trans({}, 'spongecity') }}
+                                                    </twig:Button>
+                                                </li>
+                                            {% endfor %}
+                                        </ul>
+                                        <p id="rationale-preview-hint" class="text-xs text-muted-foreground">{{ 'plan.rationale.preview'|trans({}, 'spongecity') }}</p>
+                                    {% endif %}
+                                </div>
+                            {% endif %}
                             {% if object.removable %}
                                 <div>
                                     <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ object.id }}">

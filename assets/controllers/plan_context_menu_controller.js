@@ -179,7 +179,12 @@ export default class extends Controller {
     }
 
     /** The object under the point: the tree whose model was hit, else among those it lies in the one on top. */
-    #objectAt({ x, z, above, model }) {
+    #objectAt({ x, z, above, model, marker }) {
+        // a badge names its object
+        const explained = marker ? this.objectsValue.find((object) => object.id === marker) : null;
+        if (explained) {
+            return explained;
+        }
         // a crown is drawn wider than its estimate: the model's trunk says which tree it is
         const tree = model ? this.objectsValue.find((object) => object.r !== undefined && Math.hypot(object.x - model.x, object.z - model.z) < MODEL_MATCH) : null;
         if (tree) {

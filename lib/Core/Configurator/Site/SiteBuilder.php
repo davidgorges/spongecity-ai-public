@@ -79,6 +79,11 @@ final class SiteBuilder
     private const float GROUND_FLOOR_MAX = 5.5;
     private const int GROUND_FLOOR_MIN_STOREYS = 3;
     private const float GLAZING_REPEAT_HEIGHT = 3.2;
+    /** millimetres a roof level is drawn inside its outline per level that is taller, at most this many times */
+    private const float LEVEL_INSET = 30.0;
+    private const int LEVEL_INSET_STEPS = 4;
+    /** an inset corner moves at most this many times the inset (a sharp corner would shoot out) */
+    private const float MAX_MITER = 3.0;
 
     private Assembly $assembly;
 
@@ -203,7 +208,14 @@ final class SiteBuilder
             $glass = self::MATERIAL_PREFIX.'glazing';
             // one repeat: four 1.5 m panels across, the band's usual storey up
             $this->assembly->material($glass, new Material('#ffffff', roughness: 0.12, metalness: 0.35, texture: ProceduralTexture::Glazing, textureSize: self::GLAZING_REPEAT_WIDTH, textureHeight: self::GLAZING_REPEAT_HEIGHT));
+            // roof levels overlap (a top storey stands on the main block, flush with its façade): their walls
+            // in one plane flicker. The lower a level, the further its outline is drawn inside (centimetres,
+            // unseen), so the taller one's wall is the one that shows
+            $heights = array_unique(array_map(static fn (array $part): float => $part[O::HEIGHT], $parts));
+            rsort($heights);
+            $rank = array_flip(array_map('strval', $heights));
             foreach ($parts as $part) {
+                $part[O::POINTS] = self::inset($part[O::POINTS], min($rank[(string) $part[O::HEIGHT]], self::LEVEL_INSET_STEPS) * self::LEVEL_INSET);
                 // a thin band rising above the main roof is the glazed front of a top storey or a glass railing
                 // (the model draws it as a wall top under a metre wide): rendered wall up to the main roof, glass above
                 if (self::meanWidth($part[O::POINTS]) < self::GLAZED_BAND_WIDTH && $part[O::HEIGHT] > $main) {
@@ -525,6 +537,49 @@ final class SiteBuilder
         $materials = House::materials();
         $this->assembly->material(House::MATERIAL_FRAME, $materials[House::MATERIAL_FRAME]);
         $this->assembly->material(House::MATERIAL_GLASS, $materials[House::MATERIAL_GLASS]);
+    }
+
+    /**
+     * The outline moved inwards by $distance (millimetres): every edge parallel to itself, each
+     * corner where its two edges meet (no further than MAX_MITER times the distance).
+     *
+     * @param list<array{float, float}> $points
+     *
+     * @return list<array{float, float}>
+     */
+    private static function inset(array $points, float $distance): array
+    {
+        $count = count($points);
+        if ($distance <= 0.0 || $count < 3) {
+            return $points;
+        }
+        $area = 0.0;
+        foreach ($points as $i => [$x, $z]) {
+            [$nx, $nz] = $points[($i + 1) % $count];
+            $area += $x * $nz - $nx * $z;
+        }
+        // which side is inside: left of each edge when the outline runs counter-clockwise (in x/z)
+        $side = $area > 0 ? 1.0 : -1.0;
+        $normal = static function (array $a, array $b) use ($side): array {
+            $length = hypot($b[0] - $a[0], $b[1] - $a[1]);
+
+            return $length > 0 ? [-$side * ($b[1] - $a[1]) / $length, $side * ($b[0] - $a[0]) / $length] : [0.0, 0.0];
+        };
+        $inset = [];
+        foreach ($points as $i => $point) {
+            $before = $normal($points[($i - 1 + $count) % $count], $point);
+            $after = $normal($point, $points[($i + 1) % $count]);
+            [$mx, $mz] = [$before[0] + $after[0], $before[1] + $after[1]];
+            $dot = $before[0] * $after[0] + $before[1] * $after[1];
+            // the bisector, as long as it takes to keep both edges $distance away
+            $scale = min(self::MAX_MITER, 1.0 / max(1e-6, sqrt((1.0 + $dot) / 2.0)));
+            $length = hypot($mx, $mz);
+            $inset[] = $length > 1e-9
+                ? [$point[0] + $mx / $length * $distance * $scale, $point[1] + $mz / $length * $distance * $scale]
+                : [$point[0] + $after[0] * $distance, $point[1] + $after[1] * $distance];
+        }
+
+        return $inset;
     }
 
     /**

@@ -72,13 +72,13 @@ final readonly class PlacementTools
     }
 
     /**
-     * Places a candidate from the latest propose_placements by its id (e.g. "raingarden-1"), with an optional label. It is checked again against the plan as it is now; if something stands there since, propose again.
+     * Places a candidate from the latest propose_placements by its id (e.g. "raingarden-1"), with an optional label. It is checked again against the plan as it is now; if something stands there since, propose again. Give "why": one or two sentences for the user, in their language, on why you chose this candidate over the others (their goals, the trade-off); it is shown over the object in the 3D view together with the alternatives.
      *
      * @return array<string, mixed>
      */
     #[McpTool(name: self::TOOL_PLACE, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false))]
-    public function placeCandidate(string $planId, string $candidateId, ?string $label = null): array
+    public function placeCandidate(string $planId, string $candidateId, ?string $label = null, ?string $why = null): array
     {
-        return $this->placements->place($this->plans->get($planId), $candidateId, $label);
+        return $this->placements->place($this->plans->get($planId), $candidateId, $label, $why);
     }
 }

@@ -463,6 +463,16 @@ before it claims anything, and never state a number that did not come from a too
 Because the app calls its own `/mcp` over HTTP while handling a request, the web server needs more
 than one worker (the Symfony CLI server has several).
 
+
+**Why it is there (`App\SpongeCity\Rationale`).** `place_candidate` takes the agent's `why` (one or
+two sentences for the user) and keeps a `Rationale` for the new object in `RationaleStore`: the
+words, the candidate's reasons, warnings and numbers, and the candidates it was chosen over
+(`Alternative`: a zone's other shapes for paving, the proposal's other candidates otherwise).
+`add_objects` keeps a `why` given per object. The 3D view floats a badge over every object that has
+one (`rationale_markers.js`, `PlanWorkspace::markers`); a click on it selects the object, whose
+details show the reasons and the alternatives. Hovering an alternative previews it in amber,
+"use this instead" swaps it in (`Rationale::swappedFor`: whose choice it is now, the one before
+among the alternatives), and the agent's choice can be taken back the same way.
 ## Building simulations (SimStadt)
 
 [SimStadt 2](https://simstadt.hft-stuttgart.de/) (HFT Stuttgart, MIT licence) simulates the

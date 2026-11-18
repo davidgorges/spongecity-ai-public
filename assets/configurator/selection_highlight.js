@@ -44,8 +44,16 @@ export class SelectionHighlight {
         color: COLOUR_GLOW, transparent: true, opacity: FILL_XRAY_OPACITY, depthWrite: false, depthTest: false, toneMapped: false, side: THREE.DoubleSide,
     });
 
-    constructor() {
-        this.group.name = 'selection-highlight';
+    /**
+     * @param {{name?: string, line?: number, glow?: number}} options another colour for another
+     *        mark (an alternative the agent had: amber), and the group's name
+     */
+    constructor({ name = 'selection-highlight', line = COLOUR_LINE, glow = COLOUR_GLOW } = {}) {
+        this.group.name = name;
+        this.#lineMaterial.color.set(line);
+        this.#xrayMaterial.color.set(glow);
+        this.#fillMaterial.color.set(glow);
+        this.#fillXrayMaterial.color.set(glow);
     }
 
     /**

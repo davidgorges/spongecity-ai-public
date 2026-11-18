@@ -20,6 +20,7 @@ import { InfiltrationOverlay } from './site_conditions.js';
 import { TerrainField } from './terrain.js';
 import { PlotHighlight } from './plot_highlight.js';
 import { SelectionHighlight } from './selection_highlight.js';
+import { RationaleMarkers } from './rationale_markers.js';
 import { RAIN_GARDEN, RainGardens } from './rain_garden.js';
 import { PERMEABLE, PermeableSurfaces } from './permeable_surface.js';
 
@@ -129,6 +130,9 @@ export class SceneRenderer {
     static GROUND_REFINE = 8;
     /** metres: a model stands where a site object is when they are this close */
     static MODEL_MATCH = 0.5;
+    /** an alternative of the agent's, previewed: amber, so it is not taken for the selection */
+    static ALTERNATIVE_LINE = 0xd97706;
+    static ALTERNATIVE_GLOW = 0xfbbf24;
     static LIGHT_POOL_RADIUS = 1.1;
     static LIGHT_POOL_HEIGHT = 0.016;
     static MAX_LAMP_LIGHTS = 4;
@@ -203,6 +207,12 @@ export class SceneRenderer {
     /** the object the context menu or a side panel is about */
     #selection = new SelectionHighlight();
     #selectionShape = null;
+    /** an alternative the agent had for the selected object, previewed in amber */
+    #alternative = new SelectionHighlight({ name: 'alternative-highlight', line: SceneRenderer.ALTERNATIVE_LINE, glow: SceneRenderer.ALTERNATIVE_GLOW });
+    #alternativeShape = null;
+    /** badges over the objects the agent explained */
+    #markers = new RationaleMarkers();
+    #markerData = [];
     /** rain gardens are drawn as planted basins, not as their parts' slabs */
     #rainGardens = new RainGardens();
     /** permeable surfaces are laid in their real material and size, with an edging */
@@ -238,9 +248,9 @@ export class SceneRenderer {
                 models: environmentModels,
                 onChange: () => this.#requestRender(),
             });
-        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#selection.group, this.#rainGardens.group, this.#permeable.group);
+        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#markers.group, this.#rainGardens.group, this.#permeable.group);
         // see-through: the ambient occlusion pass would draw it as a solid wall (post_processing.js)
-        this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group, this.#selection.group];
+        this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#markers.group];
 
         this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement);
         this.#controls.enableDamping = !this.#reducedMotion;
@@ -309,6 +319,37 @@ export class SceneRenderer {
     }
 
     /**
+     * The badge under the pointer (client coordinates), for the hover tooltip.
+     *
+     * @returns {{id: string, title: string}|null}
+     */
+    markerAt(clientX, clientY) {
+        const rect = this.#renderer.domElement.getBoundingClientRect();
+        this.#pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+        this.#raycaster.setFromCamera(this.#pointer, this.#camera);
+
+        return this.#markers.objectAt(this.#raycaster, this.#camera);
+    }
+
+    /**
+     * The badges over the objects the agent explained (metres; lift over the ground).
+     *
+     * @param {{id: string, x: number, z: number, lift: number, by: string, title: string}[]} markers
+     */
+    setMarkers(markers) {
+        this.#markerData = markers;
+        this.#markers.setMarkers(markers, this.#terrain);
+        this.#requestRender();
+    }
+
+    /** An alternative of the agent's for the selected object, in amber; null hides it. */
+    previewAlternative(shape) {
+        this.#alternativeShape = shape;
+        this.#alternative.show(shape, this.#terrain);
+        this.#requestRender();
+    }
+
+    /**
      * Marks an object of the site (SelectionHighlight), or none.
      *
      * @param {{points?: number[][], x?: number, z?: number, r?: number, base?: number, top?: number}|null} shape metres
@@ -339,6 +380,8 @@ export class SceneRenderer {
         const rect = this.#renderer.domElement.getBoundingClientRect();
         this.#pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
         this.#raycaster.setFromCamera(this.#pointer, this.#camera);
+        // a badge floats in front of everything: it names its object
+        const marker = this.#markers.objectAt(this.#raycaster, this.#camera);
         const targets = [this.#content, this.#scenery, this.#rainGardens.group, this.#permeable.group];
         const hit = this.#raycaster.intersectObjects(targets, true).find((intersection) => intersection.object.visible);
         const point = hit?.point ?? this.#groundAlong(this.#raycaster.ray);
@@ -352,6 +395,7 @@ export class SceneRenderer {
             x: point.x, y: point.y, z: point.z,
             above: point.y - this.#terrain.heightAt(point.x, point.z),
             model: model ? { x: model.position.x, z: model.position.z } : null,
+            marker: marker?.id ?? null,
         };
     }
 
@@ -621,6 +665,8 @@ export class SceneRenderer {
         // a marking of the editor, not of the place
         this.#plotHighlight.group.visible = false;
         this.#selection.group.visible = false;
+        this.#alternative.group.visible = false;
+        this.#markers.group.visible = false;
         this.#photo ??= new PhotoMode(this.#renderer, this.#scene, this.#camera);
         // the photo is taken from where the camera is heading: finish a running
         // camera flight (intro, reset) and let the orbit damping come to rest
@@ -659,6 +705,8 @@ export class SceneRenderer {
         this.#photo.stop();
         this.#plotHighlight.group.visible = true;
         this.#selection.group.visible = true;
+        this.#alternative.group.visible = true;
+        this.#markers.group.visible = true;
         this.#setPhotoTextures(Boolean(TIERS[this.#governor.tier].photoTextures));
         this.#controls.enabled = true;
         this.#requestRender();
@@ -890,6 +938,8 @@ export class SceneRenderer {
         }
         this.#updatePlotHighlight();
         this.#selection.show(this.#selectionShape, this.#terrain);
+        this.#alternative.show(this.#alternativeShape, this.#terrain);
+        this.#markers.setMarkers(this.#markerData, this.#terrain);
         if (this.#conditionsData) {
             this.setConditions(this.#conditionsData);
         }
@@ -1186,6 +1236,8 @@ export class SceneRenderer {
         cancelAnimationFrame(this.#plotPreviewFrame);
         this.#plotHighlight.dispose();
         this.#selection.dispose();
+        this.#alternative.dispose();
+        this.#markers.dispose();
         this.#resizeObserver.disconnect();
         this.#controls.dispose();
         this.#composer?.dispose();
@@ -1235,7 +1287,7 @@ export class SceneRenderer {
             });
         }
         // and the plot's see-through highlight
-        this.#scene.userData.withoutAmbientOcclusion = [...effects, this.#plotHighlight.group, this.#selection.group];
+        this.#scene.userData.withoutAmbientOcclusion = [...effects, this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#markers.group];
         // models that cover the ground (the fire pit's gravel ring) keep the grass off
         const covered = [...this.#scenery.children, ...this.#decor.children]
             .filter(coversGround)
@@ -1406,6 +1458,7 @@ export class SceneRenderer {
         this.#renderer.setSize(width, height, false);
         this.#plotHighlight.setResolution(width, height);
         this.#selection.setResolution(width, height);
+        this.#alternative.setResolution(width, height);
         if (this.#composer) {
             this.#composer.setPixelRatio(this.#renderer.getPixelRatio());
             this.#composer.setSize(width, height);

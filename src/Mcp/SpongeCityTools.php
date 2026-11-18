@@ -16,6 +16,8 @@ use App\SpongeCity\Plan\PlanStatus;
 use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
+use App\SpongeCity\Rationale\Rationale;
+use App\SpongeCity\Rationale\RationaleStore;
 use App\SpongeCity\Terrain\TerrainAnalysis;
 use App\SpongeCity\Terrain\TerrainStore;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
@@ -49,6 +51,8 @@ final readonly class SpongeCityTools
     private const int MAX_RADIUS_METRES = 150;
     private const int DEFAULT_RADIUS_METRES = 70;
     private const float MILLIMETRES_PER_METRE = 1000.0;
+    /** an object's field in add_objects for the agent's reasons (kept as a Rationale, not on the object) */
+    public const string WHY = 'why';
 
     public function __construct(
         private NominatimGeocoder $geocoder,
@@ -59,6 +63,7 @@ final readonly class SpongeCityTools
         private SiteConditionsStore $conditions,
         private TerrainStore $terrains,
         private TerrainAnalysis $terrainAnalysis,
+        private RationaleStore $rationales,
     ) {
     }
 
@@ -189,7 +194,7 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * Plans interventions: adds objects to the 3D scene. Each object needs "type" (one of the interventions: newtree, raingarden, permeable, planting, shadesail) and its fields; outlines are "points": [[x, z], ...] in millimetres inside the plot and outside every building's outline (existing_buildings in get_site). Out-of-range values are corrected, not rejected. An intervention on a building is not added: it comes back in "conflicts" with the building and the overlap; draw it again in the open. Returns the new ids.
+     * Plans interventions: adds objects to the 3D scene. Each object needs "type" (one of the interventions: newtree, raingarden, permeable, planting, shadesail) and its fields; outlines are "points": [[x, z], ...] in millimetres inside the plot and outside every building's outline (existing_buildings in get_site). Out-of-range values are corrected, not rejected. An intervention on a building is not added: it comes back in "conflicts" with the building and the overlap; draw it again in the open. Give each object a "why": one or two sentences for the user, in their language, on why it goes there; it is shown over the object in the 3D view. Returns the new ids.
      *
      * @param list<array<string, mixed>> $objects
      *
@@ -198,7 +203,23 @@ final readonly class SpongeCityTools
     #[McpTool(name: self::TOOL_ADD, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false))]
     public function addObjects(string $planId, array $objects): array
     {
-        return $this->editor->add($planId, $objects);
+        $result = ['ids' => [], 'rejected' => 0, 'conflicts' => []];
+        // one by one: each new id is the object whose "why" it keeps
+        foreach ($objects as $object) {
+            $why = is_array($object) && is_string($object[self::WHY] ?? null) ? Rationale::clean($object[self::WHY]) : null;
+            if (is_array($object)) {
+                unset($object[self::WHY]);
+            }
+            $added = $this->editor->add($planId, [$object]);
+            array_push($result['ids'], ...$added['ids']);
+            $result['rejected'] += $added['rejected'];
+            array_push($result['conflicts'], ...$added['conflicts']);
+            if (null !== $why && [] !== $added['ids']) {
+                $this->rationales->record($planId, new Rationale($added['ids'][0], $why));
+            }
+        }
+
+        return $result;
     }
 
     /**
