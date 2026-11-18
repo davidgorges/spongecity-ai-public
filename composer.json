@@ -23,6 +23,7 @@
         "symfony/flex": "^2.12",
         "symfony/framework-bundle": "8.2.*",
         "symfony/http-client": "8.2.*",
+        "symfony/lock": "8.2.*",
         "symfony/mcp-bundle": "^1.0@beta",
         "symfony/messenger": "8.2.*",
         "symfony/monolog-bundle": "^4.1",

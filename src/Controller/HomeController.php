@@ -50,7 +50,7 @@ final class HomeController extends AbstractController
             return null;
         }
         $centre = $hits[0];
-        $plan = $this->plans->create($centre->label, $centre->latitude, $centre->longitude, PlanStatus::Pending);
+        $plan = $this->plans->create($centre->label, $centre->latitude, $centre->longitude, PlanStatus::New);
         // the slow part, OpenStreetMap, runs in a worker: the plan page shows progress until it is ready
         $this->importer->request($plan, $centre);
 

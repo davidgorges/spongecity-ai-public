@@ -14,6 +14,7 @@ use App\SpongeCity\SimStadt\SimStadtResults;
 use App\SpongeCity\SimStadt\SimStadtRunner;
 use App\SpongeCity\SimStadt\SimStadtWorkflow;
 use App\SpongeCity\SimStadt\SimStadtTemplates;
+use App\SpongeCity\SimStadt\Simulation;
 use App\SpongeCity\SimStadt\SimulationStatus;
 use App\SpongeCity\SimStadt\Template\HeatDemand;
 use App\SpongeCity\SimStadt\Template\PvPotential;
@@ -92,6 +93,19 @@ final class SimStadtTest extends KernelTestCase
         self::assertStringContainsString('1 buildings', $simulation->assumptions[0], 'the far building is left out');
         self::assertStringContainsString('Construction year 1955', $simulation->assumptions[1]);
         self::assertSame(['.', '..'], array_values(array_diff(scandir($repository) ?: [], ['.cache'])), 'the run cleans up after itself');
+    }
+
+    #[Test]
+    public function aRepeatedMessageLeavesARunningSimulationAlone(): void
+    {
+        $container = static::getContainer();
+        $plan = $container->get(PlanStore::class)->create('Brecht-Schule', self::LATITUDE, self::LONGITUDE);
+        $simulations = $container->get(SimulationStore::class);
+        $simulations->save(new Simulation($plan->id, SimStadtWorkflow::HeatDemand, 1955, status: SimulationStatus::Running));
+
+        $container->get(RunSimulationHandler::class)(new RunSimulation($plan->id, SimStadtWorkflow::HeatDemand, 1955));
+
+        self::assertSame(SimulationStatus::Running, $simulations->find($plan->id, SimStadtWorkflow::HeatDemand)?->status);
     }
 
     #[Test]

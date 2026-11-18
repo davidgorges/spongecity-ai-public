@@ -11,7 +11,10 @@ use Symfony\Component\Workflow\Attribute\Place;
  */
 enum PlanStatus: string
 {
-    #[Place(description: 'Waiting for a worker to import its site', initial: true)]
+    #[Place(description: 'Just created: its import is still to be requested', initial: true)]
+    case New = 'new';
+
+    #[Place(description: 'Queued: waiting for a worker to import its site')]
     case Pending = 'pending';
 
     #[Place(description: 'A worker is importing its site')]
@@ -26,6 +29,6 @@ enum PlanStatus: string
     /** the import is still to come or running: the page and the agent wait for it */
     public function isImporting(): bool
     {
-        return self::Pending === $this || self::Importing === $this;
+        return self::New === $this || self::Pending === $this || self::Importing === $this;
     }
 }

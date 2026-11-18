@@ -253,6 +253,10 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         domain?: string|Param,
  *     }>,
  * }
+ * @psalm-type LockConfig = Param|bool|string|array{
+ *     enabled?: bool|Param, // Resolved at compile time // Default: true
+ *     resources?: Param|string|array<string, Param|string|list<mixed>>,
+ * }
  * @psalm-type MessengerConfig = bool|array{
  *     enabled?: bool|Param, // Resolved at compile time // Default: true
  *     routing?: array<string, Param|string|list<scalar|Param|null>>,
@@ -610,7 +614,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     property_info?: PropertyInfoConfig,
  *     cache?: CacheConfig,
  *     web_link?: mixed,
- *     lock?: mixed,
+ *     lock?: LockConfig,
  *     semaphore?: mixed,
  *     messenger?: MessengerConfig,
  *     scheduler?: mixed,
@@ -2869,6 +2873,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     serializer?: SerializerConfig,
  *     validation?: ValidationConfig,
  *     translation?: TranslationConfig,
+ *     lock?: LockConfig,
  *     messenger?: MessengerConfig,
  *     workflow?: WorkflowConfig,
  *     type_info?: TypeInfoConfig,
@@ -2902,6 +2907,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         serializer?: SerializerConfig,
  *         validation?: ValidationConfig,
  *         translation?: TranslationConfig,
+ *         lock?: LockConfig,
  *         messenger?: MessengerConfig,
  *         workflow?: WorkflowConfig,
  *         type_info?: TypeInfoConfig,
@@ -2940,6 +2946,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         serializer?: SerializerConfig,
  *         validation?: ValidationConfig,
  *         translation?: TranslationConfig,
+ *         lock?: LockConfig,
  *         messenger?: MessengerConfig,
  *         workflow?: WorkflowConfig,
  *         type_info?: TypeInfoConfig,
@@ -2974,6 +2981,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         serializer?: SerializerConfig,
  *         validation?: ValidationConfig,
  *         translation?: TranslationConfig,
+ *         lock?: LockConfig,
  *         messenger?: MessengerConfig,
  *         workflow?: WorkflowConfig,
  *         type_info?: TypeInfoConfig,

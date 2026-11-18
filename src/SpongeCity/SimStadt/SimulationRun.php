@@ -27,6 +27,9 @@ final class SimulationRun
 
     public const string NAME = 'simulation_run';
 
+    /** the lock held while a worker takes up a run, followed by the plan's id and the workflow */
+    public const string LOCK_PREFIX = 'simulation_run_';
+
     #[Transition(from: SimulationStatus::Queued, to: SimulationStatus::Running, description: 'The worker takes up the run')]
     public const string START = 'start';
 
@@ -42,7 +45,7 @@ final class SimulationRun
     ) {
     }
 
-    #[AsEnteredListener]
+    #[AsEnteredListener(workflow: self::NAME)]
     public function store(EnteredEvent $event): void
     {
         $simulation = $event->getSubject();

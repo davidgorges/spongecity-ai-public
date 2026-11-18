@@ -37,11 +37,15 @@ final class PlanImportTest extends KernelTestCase
     }
 
     #[Test]
-    public function aNewPlanIsQueuedAsItIs(): void
+    public function aNewPlanIsQueuedOnce(): void
     {
-        $plan = $this->plans()->create('Berlin', self::LATITUDE, self::LONGITUDE, PlanStatus::Pending);
+        $plan = $this->plans()->create('Berlin', self::LATITUDE, self::LONGITUDE, PlanStatus::New);
 
         self::assertTrue($this->importer()->request($plan, new GeoPoint(self::LATITUDE, self::LONGITUDE)));
+        // the agent asks again before a worker has taken it up: the plan object it holds still reads new
+        self::assertFalse($this->importer()->request($plan, new GeoPoint(self::LATITUDE, self::LONGITUDE)));
+
+        self::assertSame(PlanStatus::Pending, $this->plans()->get($plan->id)->status);
         self::assertCount(1, $this->queue()->getSent());
     }
 

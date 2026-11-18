@@ -10562,7 +10562,7 @@
                         "$ref": "#/$defs/types/variable"
                     },
                     "lock": {
-                        "$ref": "#/$defs/types/variable"
+                        "$ref": "#/$defs/nodes/lock"
                     },
                     "semaphore": {
                         "$ref": "#/$defs/types/variable"
@@ -11743,6 +11743,73 @@
                 "default": {
                     "secret": "%kernel.secret%",
                     "fetch_credentials": "same-origin"
+                }
+            },
+            "lock": {
+                "anyOf": [
+                    {
+                        "$ref": "#/$defs/types/object_null",
+                        "properties": {
+                            "enabled": {
+                                "$ref": "#/$defs/types/boolean",
+                                "default": true
+                            },
+                            "resources": {
+                                "anyOf": [
+                                    {
+                                        "$ref": "#/$defs/types/object_null",
+                                        "additionalProperties": {
+                                            "$ref": "#/$defs/types/variable",
+                                            "description": "Each store is a DSN, a store keyword, the id of a service holding a connection, or an array with a \"service_id\" key and an \"advisory\" key."
+                                        }
+                                    },
+                                    {
+                                        "type": [
+                                            "string"
+                                        ]
+                                    }
+                                ],
+                                "description": "Defaults to a \"default\" resource using the semaphore store when it is supported, the flock store otherwise."
+                            }
+                        },
+                        "patternProperties": {
+                            "^resource$": {
+                                "$ref": "#/$defs/types/variable"
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    {
+                        "$ref": "#/$defs/types/object_null",
+                        "additionalProperties": {
+                            "$ref": "#/$defs/types/variable",
+                            "description": "Each store is a DSN, a store keyword, the id of a service holding a connection, or an array with a \"service_id\" key and an \"advisory\" key."
+                        },
+                        "properties": {
+                            "enabled": {
+                                "$ref": "#/$defs/types/boolean",
+                                "default": true
+                            }
+                        },
+                        "propertyNames": {
+                            "not": {
+                                "enum": [
+                                    "resources",
+                                    "resource"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": [
+                            "string",
+                            "boolean"
+                        ]
+                    }
+                ],
+                "default": {
+                    "enabled": true,
+                    "resources": []
                 }
             },
             "maker": {
@@ -20977,6 +21044,9 @@
         "live_component": {
             "$ref": "#/$defs/nodes/live_component"
         },
+        "lock": {
+            "$ref": "#/$defs/nodes/lock"
+        },
         "mcp": {
             "$ref": "#/$defs/nodes/mcp"
         },
@@ -21070,6 +21140,9 @@
                 "imports": true,
                 "live_component": {
                     "$ref": "#/$defs/nodes/live_component"
+                },
+                "lock": {
+                    "$ref": "#/$defs/nodes/lock"
                 },
                 "maker": {
                     "$ref": "#/$defs/nodes/maker"
@@ -21176,6 +21249,9 @@
                 "live_component": {
                     "$ref": "#/$defs/nodes/live_component"
                 },
+                "lock": {
+                    "$ref": "#/$defs/nodes/lock"
+                },
                 "mcp": {
                     "$ref": "#/$defs/nodes/mcp"
                 },
@@ -21278,6 +21354,9 @@
                 },
                 "live_component": {
                     "$ref": "#/$defs/nodes/live_component"
+                },
+                "lock": {
+                    "$ref": "#/$defs/nodes/lock"
                 },
                 "mcp": {
                     "$ref": "#/$defs/nodes/mcp"

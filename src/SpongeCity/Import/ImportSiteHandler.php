@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace App\SpongeCity\Import;
 
 use App\SpongeCity\Geo\GeoPoint;
+use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\PlanImport;
 use App\SpongeCity\Plan\PlanStore;
 use Psr\Log\LoggerInterface;
 use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 
@@ -27,18 +29,17 @@ final readonly class ImportSiteHandler
         private PlanImport $import,
         #[AutowireIterator(SiteImportStep::class)]
         private iterable $steps,
+        private LockFactory $locks,
         private LoggerInterface $logger,
     ) {
     }
 
     public function __invoke(ImportSite $message): void
     {
-        $plan = $this->plans->find($message->planId)
-            ?? throw new UnrecoverableMessageHandlingException(sprintf('Plan "%s" is gone.', $message->planId));
-        if (!$this->import->can($plan, PlanImport::START)) {
+        $plan = $this->takeUp($message->planId);
+        if (null === $plan) {
             return; // not requested, or another worker has it
         }
-        $this->import->apply($plan, PlanImport::START);
 
         $context = new SiteImportContext($plan->id, new GeoPoint($message->latitude, $message->longitude, $plan->title), $message->radiusMetres);
         try {
@@ -55,5 +56,27 @@ final readonly class ImportSiteHandler
         $plan->relocate($message->latitude, $message->longitude);
         $plan->replaceSite($context->siteJson);
         $this->import->apply($plan, PlanImport::COMPLETE);
+    }
+
+    /**
+     * Starts the import under the plan's lock: of two workers with the same plan, the second
+     * reads it as importing and leaves it alone.
+     */
+    private function takeUp(string $planId): ?Plan
+    {
+        $lock = $this->locks->createLock(PlanImport::LOCK_PREFIX.$planId);
+        $lock->acquire(true);
+        try {
+            $plan = $this->plans->find($planId)
+                ?? throw new UnrecoverableMessageHandlingException(sprintf('Plan "%s" is gone.', $planId));
+            if (!$this->import->can($plan, PlanImport::START)) {
+                return null;
+            }
+            $this->import->apply($plan, PlanImport::START);
+
+            return $plan;
+        } finally {
+            $lock->release();
+        }
     }
 }

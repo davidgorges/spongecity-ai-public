@@ -13,7 +13,7 @@ Stimulus, Tailwind v4, three.js. The 3D engine and UI kit come from the `sf_conf
  Browser                              Symfony app                                External
  ───────                              ───────────                                ────────
  home form ── POST / ───────────────► HomeController ── geocode ───────────────► Nominatim
-                                         │  create Plan(pending), PlanImporter → dispatch
+                                         │  create Plan(new), PlanImporter → dispatch
                                          ▼
                                       Messenger (async, Doctrine/SQLite)
                                          │  worker: messenger:consume async
@@ -144,24 +144,29 @@ A Symfony Workflow state machine, defined in its class (`#[AsWorkflow]`, a `#[Tr
 constant, the places from the `PlanStatus` enum; `symfony console workflow:dump plan_import`):
 
 ```
-pending ──start──► importing ──complete──► ready
-   │                   │                     │
-   └──────fail─────────┴──► failed           │
-           ▲                  │              │
-           └── request ◄──────┴──────────────┘   (request: back to pending)
+new ──request──► pending ──start──► importing ──complete──► ready
+                    │                   │                     │
+                    └──────fail─────────┴──► failed           │
+                    ▲                          │              │
+                    └──────── request ◄────────┴──────────────┘
 ```
 
-- `PlanImporter::request()` is the one way in (home page, `load_site`, `app:plan:reimport`): a new
-  plan is pending already, a ready or failed one is requested again, one being imported is left
-  alone (`load_site` says so).
+- `PlanImporter::request()` is the one way in (home page, `load_site`, `app:plan:reimport`): a new,
+  ready or failed plan is requested and queued; one that is pending or importing is left alone
+  (`load_site` says so). Pending always means a message is queued.
 - The worker applies `start` (a second worker for the same plan finds it importing and stops),
   then `complete` with the new site, or `fail`.
+- Both `request` and `start` read the plan again and apply the transition under a per-plan lock
+  (`symfony/lock`, `PlanImport::LOCK_PREFIX`): the cache store has no compare-and-set, so without
+  it two requests could queue a plan twice, or two workers both start it. The lock is released
+  before dispatching, since a sync dispatch (the console) runs the worker in the same process.
 - `PlanImport::store()` (`#[AsEnteredListener]`) saves the plan in every status it enters: the
   page and the agent poll it. `ImportSurroundings` (`#[AsCompletedListener]` on `complete`)
   imports the surroundings once the site is in place.
 
 SimStadt runs have their own state machine, `SimulationRun` (`queued → running → done | failed`),
-built the same way.
+built the same way. Its worker takes a run up under a lock as well, and ignores a repeated or stale
+message for a run that is no longer queued.
 
 Plans are not persisted beyond the cache. For production, replace `PlanStore` with a database
 backed implementation (the interface is small: `create`, `find`, `get`, `save`).
@@ -175,7 +180,7 @@ there is none. The chat binds its message with `#[MapRequestPayload]` to `ChatMe
 ## Geodata and the import (async)
 
 1. `HomeController` geocodes the text with `NominatimGeocoder` (synchronous, fast), takes the
-   first hit, creates a `pending` plan and has `PlanImporter` dispatch `ImportSite`. It redirects
+   first hit, creates a `new` plan and has `PlanImporter` dispatch `ImportSite`. It redirects
    at once.
 2. `ImportSiteHandler` (Messenger worker) runs every `SiteImportStep` (a tagged interface,
    `#[AutowireIterator]`, ordered by `#[AsTaggedItem(priority)]`), handing a `SiteImportContext`

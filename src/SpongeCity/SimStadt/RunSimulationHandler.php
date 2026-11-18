@@ -9,6 +9,7 @@ use App\SpongeCity\Geo\Hamburg\HamburgCityGml;
 use App\SpongeCity\Plan\PlanStore;
 use Core\Configurator\Site\SiteObject;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 
 /**
@@ -29,21 +30,23 @@ final readonly class RunSimulationHandler
         private SimStadtRunner $runner,
         private SimStadtResults $results,
         private SimStadtTemplates $templates,
+        private LockFactory $locks,
         private LoggerInterface $logger,
     ) {
     }
 
     public function __invoke(RunSimulation $message): void
     {
-        $simulation = $this->simulations->find($message->planId, $message->workflow)
-            ?? new Simulation($message->planId, $message->workflow, $message->yearOfConstruction);
+        $simulation = $this->takeUp($message);
+        if (null === $simulation) {
+            return; // a stale or repeated message: another worker has the run, or had it
+        }
         $plan = $this->plans->find($message->planId);
         if (null === $plan) {
             $this->fail($simulation, 'The plan is gone.');
 
             return;
         }
-        $this->run->apply($simulation, SimulationRun::START);
 
         try {
             $centre = new GeoPoint($plan->latitude, $plan->longitude, $plan->title);
@@ -66,6 +69,28 @@ final readonly class RunSimulationHandler
         } catch (\Throwable $exception) {
             $this->logger->error('SimStadt simulation failed', ['plan' => $message->planId, 'workflow' => $message->workflow->value, 'exception' => $exception]);
             $this->fail($simulation, $exception->getMessage());
+        }
+    }
+
+    /**
+     * Starts the run under its lock, if it is still queued: of two workers with the same
+     * message, the second reads the run as running and leaves it alone.
+     */
+    private function takeUp(RunSimulation $message): ?Simulation
+    {
+        $lock = $this->locks->createLock(SimulationRun::LOCK_PREFIX.$message->planId.'_'.$message->workflow->value);
+        $lock->acquire(true);
+        try {
+            $simulation = $this->simulations->find($message->planId, $message->workflow)
+                ?? new Simulation($message->planId, $message->workflow, $message->yearOfConstruction);
+            if (!$this->run->can($simulation, SimulationRun::START)) {
+                return null;
+            }
+            $this->run->apply($simulation, SimulationRun::START);
+
+            return $simulation;
+        } finally {
+            $lock->release();
         }
     }
 
