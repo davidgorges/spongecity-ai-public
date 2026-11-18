@@ -42,7 +42,7 @@ final class SiteCarryOverTest extends KernelTestCase
             [O::TYPE => O::BUILDING, O::POINTS => array_map(static fn (array $p): array => [$p[0] + 300, $p[1] - 200], self::U), O::HEIGHT => 15000, O::FACADE => 'render'],
         ]]));
 
-        self::assertSame(1, $carryOver->restore($plan->id, $kept));
+        self::assertSame(['looks' => 1, 'conflicts' => []], $carryOver->restore($plan->id, $kept));
         $site = $editor->site($plan->id);
         self::assertSame('brick', $site->ofType(O::BUILDING)[0][O::FACADE]);
         self::assertSame('#6e3428', $site->ofType(O::BUILDING)[0][O::COLOR]);

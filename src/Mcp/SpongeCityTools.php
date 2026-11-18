@@ -11,12 +11,14 @@ use App\SpongeCity\Geo\DataSource;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\NominatimGeocoder;
 use App\SpongeCity\Import\PlanImporter;
+use App\SpongeCity\Plan\OverlapsBuilding;
 use App\SpongeCity\Plan\PlanStatus;
 use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
 use App\SpongeCity\Terrain\TerrainAnalysis;
 use App\SpongeCity\Terrain\TerrainStore;
+use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
@@ -187,11 +189,11 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * Plans interventions: adds objects to the 3D scene. Each object needs "type" (one of the interventions: newtree, raingarden, permeable, planting, shadesail) and its fields; outlines are "points": [[x, z], ...] in millimetres inside the plot and away from buildings. Out-of-range values are corrected, not rejected. Returns the new ids.
+     * Plans interventions: adds objects to the 3D scene. Each object needs "type" (one of the interventions: newtree, raingarden, permeable, planting, shadesail) and its fields; outlines are "points": [[x, z], ...] in millimetres inside the plot and outside every building's outline (existing_buildings in get_site). Out-of-range values are corrected, not rejected. An intervention on a building is not added: it comes back in "conflicts" with the building and the overlap; draw it again in the open. Returns the new ids.
      *
      * @param list<array<string, mixed>> $objects
      *
-     * @return array{ids: list<string>, rejected: int}
+     * @return array{ids: list<string>, rejected: int, conflicts: list<array<string, mixed>>}
      */
     #[McpTool(name: self::TOOL_ADD, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false))]
     public function addObjects(string $planId, array $objects): array
@@ -200,9 +202,11 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * Changes fields of one object by id; the other fields stay.
+     * Changes fields of one object by id; the other fields stay. A move that puts an intervention on a building is not made: "updated" is false and "conflict" says which building.
      *
      * @param array<string, mixed> $changes
+     *
+     * @return array{updated: bool, conflict?: array<string, mixed>}
      */
     #[McpTool(name: self::TOOL_UPDATE, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false, idempotentHint: true))]
     public function updateObject(
@@ -211,9 +215,13 @@ final readonly class SpongeCityTools
         // a PHP array is advertised as a JSON list by default, but the changes are a map of field → value
         #[Schema(type: 'object', description: 'The fields to change and their new values, e.g. {"facade": "plaster", "color": "#f2efe8"}.', additionalProperties: true)]
         array $changes,
-    ): bool
+    ): array
     {
-        return $this->editor->update($planId, $id, $changes);
+        try {
+            return ['updated' => $this->editor->update($planId, $id, $changes)];
+        } catch (OverlapsBuilding $e) {
+            return ['updated' => false, 'conflict' => $e->conflict->toArray()];
+        }
     }
 
     /**
@@ -287,8 +295,13 @@ final readonly class SpongeCityTools
     private function buildingSummary(Site $site): array
     {
         $summary = [];
+        $plots = $site->ofType(O::PLOT);
+        $plot = [] === $plots ? null : Polygon::bounds(Site::points($plots[0]));
         foreach ($site->ofType(O::BUILDING) as $building) {
             $points = Site::points($building);
+            [$minX, $maxX, $minZ, $maxZ] = Polygon::bounds($points);
+            // interventions stay on the plot: the outlines that matter are of the buildings on it or touching it
+            $onThePlot = null === $plot || ($minX <= $plot[1] && $plot[0] <= $maxX && $minZ <= $plot[3] && $plot[2] <= $maxZ);
             $summary[] = [
                 // the id lets a building's look (facade, color) be corrected with update_object when the user knows better
                 'id' => $building[O::ID] ?? null,
@@ -298,6 +311,7 @@ final readonly class SpongeCityTools
                 O::FACADE => $building[O::FACADE] ?? null,
                 O::COLOR => $building[O::COLOR] ?? null,
                 'centre' => [(int) round(array_sum(array_column($points, 0)) / count($points)), (int) round(array_sum(array_column($points, 1)) / count($points))],
+                ...($onThePlot ? ['outline' => array_map(static fn (array $p): array => [(int) $p[0], (int) $p[1]], $points)] : []),
             ];
         }
 

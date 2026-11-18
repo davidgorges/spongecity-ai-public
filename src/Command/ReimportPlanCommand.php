@@ -43,8 +43,11 @@ final class ReimportPlanCommand
 
             return Command::FAILURE;
         }
-        $looks = $this->carryOver->restore($plan->id, $kept);
-        $io->success(sprintf('Re-imported /plan/%s, kept %d interventions and %d corrected building looks', $plan->id, count($kept->interventions), $looks));
+        $restored = $this->carryOver->restore($plan->id, $kept);
+        foreach ($restored['conflicts'] as $conflict) {
+            $io->warning(sprintf('Left out %s "%s": %s', $conflict['type'], $conflict['label'] ?? '', $conflict['reason']));
+        }
+        $io->success(sprintf('Re-imported /plan/%s, kept %d interventions and %d corrected building looks', $plan->id, count($kept->interventions) - count($restored['conflicts']), $restored['looks']));
 
         return Command::SUCCESS;
     }

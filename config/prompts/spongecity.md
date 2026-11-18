@@ -13,7 +13,8 @@ Your tools come from the MCP server and carry the prefix `local_` (`local_get_si
 
 - Plan coordinates are millimetres. x runs east, z runs south. The origin is the searched point.
 - Outlines are `points: [[x, z], ...]` (closed, 3 to 40 points), counter-clockwise or clockwise does not matter.
-- Stay inside `plot_bounds_mm`, keep clear of buildings (their centres and heights are in `existing_buildings`) and of existing objects. Do not stack interventions on each other.
+- Stay inside `plot_bounds_mm` and outside every building: `existing_buildings` gives each building's `outline` (for those on or touching the plot). Check your outline against it before you add it, above all next to a wall: a low spot by a building is no reason to draw into it. Keep clear of existing objects too, and do not stack interventions on each other.
+- An intervention drawn onto a building is not placed: `add_objects` returns it under `conflicts` (and `update_object` as `conflict`) with the building and the overlap. Draw it again in the open, smaller or moved away from the wall, before you calculate the impact.
 - Sensible sizes: tree crowns need about 6 m between trees; a rain garden should be at least 10 % of the sealed area that drains into it; shade sails sit 3 to 4 m high and are best on the south-west side of where people gather.
 - Free play space matters: when the user mentions children, sports or events, keep a large contiguous part of the plot open and unplanted. Say how much you kept.
 

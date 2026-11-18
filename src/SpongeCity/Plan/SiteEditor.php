@@ -13,7 +13,7 @@ use Core\Configurator\Site\SiteType;
 /**
  * Changes the site of a plan through SiteType, which fills in defaults,
  * clamps every number and drops what it cannot read: nothing an agent sends
- * can break the scene.
+ * can break the scene. Interventions stay off buildings (BuildingClearance).
  */
 final readonly class SiteEditor
 {
@@ -21,15 +21,20 @@ final readonly class SiteEditor
         private PlanStore $plans,
         private TerrainStore $terrains,
         private SiteGrounding $grounding,
+        private BuildingClearance $clearance,
     ) {
     }
 
+    /** the fields that move an object: a change to one is checked against the buildings again */
+    private const array PLACEMENT = [O::POINTS, O::X, O::Z];
+
     /**
-     * Adds objects; returns their ids, in the order given, and what was left out.
+     * Adds objects; returns their ids, in the order given, and what was left out: objects it
+     * could not read, and interventions that stand on a building (each with the reason).
      *
      * @param list<array<string, mixed>> $objects
      *
-     * @return array{ids: list<string>, rejected: int}
+     * @return array{ids: list<string>, rejected: int, conflicts: list<array<string, mixed>>}
      */
     public function add(string $planId, array $objects): array
     {
@@ -44,17 +49,33 @@ final readonly class SiteEditor
             unset($object[O::ID]);
             $additions[] = $object;
         }
-        $merged = $normalizer->normalize(['objects' => [...$current, ...$additions]]);
-        $result = SiteType::rawObjects($merged);
+        $result = SiteType::rawObjects($normalizer->normalize(['objects' => [...$current, ...$additions]]));
+        $buildings = self::buildings($result);
 
-        $ids = array_values(array_diff(array_column($result, O::ID), $known));
-        $this->save($plan, $merged);
+        $kept = [];
+        $ids = [];
+        $conflicts = [];
+        foreach ($result as $object) {
+            $isNew = !in_array($object[O::ID], $known, true);
+            $conflict = $isNew ? $this->clearance->conflict($object, $buildings) : null;
+            if (null !== $conflict) {
+                $conflicts[] = [O::TYPE => $object[O::TYPE], O::LABEL => $object[O::LABEL] ?? null, ...$conflict->toArray()];
+                continue;
+            }
+            $kept[] = $object;
+            if ($isNew) {
+                $ids[] = (string) $object[O::ID];
+            }
+        }
+        $this->save($plan, $normalizer->normalize(['objects' => $kept]));
 
-        return ['ids' => $ids, 'rejected' => max(0, count($objects) - count($ids))];
+        return ['ids' => $ids, 'rejected' => max(0, count($objects) - count($ids)), 'conflicts' => $conflicts];
     }
 
     /**
      * @param array<string, mixed> $changes
+     *
+     * @throws OverlapsBuilding when the change moves an intervention onto a building (nothing is changed)
      */
     public function update(string $planId, string $id, array $changes): bool
     {
@@ -76,11 +97,22 @@ final readonly class SiteEditor
                 $found = true;
             }
         }
-        if ($found) {
-            $this->save($plan, (new SiteType())->normalize(['objects' => $objects]));
+        if (!$found) {
+            return false;
         }
+        $normalized = (new SiteType())->normalize(['objects' => $objects]);
+        if ([] !== array_intersect(array_keys($changes), self::PLACEMENT)) {
+            $result = SiteType::rawObjects($normalized);
+            foreach ($result as $object) {
+                $conflict = $id === $object[O::ID] ? $this->clearance->conflict($object, self::buildings($result)) : null;
+                if (null !== $conflict) {
+                    throw new OverlapsBuilding($conflict);
+                }
+            }
+        }
+        $this->save($plan, $normalized);
 
-        return $found;
+        return true;
     }
 
     public function remove(string $planId, string $id): bool
@@ -117,6 +149,16 @@ final readonly class SiteEditor
     public function site(string $planId): Site
     {
         return Site::fromJson($this->plans->get($planId)->siteJson());
+    }
+
+    /**
+     * @param list<array<string, mixed>> $objects
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function buildings(array $objects): array
+    {
+        return array_values(array_filter($objects, static fn (array $object): bool => O::BUILDING === $object[O::TYPE]));
     }
 
     private function save(Plan $plan, string $siteJson): void

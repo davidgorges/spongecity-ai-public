@@ -33,13 +33,13 @@ final readonly class SiteCarryOver
     }
 
     /**
-     * @return int how many corrected looks found their building again
+     * @return array{looks: int, conflicts: list<array<string, mixed>>} how many corrected looks found their building
+     *                                                                   again, and the interventions left out because
+     *                                                                   the new data has a building where they were
      */
-    public function restore(string $planId, CarriedOver $kept): int
+    public function restore(string $planId, CarriedOver $kept): array
     {
-        if ([] !== $kept->interventions) {
-            $this->editor->add($planId, $kept->interventions);
-        }
+        $conflicts = [] === $kept->interventions ? [] : $this->editor->add($planId, $kept->interventions)['conflicts'];
         $looks = 0;
         foreach ($this->editor->site($planId)->ofType(O::BUILDING) as $building) {
             foreach ($kept->looks as $look) {
@@ -51,7 +51,7 @@ final readonly class SiteCarryOver
             }
         }
 
-        return $looks;
+        return ['looks' => $looks, 'conflicts' => $conflicts];
     }
 
     /**

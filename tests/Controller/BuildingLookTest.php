@@ -32,7 +32,7 @@ final class BuildingLookTest extends KernelTestCase
         self::assertSame('ribbon', $building[O::FACADE]);
 
         // as the agent sends it: the changes are a JSON object
-        self::assertTrue($tools->updateObject($plan->id, (string) $building['id'], [O::FACADE => 'render', O::COLOR => '#f4f2ec']));
+        self::assertSame(['updated' => true], $tools->updateObject($plan->id, (string) $building['id'], [O::FACADE => 'render', O::COLOR => '#f4f2ec']));
 
         $updated = $container->get(SiteEditor::class)->site($plan->id)->ofType(O::BUILDING)[0];
         self::assertSame('render', $updated[O::FACADE]);
