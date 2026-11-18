@@ -3,5 +3,9 @@
 {% block title %}{{ plan.title|u.truncate(40, '…') }} · SpongeCity AI{% endblock %}
 
 {% block body %}
+    <div hidden {{ stimulus_controller('recent-plans', {
+        storageKey: constant('App\\Controller\\HomeController::RECENT_PLANS_STORAGE_KEY'),
+        plan: {id: plan.id, title: plan.title, url: path(constant('App\\Controller\\Plan\\ShowPlanController::ROUTE'), {id: plan.id})},
+    }) }}></div>
     <twig:PlanWorkspace planId="{{ plan.id }}" storm="{{ plan.storm }}" :history="history" />
 {% endblock %}

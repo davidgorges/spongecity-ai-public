@@ -20,6 +20,8 @@ final class HomeController extends AbstractController
     public const string ROUTE = 'home';
     public const string FIELD_PLACE = 'place';
     public const string FLASH_ERROR = 'error';
+    /** the plans opened in this browser (recent_plans_controller.js) */
+    public const string RECENT_PLANS_STORAGE_KEY = 'spongecity-recent-plans';
 
     public function __construct(
         private readonly NominatimGeocoder $geocoder,

@@ -129,6 +129,9 @@ export default class extends Controller {
     #hoverFrame = 0;
     /** the object the hover mark shows (its id), so a move over the same one changes nothing */
     #hovered = null;
+    /** the ids of the objects pointed at and selected: their badges are shown in full */
+    #hoveredId = null;
+    #selectedId = null;
     #unavailable = false;
 
     connect() {
@@ -415,6 +418,8 @@ export default class extends Controller {
         if (key !== this.#hovered) {
             this.#hovered = key;
             this.#renderer?.hoverObject(selected ? null : this.#metres(object));
+            this.#hoveredId = object.id;
+            this.#emphasize();
         }
         this.canvasTarget.style.cursor = 'pointer';
         if (!this.hasTooltipTarget) {
@@ -431,7 +436,9 @@ export default class extends Controller {
     #showHover(object) {
         if (object === null && this.#hovered !== null) {
             this.#hovered = null;
+            this.#hoveredId = null;
             this.#renderer?.hoverObject(null);
+            this.#emphasize();
         }
         this.canvasTarget.style.cursor = '';
         if (this.hasTooltipTarget) {
@@ -565,12 +572,18 @@ export default class extends Controller {
      * plan millimetres or a tree's position and crown, base and top over the ground; null: none).
      */
     highlightObject({ detail: { object } }) {
+        this.#selectedId = object?.id ?? null;
+        this.#emphasize();
         if (!object) {
             this.#renderer?.highlightObject(null);
 
             return;
         }
         this.#renderer?.highlightObject(this.#metres(object));
+    }
+
+    #emphasize() {
+        this.#renderer?.emphasizeMarkers([this.#hoveredId, this.#selectedId]);
     }
 
     /** a PlanObjects row (millimetres) as the renderer's shape (metres) */

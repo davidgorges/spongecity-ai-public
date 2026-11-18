@@ -1,6 +1,10 @@
 # yaml-language-server: $schema=../schema.json
 twig:
     file_name_pattern: '*.twig'
+    # numbers as the interface writes them (English): 1,234.5
+    number_format:
+        decimal_point: '.'
+        thousands_separator: ','
 
 when@test:
     twig:

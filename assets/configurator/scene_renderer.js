@@ -348,6 +348,12 @@ export class SceneRenderer {
         this.#requestRender();
     }
 
+    /** The badges of these objects (pointed at, selected) in full, the others as dots. */
+    emphasizeMarkers(ids) {
+        this.#markers.emphasize(ids);
+        this.#requestRender();
+    }
+
     /** An alternative of the agent's for the selected object, in amber; null hides it. */
     previewAlternative(shape) {
         this.#alternativeShape = shape;

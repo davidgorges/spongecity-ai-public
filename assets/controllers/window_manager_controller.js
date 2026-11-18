@@ -11,6 +11,10 @@ const MARGIN = 16;
 const TOP = 76;
 const BOTTOM = 72;
 const GAP = 12;
+/** a window opened below others needs this much room above the dock, else it opens over them (CSS pixels) */
+const MIN_ROOM = 240;
+/** windows opened over others step down this far, so each title bar shows */
+const CASCADE = 36;
 /** a window is never squeezed below this height, nor resized narrower than this (CSS pixels) */
 const MIN_HEIGHT = 120;
 const MIN_WIDTH = 280;
@@ -244,7 +248,7 @@ export default class extends Controller {
     #setSize(id, width, height) {
         const state = this.#state[id];
         const frame = this.element.getBoundingClientRect();
-        const room = [frame.width - (state.x ?? 0) - MARGIN / 2, frame.height - (state.y ?? 0) - MARGIN / 2];
+        const room = [frame.width - (state.x ?? 0) - MARGIN / 2, frame.height - (state.y ?? 0) - BOTTOM];
         state.w = Math.round(Math.max(MIN_WIDTH, Math.min(width, room[0])));
         state.h = state.minimised ? state.h : Math.round(Math.max(MIN_HEIGHT, Math.min(height, room[1])));
         this.#size(this.#window(id), state);
@@ -328,8 +332,8 @@ export default class extends Controller {
         element.style.top = `${state.y}px`;
         // it stays invisible until placed (Plan:Window), so it never shows stacked in a corner
         element.dataset.windowPlaced = '';
-        // never past the bottom of the view: its content scrolls inside
-        element.style.maxHeight = `${Math.max(MIN_HEIGHT, this.element.getBoundingClientRect().height - state.y - MARGIN)}px`;
+        // never under the dock: its content scrolls inside
+        element.style.maxHeight = `${Math.max(MIN_HEIGHT, this.element.getBoundingClientRect().height - state.y - BOTTOM)}px`;
     }
 
     /** where a window opens first: data-window-place "left|right top|bottom", or "below <id>" */
@@ -341,7 +345,9 @@ export default class extends Controller {
             const above = this.#window(second);
             const state = this.#state[second];
             if (above && !above.hidden && state?.x !== null) {
-                return [state.x + above.offsetWidth - width, state.y + above.offsetHeight + GAP];
+                const x = state.x + above.offsetWidth - width;
+
+                return this.#roomAt(element, x, Math.max(state.y + above.offsetHeight + GAP, ...this.#bottomsOnSide(element, x)));
             }
 
             return [frame.width - width - MARGIN, TOP];
@@ -351,12 +357,35 @@ export default class extends Controller {
             return [x, TOP];
         }
         // at the bottom, but below the windows already open on that side
-        const above = this.windowTargets
-            .filter((other) => other !== element && !other.hidden && this.#state[other.dataset.window]?.y !== null)
-            .filter((other) => (this.#state[other.dataset.window].x < frame.width / 2) === (x < frame.width / 2))
-            .map((other) => this.#state[other.dataset.window].y + other.offsetHeight + GAP);
+        return this.#roomAt(element, x, Math.max(frame.height - height - BOTTOM, ...this.#bottomsOnSide(element, x)));
+    }
 
-        return [x, Math.max(frame.height - height - BOTTOM, ...above)];
+    /** where each window already open on the side of x ends, a gap below it */
+    #bottomsOnSide(element, x) {
+        const half = this.element.getBoundingClientRect().width / 2;
+
+        return this.windowTargets
+            .filter((other) => other !== element && !other.hidden && this.#state[other.dataset.window]?.y !== null)
+            .filter((other) => (this.#state[other.dataset.window].x < half) === (x < half))
+            .map((other) => this.#state[other.dataset.window].y + other.offsetHeight + GAP);
+    }
+
+    /**
+     * y below the windows already open, if enough of it is left above the dock; else the window
+     * opens over them at the top, a step down for each one open on its side (it comes to the front).
+     */
+    #roomAt(element, x, y) {
+        const frame = this.element.getBoundingClientRect();
+        if (frame.height - BOTTOM - y >= MIN_ROOM) {
+            return [x, y];
+        }
+        const left = x < frame.width / 2;
+        const others = this.windowTargets.filter((other) => other !== element && !other.hidden
+            && this.#state[other.dataset.window]?.y !== null
+            && (this.#state[other.dataset.window].x < frame.width / 2) === left).length;
+        this.#raise(element.dataset.window);
+
+        return [x, TOP + others * CASCADE];
     }
 
     /** inside the view, its title bar always reachable */
@@ -368,7 +397,8 @@ export default class extends Controller {
 
         return [
             Math.round(Math.max(MARGIN / 2, Math.min(x, frame.width - width - MARGIN / 2))),
-            Math.round(Math.max(MARGIN / 2, Math.min(y, frame.height - header - MARGIN / 2))),
+            // its title bar above the dock
+            Math.round(Math.max(MARGIN / 2, Math.min(y, frame.height - header - BOTTOM))),
         ];
     }
 

@@ -44,6 +44,24 @@
                 {% endfor %}
             </ul>
         </section>
+        <section
+            aria-labelledby="recent-title"
+            class="flex flex-col gap-2"
+            hidden
+            {{ stimulus_controller('recent-plans', {storageKey: constant('App\\Controller\\HomeController::RECENT_PLANS_STORAGE_KEY')}) }}
+            data-recent-plans-target="section"
+        >
+            <h2 id="recent-title" class="text-sm font-medium text-muted-foreground">{{ 'home.recent'|trans({}, 'spongecity') }}</h2>
+            <twig:Item:Group class="gap-2" data-recent-plans-target="list" />
+            <template data-recent-plans-target="template">
+                <twig:Item variant="outline" size="sm" as="a" role="listitem" data-link>
+                    <twig:Item:Media variant="icon"><twig:ux:icon name="lucide:map-pin" aria-hidden="true" /></twig:Item:Media>
+                    <twig:Item:Content><twig:Item:Title class="line-clamp-1" data-text /></twig:Item:Content>
+                    <twig:Item:Actions><twig:ux:icon name="lucide:arrow-right" class="size-4 text-muted-foreground" aria-hidden="true" /></twig:Item:Actions>
+                </twig:Item>
+            </template>
+        </section>
+
         <p class="text-xs text-muted-foreground">{{ 'home.sources'|trans({}, 'spongecity') }}</p>
     </main>
 {% endblock %}

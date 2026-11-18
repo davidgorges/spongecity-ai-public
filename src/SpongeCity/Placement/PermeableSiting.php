@@ -8,6 +8,7 @@ use App\SpongeCity\Conditions\InfiltrationPotential;
 use Core\Configurator\Product\SpongeCity\Impact\GroundClass;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Site\SiteObject as O;
+use Core\Configurator\Site\SiteType;
 use Symfony\Component\DependencyInjection\Attribute\AsTaggedItem;
 
 /**
@@ -248,7 +249,7 @@ final readonly class PermeableSiting implements InterventionSiting
             'removed' => $removed,
             'candidate' => new Candidate(
                 '',
-                [O::TYPE => O::PERMEABLE, O::KIND => $kind, O::POINTS => $points, O::LABEL => mb_substr(sprintf('%s: %s', ucfirst(str_replace('_', ' ', $kind)), $zone->label), 0, O::MAX_LABEL)],
+                [O::TYPE => O::PERMEABLE, O::KIND => $kind, O::POINTS => $points, O::LABEL => SiteType::shortLabel(sprintf('%s: %s', ucfirst(str_replace('_', ' ', $kind)), $zone->label))],
                 [
                     'area_m2' => round($area, 1),
                     'kind' => $kind,

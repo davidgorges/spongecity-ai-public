@@ -16,6 +16,7 @@ use Core\Configurator\Site\SiteObject as O;
  */
 final readonly class ImpactCalculator
 {
+    private const int SQUARE_MILLIMETRES_PER_SQUARE_METRE = 1_000_000;
     public const string METRIC_PERMEABLE_SHARE = 'permeable_share';
     public const string METRIC_RUNOFF = 'runoff_volume';
     public const string METRIC_RETENTION = 'retained_volume';
@@ -77,7 +78,8 @@ final readonly class ImpactCalculator
         ];
 
         return new ImpactReport(
-            $baseline['area'],
+            // the outline's own area, as the plot map shows it (the grid's sum of cells differs by a few m²)
+            Polygon::area($outline) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE,
             $stormMillimetres,
             $metrics,
             $design['classes'],
@@ -94,7 +96,7 @@ final readonly class ImpactCalculator
     private function grid(array $outline): array
     {
         [$minX, $maxX, $minZ, $maxZ] = Polygon::bounds($outline);
-        $areaM2 = Polygon::area($outline) / 1_000_000;
+        $areaM2 = Polygon::area($outline) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE;
         $cell = max(self::MIN_CELL_METRES, sqrt(max($areaM2, 1.0) / self::MAX_CELLS)) * 1000;
         $cells = [];
         for ($x = $minX + $cell / 2; $x < $maxX; $x += $cell) {

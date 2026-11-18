@@ -9,6 +9,7 @@ use App\SpongeCity\Geo\SiteImporter;
 use App\SpongeCity\PlanEvaluator;
 use Core\Configurator\Product\SpongeCity\Impact\GroundClass;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
+use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Scene\ModelCatalog;
 use Core\Configurator\Scene\SceneSerializer;
 use Core\Configurator\Site\Site;
@@ -39,6 +40,18 @@ final class ImpactCalculatorTest extends KernelTestCase
             self::assertTrue($metric->toArray()['improved'], $metric->key.' did not improve: '.json_encode($metric->toArray()));
         }
         self::assertGreaterThan(0.0, $report->metric(ImpactCalculator::METRIC_RETENTION)?->delta());
+    }
+
+    #[Test]
+    public function thePlotsAreaIsItsOutlinesAsThePlotMapShowsIt(): void
+    {
+        // slanted edges: the grid's cells add up to a few m² more or less
+        $outline = [[0, 0], [23700, 1100], [31000, 17000], [9300, 31700]];
+        $site = Site::fromJson((new SiteType())->normalize(['objects' => [[O::TYPE => O::PLOT, O::POINTS => $outline, O::SURFACE => O::SURFACE_ASPHALT]]]));
+
+        $report = (new ImpactCalculator())->calculate($site, self::STORM);
+
+        self::assertEqualsWithDelta(Polygon::area($outline) / 1_000_000, $report->plotSquareMetres, 1e-6);
     }
 
     #[Test]

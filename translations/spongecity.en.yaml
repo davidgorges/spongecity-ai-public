@@ -24,6 +24,7 @@ home:
     placeholder: Address or name of a place, e.g. a school
     submit: Rebuild in 3D
     examples: Try
+    recent: Your recent plans
     example:
         schoolyard: Grundschule Am Park, Leipzig
         courtyard: Hackesche Höfe, Berlin
@@ -94,7 +95,6 @@ plan:
     zones:
         hint: Click an area on the map to say what it is used for; that decides what its surface may become.
         select: '%name%: set what it is used for'
-        close: Close
         use_label: Used as
         use:
             yard: Yard
@@ -200,6 +200,8 @@ plan:
             height: '%value% m'
             y: '%value% m'
         close: Close
+        deselect: Deselect
+        deselect_title: Select nothing (the window stays open)
         remove: Remove
     menu:
         label: '%name%: actions'
@@ -250,13 +252,24 @@ plan:
             other: Other
     impact:
         title: Measured effect
-        today: today
+        was: 'was %value%'
+        points: pts
         basis: Calculations and assumptions
     measures:
         title: Planned measures
         clear: Remove all
+        clear_confirm:
+            title: '{1}Remove the planned measure?|]1,Inf[Remove all %count% planned measures?'
+            description: Every planned measure goes, with the agent's reasons for it. Buildings, existing trees, zones and play equipment stay.
+            cancel: Keep them
+            confirm: Remove all
         empty: Nothing planned yet. Ask the agent for a redesign.
         remove: Remove %name%
+        select: 'Show %name% in the view'
+        numbered: '%name% %number%'
+        size:
+            height: '%height% m tall'
+            area: '%area% m²'
         type:
             newtree: Shade tree
             raingarden: Rain garden

@@ -4,8 +4,11 @@ declare(strict_types=1);
 
 namespace App\Tests\Controller;
 
+use App\Controller\HomeController;
+use App\Controller\Plan\ShowPlanController;
 use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\PlanStore;
+use App\SpongeCity\Plan\SiteEditor;
 use App\Twig\Components\PlanWorkspace;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
@@ -16,7 +19,9 @@ use Symfony\UX\LiveComponent\Test\InteractsWithLiveComponents;
 /**
  * How the workspace is handled: every window can be resized by its corner handle, the view
  * marks what the mouse is over (the context menu finds the object for it), and a finger held
- * on the view opens the context menu.
+ * on the view opens the context menu. Measures are told apart in their list and shown when
+ * picked there; removing them all is asked first; numbers read as the interface's language
+ * writes them; the plans opened are listed on the home page.
  */
 final class WorkspaceViewTest extends WebTestCase
 {
@@ -59,6 +64,96 @@ final class WorkspaceViewTest extends WebTestCase
         $view = $crawler->filter('[data-controller~="configurator-viewer"]');
         self::assertStringContainsString('plan-context-menu:hovered@window->configurator-viewer#showHovered', $view->attr('data-action'));
         self::assertStringNotContainsString('pointermove->', $view->attr('data-action'), 'moves are handled once, on the canvas');
+    }
+
+    #[Test]
+    public function measuresAreToldApartAndShownWhenPickedFromTheList(): void
+    {
+        $plan = $this->plan();
+        $editor = static::getContainer()->get(SiteEditor::class);
+        $editor->add($plan->id, [
+            [O::TYPE => O::NEWTREE, O::X => 5000, O::Z => 5000, O::HEIGHT => 9000],
+            [O::TYPE => O::NEWTREE, O::X => -5000, O::Z => 5000, O::HEIGHT => 12000],
+            [O::TYPE => O::RAINGARDEN, O::POINTS => [[-8000, -8000], [-2000, -8000], [-2000, -4000], [-8000, -4000]], O::STORAGE => 300],
+        ]);
+        $component = $this->createLiveComponent(PlanWorkspace::class, ['planId' => $plan->id]);
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+
+        self::assertSame(['Shade tree 1', 'Shade tree 2', 'Rain garden'], array_column($workspace->interventions(), 'name'), 'numbered where they share a name');
+        self::assertSame(['9 m tall', '12 m tall', '24 m²'], array_column($workspace->interventions(), 'size'));
+
+        $tree = $workspace->interventions()[1];
+        $component->call(PlanWorkspace::ACTION_SELECT_OBJECT, ['id' => $tree['id']]);
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+        $selected = $workspace->selectedObject();
+        self::assertSame($tree['id'], $selected['id'] ?? null, 'picked in the list: selected');
+        self::assertArrayHasKey(O::HEIGHT, $selected['fields']);
+        self::assertNotContains('Height', array_column($selected['facts'], 0), 'the height shows once: as the choice');
+        self::assertContains('Crown', array_column($selected['facts'], 0));
+
+        $crawler = $component->render()->crawler();
+        self::assertSame('Deselect', trim($crawler->filter('#object-title')->ancestors()->filter('[data-slot="card-header"], div')->first()->filter('button')->last()->text()));
+        self::assertSame('true', $crawler->filter('[data-live-action-param="'.PlanWorkspace::ACTION_SELECT_OBJECT.'"][data-live-id-param="'.$tree['id'].'"]')->attr('aria-current'));
+    }
+
+    #[Test]
+    public function removingAllMeasuresIsAskedFirst(): void
+    {
+        $plan = $this->plan();
+        static::getContainer()->get(SiteEditor::class)->add($plan->id, [
+            [O::TYPE => O::NEWTREE, O::X => 5000, O::Z => 5000, O::HEIGHT => 9000],
+            [O::TYPE => O::NEWTREE, O::X => -5000, O::Z => 5000, O::HEIGHT => 9000],
+        ]);
+
+        $crawler = $this->createLiveComponent(PlanWorkspace::class, ['planId' => $plan->id])->render()->crawler();
+
+        $clear = '[data-live-action-param="'.PlanWorkspace::ACTION_CLEAR.'"]';
+        $dialog = $crawler->filter('[data-controller~="alert-dialog"]');
+        self::assertCount(1, $dialog);
+        self::assertStringContainsString('alert-dialog#open', $dialog->filter('[data-alert-dialog-target="trigger"]')->attr('data-action'), 'the button opens the question');
+        self::assertCount(1, $crawler->filter($clear), 'only the confirmation removes');
+        self::assertCount(1, $dialog->filter('dialog '.$clear));
+        self::assertSame('Remove all 2 planned measures?', trim($dialog->filter('dialog [id$="-title"], dialog h2')->first()->text()));
+    }
+
+    #[Test]
+    public function numbersAreWrittenAsTheInterfacesLanguageWritesThem(): void
+    {
+        $plan = $this->plan();
+        $editor = static::getContainer()->get(SiteEditor::class);
+        $editor->add($plan->id, [
+            [O::TYPE => O::PERMEABLE, O::POINTS => [[-9000, -9000], [9000, -9000], [9000, 9000], [-9000, 9000]], O::KIND => O::KIND_PAVERS],
+        ]);
+
+        $html = (string) $this->createLiveComponent(PlanWorkspace::class, ['planId' => $plan->id])->render();
+
+        self::assertMatchesRegularExpression('/\d,\d{3} €/', $html, 'thousands with a comma');
+        self::assertDoesNotMatchRegularExpression('/\d\.\d{3} €/', $html);
+        self::assertStringContainsString('400 m²', $html, 'the plot, 20 × 20 m');
+        self::assertMatchesRegularExpression('/was \d+\.\d %/', $html, 'today\'s value, a decimal point');
+        self::assertMatchesRegularExpression('/\+\d+\.\d pts/', $html, 'a share changes by percentage points');
+    }
+
+    #[Test]
+    public function thePlansOpenedAreListedOnTheHomePage(): void
+    {
+        $plan = $this->plan();
+        $client = static::getClient();
+        $url = static::getContainer()->get('router')->generate(ShowPlanController::ROUTE, ['id' => $plan->id]);
+
+        $page = $client->request('GET', $url);
+        $recorder = $page->filter('[data-controller~="recent-plans"]');
+        self::assertCount(1, $recorder);
+        self::assertSame(HomeController::RECENT_PLANS_STORAGE_KEY, $recorder->attr('data-recent-plans-storage-key-value'));
+        self::assertSame(['id' => $plan->id, 'title' => $plan->title, 'url' => $url], json_decode((string) $recorder->attr('data-recent-plans-plan-value'), true));
+
+        $home = $client->request('GET', '/');
+        $list = $home->filter('section[data-controller~="recent-plans"]');
+        self::assertCount(1, $list, 'the list, filled in this browser');
+        self::assertNotNull($list->attr('hidden'), 'hidden until there is a plan in it');
+        self::assertCount(1, $list->filter('template[data-recent-plans-target="template"]'));
     }
 
     private function workspace(): \Symfony\UX\TwigComponent\Test\RenderedComponent

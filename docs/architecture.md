@@ -469,7 +469,8 @@ two sentences for the user) and keeps a `Rationale` for the new object in `Ratio
 words, the candidate's reasons, warnings and numbers, and the candidates it was chosen over
 (`Alternative`: a zone's other shapes for paving, the proposal's other candidates otherwise).
 `add_objects` keeps a `why` given per object. The 3D view floats a badge over every object that has
-one (`rationale_markers.js`, `PlanWorkspace::markers`); a click on it selects the object, whose
+one (`rationale_markers.js`, `PlanWorkspace::markers`): a small dot, so many close together do not
+cover the yard, and the full badge for the object pointed at or selected. A click on it selects the object, whose
 details show the reasons and the alternatives. Hovering an alternative previews it in amber,
 "use this instead" swaps it in (`Rationale::swappedFor`: whose choice it is now, the one before
 among the alternatives), and the agent's choice can be taken back the same way.
@@ -528,8 +529,16 @@ get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflo
 
 ## Chat and the live UI
 
-- `POST /plan/{id}/chat` (`ChatController`) → `PlanAssistant::ask()`. The conversation is kept in
-  the session per plan (last 20 turns) so user and agent refine the design together. One turn is
+- `POST /plan/{id}/chat` (`ChatController`) → `PlanAssistant::ask()`. The conversation is kept with
+  the plan (`ConversationStore`, last 20 turns), so it is there again after a reload or in another
+  browser, and user and agent refine the design together. Every message carries the plan id and
+  the interface's language (`PlanAssistant::MESSAGE_FORMAT`): the agent answers in the user's
+  language but writes the reasons the interface shows in the interface's.
+- Numbers are written as the interface's language writes them (`twig.number_format` in
+  `config/packages/twig.yaml`; JavaScript formats by the page's `lang`).
+- The home page lists the plans opened in this browser (`recent_plans_controller.js`, in
+  localStorage under `HomeController::RECENT_PLANS_STORAGE_KEY`): there are no accounts, a plan is
+  reached by its link. One turn is
   several model calls with tools in between (40 to 60 s when the agent places interventions), so
   the action raises PHP's time limit to 180 s.
 - `PlanWorkspace` (Live Component) renders the 3D view, the impact cards, the storm slider, the
@@ -545,7 +554,9 @@ get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflo
   (`<twig:Plan:Window>`, `templates/components/Plan/Window.html.twig`: a Toolkit Card),
   opened from a dock. `window_manager_controller.js` drags them by their title bar (or moves them
   with the arrow keys on the grip), resizes them by their corner handle (dragged or arrow keys;
-  a double click gives a window its own size back), minimises, closes and stacks them, keeps them inside the view
+  a double click gives a window its own size back), minimises, closes and stacks them (a window
+  opened below others that would have less than `MIN_ROOM` above the dock opens over them at the
+  top instead, a step down for each one on its side), keeps them inside the view
   with their content scrolling, and remembers places and open windows in the browser
   (`PlanWorkspace::WINDOWS_STORAGE_KEY`, sizes too). Inside the Card's content `id` names the Card's
   own (`window-…`), so `Plan:Window` keeps the window's in `window_id`. The live re-render rewrites the windows' markup, so the
@@ -590,6 +601,10 @@ becomes a city:
   second click) and "add here". Adding goes through `Placement\AddHere`, by the agent's rules: a
   rain garden where the water near the point gathers, paving as the clicked zone's use allows, a
   tree only on free ground; where nothing fits the notice over the view says why.
+- **Measures list**: each measure is named (numbered where several share a name) and sized; a click
+  selects it as a click in the view would (`PlanWorkspace::ACTION_SELECT_OBJECT`). "Remove all" asks
+  first (a Toolkit AlertDialog). An object's details list only facts that cannot be changed below;
+  "Deselect" clears the selection, the window's own ✕ closes the window.
 - **Hover and long press**: the mouse over the view is looked up once per frame
   (`configurator:hover`, same detail); the context menu answers with the object there
   (`plan-context-menu:hovered`), which the view marks faintly (a second `SelectionHighlight`: thinner
@@ -674,7 +689,7 @@ symfony php vendor/bin/phpunit
 
 ## Known limitations and next steps
 
-- Plans live in the cache pool; sessions hold the chat history. Not for production as is.
+- Plans, their conversations and rationales live in the cache pool. Not for production as is.
 - The plot's ground is assumed to be asphalt. Reading `surface` tags from OSM would fix parks;
   in Hamburg the Bodenversiegelung dataset would, once its service is back.
 - LoD2 roofs are drawn as simple flat, gable or hip roofs over the footprint, not the model's own

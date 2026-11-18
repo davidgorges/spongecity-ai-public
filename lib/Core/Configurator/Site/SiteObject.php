@@ -185,7 +185,9 @@ final class SiteObject
     /** plan coordinates stay within this distance of the product (an 80 m import radius, with what reaches beyond it) */
     public const int REACH = 100000;
     public const int MAX_POINTS = 40;
-    public const int MAX_LABEL = 40;
+    /** a label longer than this is cut at a word, with an ellipsis (a measure named after its zone runs long) */
+    public const int MAX_LABEL = 80;
+    public const string ELLIPSIS = '…';
 
     /** what each type means, for the agent */
     public const array DESCRIPTIONS = [

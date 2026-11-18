@@ -3,8 +3,9 @@ import { COLOUR_LINE } from './plot_highlight.js';
 
 /** a person took an alternative instead of the agent's pick: the badge says so in amber */
 const COLOUR_USER = 0xd97706;
-/** the badge's share of the view's height, whatever the distance */
-const SIZE = 0.042;
+/** the badge's share of the view's height, whatever the distance: a dot, the full badge for the object pointed at or selected */
+const DOT_SIZE = 0.016;
+const SIZE = 0.036;
 const CANVAS = 128;
 const STEM_OPACITY = 0.55;
 /** in front of every highlight */
@@ -13,7 +14,9 @@ export const BY_USER = 'user';
 
 /**
  * Badges over the objects the agent explained (PlanWorkspace::markers): a sparkle in a disc of the
- * app's primary colour, floating over each object on a thin stem, the same size on screen at any
+ * app's primary colour, floating over each object on a thin stem. Each is a small dot, so many
+ * close together do not cover the yard; the object under the pointer and the selected one get the
+ * full badge (emphasize). They are the same size on screen at any
  * distance and never hidden by a crown or a roof. Picking one (objectAt) names its object, so a
  * click on the badge selects it and its reasons open.
  */
@@ -22,6 +25,8 @@ export class RationaleMarkers {
     #textures = new Map();
     #materials = new Map();
     #stemMaterial = new THREE.LineBasicMaterial({ color: COLOUR_LINE, transparent: true, opacity: STEM_OPACITY, toneMapped: false });
+    /** the ids whose badge is shown in full */
+    #emphasized = new Set();
 
     constructor() {
         this.group.name = 'rationale-markers';
@@ -38,7 +43,8 @@ export class RationaleMarkers {
             const top = ground + marker.lift;
             const sprite = new THREE.Sprite(this.#material(marker.by === BY_USER ? COLOUR_USER : COLOUR_LINE));
             sprite.position.set(marker.x, top, marker.z);
-            sprite.scale.set(SIZE, SIZE, 1);
+            const size = this.#emphasized.has(marker.id) ? SIZE : DOT_SIZE;
+            sprite.scale.set(size, size, 1);
             sprite.center.set(0.5, 0);
             sprite.renderOrder = RENDER_ORDER;
             sprite.userData.markerId = marker.id;
@@ -47,6 +53,15 @@ export class RationaleMarkers {
             stem.renderOrder = RENDER_ORDER - 1;
             this.group.add(stem, sprite);
         }
+    }
+
+    /** the full badge for these objects (the one pointed at, the selected one), a dot for the rest */
+    emphasize(ids) {
+        this.#emphasized = new Set(ids.filter(Boolean));
+        this.group.children.filter((child) => child.isSprite).forEach((sprite) => {
+            const size = this.#emphasized.has(sprite.userData.markerId) ? SIZE : DOT_SIZE;
+            sprite.scale.set(size, size, 1);
+        });
     }
 
     /**

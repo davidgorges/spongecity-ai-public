@@ -19,6 +19,7 @@ use App\SpongeCity\Rationale\Rationale;
 use App\SpongeCity\Rationale\RationaleStore;
 use App\SpongeCity\PlanEvaluator;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
+use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Scene\SceneSerializer;
 use Core\Configurator\Site\Site;
@@ -71,6 +72,8 @@ final class PlanWorkspace
     public const string ACTION_ADD_HERE = 'addHere';
     public const string ACTION_EDIT_OBJECT = 'editObject';
     public const string ACTION_CLOSE_SELECTED = 'closeSelected';
+    /** a measure picked in the list: selected as if clicked in the view */
+    public const string ACTION_SELECT_OBJECT = 'selectObject';
     public const string ACTION_DISMISS_NOTICE = 'dismissNotice';
     /** the live prop the context menu sets to edit an intervention */
     public const string PROP_SELECTED = 'selected';
@@ -88,6 +91,8 @@ final class PlanWorkspace
     public const string NOTICE_TEXT = 'text';
     public const string NOTICE_OK = 'ok';
     private const string DOMAIN = 'spongecity';
+    private const int MILLIMETRES_PER_METRE = 1000;
+    private const int SQUARE_MILLIMETRES_PER_SQUARE_METRE = 1_000_000;
     private const string NOTICE_PREFIX = 'plan.add.';
     public const string EVENT_PLAN_CHANGED = 'plan:changed';
     /** where the browser keeps the windows' places and which are open (window_manager_controller.js) */
@@ -191,20 +196,49 @@ final class PlanWorkspace
     }
 
     /**
-     * The planned interventions, for the list the user can edit.
+     * The planned interventions, for the list the user can edit. Each has a `name` (its label,
+     * else its kind, numbered when several share it: "Shade tree 2") and a `size` (a tree's
+     * height, else its area), so they can be told apart.
      *
-     * @return list<array{id: string, type: string, label: string|null}>
+     * @return list<array{id: string, type: string, label: string|null, name: string, size: string}>
      */
     public function interventions(): array
     {
         $rows = [];
         foreach (Site::fromJson($this->plan()->siteJson())->objects as $object) {
             if (in_array($object[O::TYPE], O::INTERVENTIONS, true)) {
-                $rows[] = ['id' => (string) $object[O::ID], 'type' => (string) $object[O::TYPE], 'label' => is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : null];
+                $label = is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : null;
+                $rows[] = [
+                    'id' => (string) $object[O::ID],
+                    'type' => (string) $object[O::TYPE],
+                    'label' => $label,
+                    'name' => $label ?? $this->translator->trans('plan.measures.type.'.$object[O::TYPE], [], self::DOMAIN),
+                    'size' => $this->sizeOf($object),
+                ];
+            }
+        }
+        $shared = array_filter(array_count_values(array_column($rows, 'name')), static fn (int $count): bool => $count > 1);
+        $seen = [];
+        foreach ($rows as $i => $row) {
+            if (isset($shared[$row['name']])) {
+                $seen[$row['name']] = ($seen[$row['name']] ?? 0) + 1;
+                $rows[$i]['name'] = $this->translator->trans('plan.measures.numbered', ['%name%' => $row['name'], '%number%' => $seen[$row['name']]], self::DOMAIN);
             }
         }
 
         return $rows;
+    }
+
+    /**
+     * @param array<string, mixed> $object
+     */
+    private function sizeOf(array $object): string
+    {
+        if (O::NEWTREE === $object[O::TYPE]) {
+            return $this->translator->trans('plan.measures.size.height', ['%height%' => round((float) ($object[O::HEIGHT] ?? 0) / self::MILLIMETRES_PER_METRE, 1)], self::DOMAIN);
+        }
+
+        return $this->translator->trans('plan.measures.size.area', ['%area%' => (int) round(Polygon::area(Site::points($object)) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE)], self::DOMAIN);
     }
 
     /**
@@ -320,7 +354,7 @@ final class PlanWorkspace
      * The object selected in the 3D view (an intervention, a tree, a building), with its facts and,
      * for an intervention, what may be changed; null when none is (or it has a panel of its own).
      *
-     * @return array{id: string, type: string, name: string, facts: list<array{0: string, 1: string}>, fields: array<string, array{value: mixed, options: list<int|string>}>, removable: bool}|null
+     * @return array{id: string, type: string, name: string, facts: list<array{0: string, 1: string, 2: string|null}>, fields: array<string, array{value: mixed, options: list<int|string>}>, removable: bool}|null
      */
     public function selectedObject(): ?array
     {
@@ -348,7 +382,8 @@ final class PlanWorkspace
                 'id' => $row['id'],
                 'type' => $row['type'],
                 'name' => $row['name'],
-                'facts' => $row['facts'],
+                // a fact that may be changed shows as the choice made below, not twice
+                'facts' => array_values(array_filter($row['facts'], static fn (array $fact): bool => !isset($fields[$fact[2] ?? '']))),
                 'fields' => $fields,
                 'removable' => in_array(PlanObjects::CAN_DELETE, $row['can'], true),
                 'rationale' => $this->rationale($row['id']),
@@ -491,6 +526,12 @@ final class PlanWorkspace
     public function closeSelected(): void
     {
         $this->selected = null;
+    }
+
+    #[LiveAction]
+    public function selectObject(#[LiveArg] string $id): void
+    {
+        [$this->selected, $this->zone, $this->equipment] = [$id, null, null];
     }
 
     #[LiveAction]

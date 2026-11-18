@@ -181,7 +181,7 @@ final readonly class SiteType implements StructuredValue
             $normalized[$name] = $value;
         }
         $label = $object[O::LABEL] ?? null;
-        $normalized[O::LABEL] = is_string($label) && '' !== trim($label) ? mb_substr(trim($label), 0, O::MAX_LABEL) : null;
+        $normalized[O::LABEL] = is_string($label) && '' !== trim($label) ? self::shortLabel(trim($label)) : null;
         // set from the terrain (not part of the schema: nobody types it in)
         $ground = $object[O::GROUND] ?? null;
         $normalized[O::GROUND] = is_numeric($ground) ? max(-O::MAX_GROUND, min(O::MAX_GROUND, (int) round((float) $ground))) : 0;
@@ -385,5 +385,17 @@ final readonly class SiteType implements StructuredValue
             'required' => $partial ? [] : [O::TYPE, ...array_keys(array_filter(O::fields($type), static fn (array $field): bool => O::OUTLINE === $field[0]))],
             'additionalProperties' => false,
         ];
+    }
+
+    /** at most MAX_LABEL characters, cut after a whole word with an ellipsis */
+    public static function shortLabel(string $label): string
+    {
+        if (mb_strlen($label) <= O::MAX_LABEL) {
+            return $label;
+        }
+        $cut = mb_substr($label, 0, O::MAX_LABEL - mb_strlen(O::ELLIPSIS));
+        $space = mb_strrpos($cut, ' ');
+
+        return rtrim(false !== $space ? mb_substr($cut, 0, $space) : $cut, ' ,:;-').O::ELLIPSIS;
     }
 }
