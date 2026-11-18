@@ -11,8 +11,9 @@ const MARGIN = 16;
 const TOP = 76;
 const BOTTOM = 72;
 const GAP = 12;
-/** a window is never squeezed below this height (CSS pixels) */
+/** a window is never squeezed below this height, nor resized narrower than this (CSS pixels) */
 const MIN_HEIGHT = 120;
+const MIN_WIDTH = 280;
 /** an arrow key on a window's grip moves it this far (Shift: further) */
 const NUDGE = 16;
 const BIG_NUDGE = 64;
@@ -25,7 +26,8 @@ const BOTTOM_EDGE = 'bottom';
 
 /**
  * Windows over the 3D view (<twig:Plan:Window>, templates/components/Plan/Window.html.twig): each is dragged by its title bar
- * (or moved with the arrow keys on its grip), minimised to its title bar, closed and opened again
+ * (or moved with the arrow keys on its grip), resized by its corner handle (or the arrow keys on it;
+ * a double click gives it its own size back), minimised to its title bar, closed and opened again
  * from the dock. Where they are and which are open is kept in this browser (storageKey); a window
  * with data-window-auto opens by itself when that value changes to a non-empty one (an object was
  * selected). The live component re-renders the windows' contents: their place is applied again.
@@ -42,12 +44,13 @@ export default class extends Controller {
     static targets = ['window', 'dock', 'minimise'];
     static values = { storageKey: String };
 
-    /** id → {x, y, open, minimised}; x/y null until placed */
+    /** id → {x, y, w, h, open, minimised}; x/y null until placed, w/h null: its own size */
     #state = {};
     /** on small screens: the window shown */
     #active = null;
     #floating = matchMedia(FLOATING);
     #drag = null;
+    #resizing = null;
     #top = 20;
     #auto = {};
     #onMedia = () => this.#apply();
@@ -56,7 +59,7 @@ export default class extends Controller {
         this.#state = this.#load();
         this.windowTargets.forEach((element) => {
             const id = element.dataset.window;
-            this.#state[id] ??= { x: null, y: null, open: element.dataset.windowOpen !== 'false', minimised: false };
+            this.#state[id] ??= { x: null, y: null, w: null, h: null, open: element.dataset.windowOpen !== 'false', minimised: false };
             this.#auto[id] = element.dataset.windowAuto ?? '';
         });
         this.#active = this.windowTargets.find((element) => this.#state[element.dataset.window].open)?.dataset.window ?? this.windowTargets[0]?.dataset.window ?? null;
@@ -148,6 +151,57 @@ export default class extends Controller {
         window.addEventListener('pointercancel', drop);
     }
 
+    /** a press on a window's corner handle: dragging it resizes the window */
+    resize(event) {
+        if (!this.#floating.matches || event.button > 0) {
+            return;
+        }
+        const element = event.currentTarget.closest('[data-window]');
+        const id = element.dataset.window;
+        event.preventDefault();
+        event.stopPropagation();
+        event.currentTarget.setPointerCapture?.(event.pointerId);
+        this.#raise(id);
+        this.#resizing = { id, pointer: event.pointerId, from: [event.clientX, event.clientY], start: [element.offsetWidth, element.offsetHeight] };
+        const move = (e) => this.#resizeMove(e);
+        const drop = (e) => {
+            if (e.pointerId !== this.#resizing?.pointer) {
+                return;
+            }
+            this.#resizing = null;
+            this.#save();
+            window.removeEventListener('pointermove', move);
+            window.removeEventListener('pointerup', drop);
+            window.removeEventListener('pointercancel', drop);
+        };
+        window.addEventListener('pointermove', move);
+        window.addEventListener('pointerup', drop);
+        window.addEventListener('pointercancel', drop);
+    }
+
+    /** the arrow keys on a window's corner handle: wider, narrower, taller, shorter */
+    resizeByKey(event) {
+        const move = MOVES[event.key];
+        if (!move || !this.#floating.matches) {
+            return;
+        }
+        event.preventDefault();
+        const id = event.params.id;
+        const element = this.#window(id);
+        const step = event.shiftKey ? BIG_NUDGE : NUDGE;
+        this.#setSize(id, element.offsetWidth + move[0] * step, element.offsetHeight + move[1] * step);
+        this.#save();
+    }
+
+    /** a double click on the corner handle: the window's own size again */
+    resetSize({ params: { id } }) {
+        if (this.#state[id]) {
+            Object.assign(this.#state[id], { w: null, h: null });
+            this.#save();
+            this.#apply();
+        }
+    }
+
     /** the arrow keys on a window's grip move it */
     nudge(event) {
         const move = MOVES[event.key];
@@ -176,6 +230,38 @@ export default class extends Controller {
         const state = this.#state[drag.id];
         [state.x, state.y] = this.#clamp(drag.id, drag.start[0] + event.clientX - drag.from[0], drag.start[1] + event.clientY - drag.from[1]);
         this.#position(this.#window(drag.id), state);
+    }
+
+    #resizeMove(event) {
+        const resizing = this.#resizing;
+        if (!resizing || event.pointerId !== resizing.pointer) {
+            return;
+        }
+        this.#setSize(resizing.id, resizing.start[0] + event.clientX - resizing.from[0], resizing.start[1] + event.clientY - resizing.from[1]);
+    }
+
+    /** a window's size, kept inside the view from where it stands */
+    #setSize(id, width, height) {
+        const state = this.#state[id];
+        const frame = this.element.getBoundingClientRect();
+        const room = [frame.width - (state.x ?? 0) - MARGIN / 2, frame.height - (state.y ?? 0) - MARGIN / 2];
+        state.w = Math.round(Math.max(MIN_WIDTH, Math.min(width, room[0])));
+        state.h = state.minimised ? state.h : Math.round(Math.max(MIN_HEIGHT, Math.min(height, room[1])));
+        this.#size(this.#window(id), state);
+    }
+
+    /** a size the person gave it, else its own (a minimised window is only its title bar) */
+    #size(element, state) {
+        if (state.w) {
+            element.style.width = `${state.w}px`;
+        } else {
+            element.style.removeProperty('width');
+        }
+        if (state.h && !state.minimised) {
+            element.style.height = `${state.h}px`;
+        } else {
+            element.style.removeProperty('height');
+        }
     }
 
     /** windows whose auto value changed to a non-empty one open (an object was selected) */
@@ -208,12 +294,15 @@ export default class extends Controller {
                 element.style.removeProperty('left');
                 element.style.removeProperty('top');
                 element.style.removeProperty('z-index');
+                element.style.removeProperty('width');
+                element.style.removeProperty('height');
 
                 return;
             }
             if (state.z) {
                 element.style.zIndex = String(state.z);
             }
+            this.#size(element, state);
         });
         if (floating) {
             // placed in order, so "below" another one finds it placed
@@ -314,7 +403,7 @@ export default class extends Controller {
     #save() {
         try {
             // the stacking order is this visit's
-            const kept = Object.fromEntries(Object.entries(this.#state).map(([id, { x, y, open, minimised }]) => [id, { x, y, open, minimised }]));
+            const kept = Object.fromEntries(Object.entries(this.#state).map(([id, { x, y, w = null, h = null, open, minimised }]) => [id, { x, y, w, h, open, minimised }]));
             localStorage.setItem(this.storageKeyValue, JSON.stringify(kept));
         } catch {
             // storage blocked (private mode): the layout lasts for this page only

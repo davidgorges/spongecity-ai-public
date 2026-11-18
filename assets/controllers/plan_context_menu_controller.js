@@ -34,6 +34,8 @@ const EVENT_OPENED = 'opened';
 const EVENT_CLOSED = 'closed';
 /** dispatched as plan-context-menu:highlight, detail {object} (PlanObjects row, or null): the view marks it */
 const EVENT_HIGHLIGHT = 'highlight';
+/** dispatched as plan-context-menu:hovered, detail {object, selected, marker, clientX, clientY}: the view marks it faintly */
+const EVENT_HOVERED = 'hovered';
 /** an armed delete: the item template styles itself destructive by it */
 const VARIANT_DESTRUCTIVE = 'destructive';
 
@@ -54,6 +56,9 @@ const VARIANT_DESTRUCTIVE = 'destructive';
  * back its focus, a click elsewhere closes it. Its parts are copies of server-rendered templates
  * (the Toolkit's DropdownMenu: a label, an item, a separator, a group label), their text put into
  * the element marked data-text.
+ *
+ * configurator:hover (the mouse over the view) is answered with the object there (EVENT_HOVERED),
+ * which the view marks faintly and names in a tooltip.
  *
  * While it is open the view marks the object it is about; once it closes, the one whose side
  * panel is open (the `highlighted` value: the workspace's selected intervention, equipment or zone).
@@ -98,6 +103,23 @@ export default class extends Controller {
             return;
         }
         component.set(this.#propFor(target), target.id, true);
+    }
+
+    /** The mouse over the view (configurator:hover): which object it is over, for the view to mark. */
+    hover({ detail }) {
+        if (!this.menuTarget.hidden) {
+            return;
+        }
+        const object = detail ? this.#objectAt(detail) : null;
+        this.dispatch(EVENT_HOVERED, {
+            detail: {
+                object,
+                selected: object !== null && object.id === this.highlightedValue,
+                marker: detail?.marker ?? null,
+                clientX: detail?.clientX ?? 0,
+                clientY: detail?.clientY ?? 0,
+            },
+        });
     }
 
     open({ detail }) {

@@ -160,6 +160,7 @@ plan:
         move: 'Move %title% (drag, or arrow keys)'
         minimise: 'Minimise %title%'
         close: 'Close %title%'
+        resize: 'Resize %title% (drag, or arrow keys; double-click for its own size)'
     object:
         type:
             raingarden: Rain garden

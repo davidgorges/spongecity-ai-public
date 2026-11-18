@@ -43,13 +43,19 @@ export class SelectionHighlight {
     #fillXrayMaterial = new THREE.MeshBasicMaterial({
         color: COLOUR_GLOW, transparent: true, opacity: FILL_XRAY_OPACITY, depthWrite: false, depthTest: false, toneMapped: false, side: THREE.DoubleSide,
     });
+    /** whether what hides it is seen through (dashed); the hover mark is not */
+    #xray = true;
 
     /**
-     * @param {{name?: string, line?: number, glow?: number}} options another colour for another
-     *        mark (an alternative the agent had: amber), and the group's name
+     * @param {{name?: string, line?: number, glow?: number, width?: number, fill?: number, xray?: boolean}} options
+     *        another colour for another mark (an alternative the agent had: amber), the group's name, and
+     *        for a fainter one (what the pointer is over) a thinner line, a lighter tint and no x-ray
      */
-    constructor({ name = 'selection-highlight', line = COLOUR_LINE, glow = COLOUR_GLOW } = {}) {
+    constructor({ name = 'selection-highlight', line = COLOUR_LINE, glow = COLOUR_GLOW, width = LINE_WIDTH, fill = FILL_OPACITY, xray = true } = {}) {
         this.group.name = name;
+        this.#xray = xray;
+        this.#lineMaterial.linewidth = width;
+        this.#fillMaterial.opacity = fill;
         this.#lineMaterial.color.set(line);
         this.#xrayMaterial.color.set(glow);
         this.#fillMaterial.color.set(glow);
@@ -103,11 +109,12 @@ export class SelectionHighlight {
         const line = new LineSegments2(new LineSegmentsGeometry().setPositions(positions), this.#lineMaterial);
         const xray = new LineSegments2(new LineSegmentsGeometry().setPositions(positions), this.#xrayMaterial);
         xray.computeLineDistances();
-        [line, xray].forEach((object, i) => {
+        const lines = this.#xray ? [line, xray] : [line];
+        lines.forEach((object, i) => {
             object.renderOrder = RENDER_ORDER + 1 + i;
             object.frustumCulled = false;
         });
-        this.group.add(line, xray);
+        this.group.add(...lines);
     }
 
     /** the size of the view in CSS pixels: the line widths are given in them */
@@ -136,12 +143,12 @@ export class SelectionHighlight {
         geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
         const draped = terrain.drape(geometry);
         const fill = new THREE.Mesh(draped, this.#fillMaterial);
-        const xray = new THREE.Mesh(draped, this.#fillXrayMaterial);
-        [fill, xray].forEach((mesh) => {
+        const meshes = this.#xray ? [fill, new THREE.Mesh(draped, this.#fillXrayMaterial)] : [fill];
+        meshes.forEach((mesh) => {
             mesh.renderOrder = RENDER_ORDER;
             mesh.frustumCulled = false;
         });
-        this.group.add(fill, xray);
+        this.group.add(...meshes);
     }
 
     #clear() {

@@ -100,6 +100,15 @@ export default class extends Controller {
     /** a right-click on the view, and a click, with what lies under it */
     static CONTEXT_EVENT = 'configurator:context';
     static SELECT_EVENT = 'configurator:select';
+    /** what the mouse is over (detail as above, null: nothing); the context menu names the object */
+    static HOVER_EVENT = 'configurator:hover';
+    /** a finger held this long (milliseconds) without moving opens the context menu */
+    static LONG_PRESS_MS = 550;
+    static LONG_PRESS_BUZZ_MS = 10;
+    static POINTER_MOUSE = 'mouse';
+    static POINTER_TOUCH = 'touch';
+    /** the hover tooltip sits this far (CSS pixels) from the pointer */
+    static TOOLTIP_OFFSET = 14;
     /** a press that comes up within this many CSS pixels and milliseconds is a click, not an orbit */
     static CLICK_SLOP = 5;
     static CLICK_MS = 600;
@@ -113,6 +122,13 @@ export default class extends Controller {
     #hoverHeld = false;
     /** where and when the primary button went down on the view */
     #press = null;
+    /** a finger held on the view: its timer; fired once the menu opened */
+    #longPress = null;
+    /** the mouse's last position on the view, looked up once per frame */
+    #hoverAt = null;
+    #hoverFrame = 0;
+    /** the object the hover mark shows (its id), so a move over the same one changes nothing */
+    #hovered = null;
     #unavailable = false;
 
     connect() {
@@ -165,6 +181,8 @@ export default class extends Controller {
 
     disconnect() {
         clearInterval(this.#statsTimer);
+        cancelAnimationFrame(this.#hoverFrame);
+        this.#cancelLongPress();
         this.#renderer?.dispose();
         this.#renderer = null;
     }
@@ -344,35 +362,78 @@ export default class extends Controller {
         this.canvasTarget.focus({ preventScroll: true });
     }
 
+    /**
+     * The mouse moves over the view: once per frame, what lies under it is announced as
+     * configurator:hover (detail as configurator:context); the context menu finds the object and
+     * answers with plan-context-menu:hovered (showHovered). A finger moving cancels a long press.
+     */
     hover(event) {
-        if (!this.#renderer || !this.hasTooltipTarget || this.#hoverHeld) {
+        if (event.pointerType === this.constructor.POINTER_TOUCH) {
+            this.#moveLongPress(event);
+
             return;
         }
-        // mouse only, and not while orbiting
-        if (event.pointerType !== 'mouse' || event.buttons !== 0) {
+        if (!this.#renderer || this.#hoverHeld) {
+            return;
+        }
+        // the mouse only, and not while orbiting
+        if (event.pointerType !== this.constructor.POINTER_MOUSE || event.buttons !== 0) {
             this.unhover();
             return;
         }
-        // a badge first: it explains the object it floats over
-        const marker = this.#renderer.markerAt(event.clientX, event.clientY);
-        this.canvasTarget.style.cursor = marker ? 'pointer' : '';
-        const part = marker ? null : this.#renderer.pickAt(event.clientX, event.clientY);
-        if (!marker && !part) {
-            this.unhover();
-            return;
-        }
-        if (marker) {
-            this.#renderer.clearPick();
-        }
-        const bounds = this.element.getBoundingClientRect();
-        this.tooltipTarget.textContent = marker ? marker.title : `${part.label} · ${part.sku}`;
-        this.tooltipTarget.style.left = `${event.clientX - bounds.left + 14}px`;
-        this.tooltipTarget.style.top = `${event.clientY - bounds.top + 14}px`;
-        this.tooltipTarget.hidden = false;
+        this.#hoverAt = { x: event.clientX, y: event.clientY };
+        this.#hoverFrame ||= requestAnimationFrame(() => {
+            this.#hoverFrame = 0;
+            if (this.#hoverAt && this.#renderer && !this.#hoverHeld) {
+                this.#announcePoint(this.constructor.HOVER_EVENT, this.#hoverAt.x, this.#hoverAt.y);
+            }
+        });
     }
 
     unhover() {
-        this.#renderer?.clearPick();
+        cancelAnimationFrame(this.#hoverFrame);
+        this.#hoverFrame = 0;
+        this.#hoverAt = null;
+        this.#showHover(null);
+    }
+
+    /**
+     * The object under the mouse (plan-context-menu:hovered, detail {object: a PlanObjects row or
+     * null, selected: whether it is the one already marked, marker: a badge's id or null}): marked
+     * faintly unless selected, named in the tooltip.
+     */
+    showHovered({ detail: { object, selected, marker, clientX, clientY } }) {
+        if (!this.#hoverAt || this.#hoverHeld) {
+            return;
+        }
+        if (!object) {
+            this.#showHover(null);
+
+            return;
+        }
+        const key = `${object.id}:${selected}`;
+        if (key !== this.#hovered) {
+            this.#hovered = key;
+            this.#renderer?.hoverObject(selected ? null : this.#metres(object));
+        }
+        this.canvasTarget.style.cursor = 'pointer';
+        if (!this.hasTooltipTarget) {
+            return;
+        }
+        const badge = marker ? this.markersValue.find((candidate) => candidate.id === marker) : null;
+        const bounds = this.element.getBoundingClientRect();
+        this.tooltipTarget.textContent = badge?.title ?? object.name;
+        this.tooltipTarget.style.left = `${clientX - bounds.left + this.constructor.TOOLTIP_OFFSET}px`;
+        this.tooltipTarget.style.top = `${clientY - bounds.top + this.constructor.TOOLTIP_OFFSET}px`;
+        this.tooltipTarget.hidden = false;
+    }
+
+    #showHover(object) {
+        if (object === null && this.#hovered !== null) {
+            this.#hovered = null;
+            this.#renderer?.hoverObject(null);
+        }
+        this.canvasTarget.style.cursor = '';
         if (this.hasTooltipTarget) {
             this.tooltipTarget.hidden = true;
         }
@@ -389,6 +450,16 @@ export default class extends Controller {
             return;
         }
         event.preventDefault();
+        // a held finger: the browser's own long press (Android) and ours open one menu between them
+        if (this.#longPress) {
+            const fired = this.#longPress.fired;
+            this.#longPress.fired = true;
+            clearTimeout(this.#longPress.timer);
+            this.#press = null;
+            if (fired) {
+                return;
+            }
+        }
         const rect = this.canvasTarget.getBoundingClientRect();
         // the key gives no pointer position (0, 0, or somewhere off the view): the middle of the view
         const inside = event.clientX > rect.left && event.clientX < rect.right && event.clientY > rect.top && event.clientY < rect.bottom;
@@ -402,6 +473,45 @@ export default class extends Controller {
     /** a press on the view: a click if it comes up where it went down (an orbit drag moves) */
     press(event) {
         this.#press = event.isPrimary && event.button === 0 ? { x: event.clientX, y: event.clientY, at: event.timeStamp } : null;
+        this.#cancelLongPress();
+        if (this.#press && event.pointerType === this.constructor.POINTER_TOUCH) {
+            const { x, y } = this.#press;
+            this.#longPress = {
+                x, y, fired: false,
+                timer: setTimeout(() => this.#fireLongPress(), this.constructor.LONG_PRESS_MS),
+            };
+        }
+    }
+
+    /** a second finger (a pinch), or the browser taking over the gesture: no long press */
+    cancelPress() {
+        this.#press = null;
+        this.#cancelLongPress();
+    }
+
+    #moveLongPress(event) {
+        if (this.#longPress && !this.#longPress.fired
+            && (!event.isPrimary || Math.hypot(event.clientX - this.#longPress.x, event.clientY - this.#longPress.y) > this.constructor.CLICK_SLOP)) {
+            this.#cancelLongPress();
+        }
+    }
+
+    /** a finger held still on the view: its context menu, as a right-click there would open it */
+    #fireLongPress() {
+        const press = this.#longPress;
+        if (!press || !this.#renderer) {
+            return;
+        }
+        press.fired = true;
+        // lifting the finger is no click
+        this.#press = null;
+        navigator.vibrate?.(this.constructor.LONG_PRESS_BUZZ_MS);
+        this.#announcePoint(this.constructor.CONTEXT_EVENT, press.x, press.y);
+    }
+
+    #cancelLongPress() {
+        clearTimeout(this.#longPress?.timer);
+        this.#longPress = null;
     }
 
     /**
@@ -412,6 +522,7 @@ export default class extends Controller {
     release(event) {
         const press = this.#press;
         this.#press = null;
+        this.#cancelLongPress();
         if (!press || !this.#renderer || event.button !== 0) {
             return;
         }
@@ -459,15 +570,21 @@ export default class extends Controller {
 
             return;
         }
+        this.#renderer?.highlightObject(this.#metres(object));
+    }
+
+    /** a PlanObjects row (millimetres) as the renderer's shape (metres) */
+    #metres(object) {
         const metres = (value) => (value === undefined ? undefined : value / MILLIMETRES_PER_METRE);
-        this.#renderer?.highlightObject({
+
+        return {
             points: object.points?.map(([x, z]) => [metres(x), metres(z)]),
             x: metres(object.x),
             z: metres(object.z),
             r: metres(object.r),
             base: metres(object.base),
             top: metres(object.top),
-        });
+        };
     }
 
     /** A stretch an editor is working on (event configurator:highlight, detail from/to/height). */

@@ -57,7 +57,7 @@
     <section
         class="relative h-[45svh] shrink-0 bg-muted lg:absolute lg:inset-0 lg:h-auto"
         aria-label="{{ viewer_label }}"
-        data-action="pointermove->configurator-viewer#hover plot-map:preview@window->configurator-viewer#previewPlot plan-context-menu:opened@window->configurator-viewer#holdHover plan-context-menu:closed@window->configurator-viewer#releaseHover plan-context-menu:highlight@window->configurator-viewer#highlightObject rationale:preview@window->configurator-viewer#previewAlternative"
+        data-action="plot-map:preview@window->configurator-viewer#previewPlot plan-context-menu:opened@window->configurator-viewer#holdHover plan-context-menu:closed@window->configurator-viewer#releaseHover plan-context-menu:highlight@window->configurator-viewer#highlightObject plan-context-menu:hovered@window->configurator-viewer#showHovered rationale:preview@window->configurator-viewer#previewAlternative"
         {{ stimulus_controller('configurator-viewer', {
             scene: this.scene,
             skies: configurator_skies(),
@@ -73,13 +73,13 @@
         }) }}
     >
         <div
-            class="absolute inset-0 outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&>canvas]:block [&>canvas]:size-full"
+            class="absolute inset-0 touch-none outline-none select-none [-webkit-touch-callout:none] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset [&>canvas]:block [&>canvas]:size-full"
             data-configurator-viewer-target="canvas"
             data-live-ignore
             tabindex="0"
             role="application"
             aria-label="{{ viewer_label }}"
-            data-action="keydown->configurator-viewer#keydown keyup->configurator-viewer#keyup blur->configurator-viewer#releaseKeys pointerdown->configurator-viewer#focus pointermove->configurator-viewer#hover pointerleave->configurator-viewer#unhover contextmenu->configurator-viewer#contextMenu pointerdown->configurator-viewer#press pointerup->configurator-viewer#release"
+            data-action="keydown->configurator-viewer#keydown keyup->configurator-viewer#keyup blur->configurator-viewer#releaseKeys pointerdown->configurator-viewer#focus pointermove->configurator-viewer#hover pointerleave->configurator-viewer#unhover contextmenu->configurator-viewer#contextMenu pointerdown->configurator-viewer#press pointerup->configurator-viewer#release pointercancel->configurator-viewer#cancelPress"
         ></div>
         <div class="absolute inset-0 flex items-center justify-center p-6" data-configurator-viewer-target="unavailable" data-live-ignore hidden>
             <twig:Empty>
@@ -120,7 +120,7 @@
                     },
                 },
             }) }}
-            data-action="configurator:select@window->plan-context-menu#select configurator:context@window->plan-context-menu#open keydown@window->plan-context-menu#keydown pointerdown@window->plan-context-menu#outside resize@window->plan-context-menu#close"
+            data-action="configurator:select@window->plan-context-menu#select configurator:context@window->plan-context-menu#open configurator:hover@window->plan-context-menu#hover keydown@window->plan-context-menu#keydown pointerdown@window->plan-context-menu#outside resize@window->plan-context-menu#close"
         >
             <div data-live-ignore>
                 <twig:DropdownMenu:Content class="z-30 w-64" data-plan-context-menu-target="menu" hidden />

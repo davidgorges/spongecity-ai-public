@@ -544,9 +544,11 @@ get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflo
   measured effect and the measures with their costs are windows over it
   (`<twig:Plan:Window>`, `templates/components/Plan/Window.html.twig`: a Toolkit Card),
   opened from a dock. `window_manager_controller.js` drags them by their title bar (or moves them
-  with the arrow keys on the grip), minimises, closes and stacks them, keeps them inside the view
+  with the arrow keys on the grip), resizes them by their corner handle (dragged or arrow keys;
+  a double click gives a window its own size back), minimises, closes and stacks them, keeps them inside the view
   with their content scrolling, and remembers places and open windows in the browser
-  (`PlanWorkspace::WINDOWS_STORAGE_KEY`). The live re-render rewrites the windows' markup, so the
+  (`PlanWorkspace::WINDOWS_STORAGE_KEY`, sizes too). Inside the Card's content `id` names the Card's
+  own (`window-…`), so `Plan:Window` keeps the window's in `window_id`. The live re-render rewrites the windows' markup, so the
   manager applies its layout again on `render:finished`. Object details opens by itself when
   its `data-window-auto` (the selected intervention, equipment or zone) changes. Below 1024 px the
   windows stack under the view and the dock switches between them like tabs.
@@ -588,6 +590,13 @@ becomes a city:
   second click) and "add here". Adding goes through `Placement\AddHere`, by the agent's rules: a
   rain garden where the water near the point gathers, paving as the clicked zone's use allows, a
   tree only on free ground; where nothing fits the notice over the view says why.
+- **Hover and long press**: the mouse over the view is looked up once per frame
+  (`configurator:hover`, same detail); the context menu answers with the object there
+  (`plan-context-menu:hovered`), which the view marks faintly (a second `SelectionHighlight`: thinner
+  line, lighter tint, no x-ray; not for the selected object) and names in a tooltip (a badge's title
+  over its object). On touch, a finger held still for `LONG_PRESS_MS` opens the context menu;
+  moving, a second finger or `pointercancel` cancel it, and Android's own `contextmenu` for the same
+  press is not a second menu.
 - **Models**: `garden_trees.glb` was simplified to ~40 000 triangles (see
   `assets/configurator/models/README.md`); up to 30 OSM trees are drawn three times per frame
   (view, shadow map, ambient occlusion).

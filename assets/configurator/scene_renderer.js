@@ -133,6 +133,9 @@ export class SceneRenderer {
     /** an alternative of the agent's, previewed: amber, so it is not taken for the selection */
     static ALTERNATIVE_LINE = 0xd97706;
     static ALTERNATIVE_GLOW = 0xfbbf24;
+    /** what the pointer is over: the selection's colour, a thinner line (CSS pixels) and a lighter tint */
+    static HOVER_LINE_WIDTH = 2;
+    static HOVER_FILL_OPACITY = 0.1;
     static LIGHT_POOL_RADIUS = 1.1;
     static LIGHT_POOL_HEIGHT = 0.016;
     static MAX_LAMP_LIGHTS = 4;
@@ -210,6 +213,9 @@ export class SceneRenderer {
     /** an alternative the agent had for the selected object, previewed in amber */
     #alternative = new SelectionHighlight({ name: 'alternative-highlight', line: SceneRenderer.ALTERNATIVE_LINE, glow: SceneRenderer.ALTERNATIVE_GLOW });
     #alternativeShape = null;
+    /** the object under the pointer, marked faintly */
+    #hover = new SelectionHighlight({ name: 'hover-highlight', width: SceneRenderer.HOVER_LINE_WIDTH, fill: SceneRenderer.HOVER_FILL_OPACITY, xray: false });
+    #hoverShape = null;
     /** badges over the objects the agent explained */
     #markers = new RationaleMarkers();
     #markerData = [];
@@ -248,9 +254,9 @@ export class SceneRenderer {
                 models: environmentModels,
                 onChange: () => this.#requestRender(),
             });
-        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#markers.group, this.#rainGardens.group, this.#permeable.group);
+        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#hover.group, this.#markers.group, this.#rainGardens.group, this.#permeable.group);
         // see-through: the ambient occlusion pass would draw it as a solid wall (post_processing.js)
-        this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#markers.group];
+        this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#hover.group, this.#markers.group];
 
         this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement);
         this.#controls.enableDamping = !this.#reducedMotion;
@@ -355,17 +361,29 @@ export class SceneRenderer {
      * @param {{points?: number[][], x?: number, z?: number, r?: number, base?: number, top?: number}|null} shape metres
      */
     highlightObject(shape) {
-        // a tree's ring around its crown as drawn (the model is wider than the plan's estimate)
-        const model = shape?.r > 0 ? this.#modelAt(shape.x, shape.z) : null;
-        if (model) {
-            const box = new THREE.Box3().setFromObject(model);
-            const radius = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
-            const ground = this.#terrain.heightAt(shape.x, shape.z);
-            shape = { ...shape, r: Math.max(shape.r, radius), top: Math.max(shape.top ?? 0, box.max.y - ground) };
-        }
-        this.#selectionShape = shape;
-        this.#selection.show(shape, this.#terrain);
+        this.#selectionShape = this.#asDrawn(shape);
+        this.#selection.show(this.#selectionShape, this.#terrain);
         this.#requestRender();
+    }
+
+    /** Marks the object under the pointer faintly (same shape as highlightObject), or none. */
+    hoverObject(shape) {
+        this.#hoverShape = this.#asDrawn(shape);
+        this.#hover.show(this.#hoverShape, this.#terrain);
+        this.#requestRender();
+    }
+
+    /** a tree's ring around its crown as drawn (the model is wider than the plan's estimate) */
+    #asDrawn(shape) {
+        const model = shape?.r > 0 ? this.#modelAt(shape.x, shape.z) : null;
+        if (!model) {
+            return shape;
+        }
+        const box = new THREE.Box3().setFromObject(model);
+        const radius = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+        const ground = this.#terrain.heightAt(shape.x, shape.z);
+
+        return { ...shape, r: Math.max(shape.r, radius), top: Math.max(shape.top ?? 0, box.max.y - ground) };
     }
 
     /**
@@ -666,6 +684,7 @@ export class SceneRenderer {
         this.#plotHighlight.group.visible = false;
         this.#selection.group.visible = false;
         this.#alternative.group.visible = false;
+        this.#hover.group.visible = false;
         this.#markers.group.visible = false;
         this.#photo ??= new PhotoMode(this.#renderer, this.#scene, this.#camera);
         // the photo is taken from where the camera is heading: finish a running
@@ -706,6 +725,7 @@ export class SceneRenderer {
         this.#plotHighlight.group.visible = true;
         this.#selection.group.visible = true;
         this.#alternative.group.visible = true;
+        this.#hover.group.visible = true;
         this.#markers.group.visible = true;
         this.#setPhotoTextures(Boolean(TIERS[this.#governor.tier].photoTextures));
         this.#controls.enabled = true;
@@ -939,6 +959,7 @@ export class SceneRenderer {
         this.#updatePlotHighlight();
         this.#selection.show(this.#selectionShape, this.#terrain);
         this.#alternative.show(this.#alternativeShape, this.#terrain);
+        this.#hover.show(this.#hoverShape, this.#terrain);
         this.#markers.setMarkers(this.#markerData, this.#terrain);
         if (this.#conditionsData) {
             this.setConditions(this.#conditionsData);
@@ -1237,6 +1258,7 @@ export class SceneRenderer {
         this.#plotHighlight.dispose();
         this.#selection.dispose();
         this.#alternative.dispose();
+        this.#hover.dispose();
         this.#markers.dispose();
         this.#resizeObserver.disconnect();
         this.#controls.dispose();
@@ -1287,7 +1309,7 @@ export class SceneRenderer {
             });
         }
         // and the plot's see-through highlight
-        this.#scene.userData.withoutAmbientOcclusion = [...effects, this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#markers.group];
+        this.#scene.userData.withoutAmbientOcclusion = [...effects, this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#hover.group, this.#markers.group];
         // models that cover the ground (the fire pit's gravel ring) keep the grass off
         const covered = [...this.#scenery.children, ...this.#decor.children]
             .filter(coversGround)
@@ -1459,6 +1481,7 @@ export class SceneRenderer {
         this.#plotHighlight.setResolution(width, height);
         this.#selection.setResolution(width, height);
         this.#alternative.setResolution(width, height);
+        this.#hover.setResolution(width, height);
         if (this.#composer) {
             this.#composer.setPixelRatio(this.#renderer.getPixelRatio());
             this.#composer.setSize(width, height);
