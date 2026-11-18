@@ -94,12 +94,22 @@ export default class extends Controller {
     static QUALITY_STANDARD = 'standard';
     static STATS_INTERVAL_MS = 500;
     static UNAVAILABLE_EVENT = 'configurator:view-unavailable';
+    /** a right-click on the view, and a click, with what lies under it */
+    static CONTEXT_EVENT = 'configurator:context';
+    static SELECT_EVENT = 'configurator:select';
+    /** a press that comes up within this many CSS pixels and milliseconds is a click, not an orbit */
+    static CLICK_SLOP = 5;
+    static CLICK_MS = 600;
     static NOT_READY_MESSAGE = 'The 3D view is not ready.';
     static UNAVAILABLE_MESSAGE = 'The 3D view is not available in this browser (WebGL is disabled). '
         + 'The settings, the price and the quote request work without it.';
 
     #renderer = null;
     #statsTimer = null;
+    /** a menu is open over the view: no hover tooltip meanwhile */
+    #hoverHeld = false;
+    /** where and when the primary button went down on the view */
+    #press = null;
     #unavailable = false;
 
     connect() {
@@ -309,7 +319,7 @@ export default class extends Controller {
     }
 
     hover(event) {
-        if (!this.#renderer || !this.hasTooltipTarget) {
+        if (!this.#renderer || !this.hasTooltipTarget || this.#hoverHeld) {
             return;
         }
         // mouse only, and not while orbiting
@@ -334,6 +344,96 @@ export default class extends Controller {
         if (this.hasTooltipTarget) {
             this.tooltipTarget.hidden = true;
         }
+    }
+
+    /**
+     * Right-click, or the context menu key, on the view: what lies under the pointer (the middle
+     * of the view from the keyboard) is announced as configurator:context on window, detail
+     * {clientX, clientY, x, z (plan millimetres), above (metres over the ground), model (where the
+     * model that was hit stands, plan millimetres, or null)}; a menu listens.
+     */
+    contextMenu(event) {
+        if (!this.#renderer) {
+            return;
+        }
+        event.preventDefault();
+        const rect = this.canvasTarget.getBoundingClientRect();
+        // the key gives no pointer position (0, 0, or somewhere off the view): the middle of the view
+        const inside = event.clientX > rect.left && event.clientX < rect.right && event.clientY > rect.top && event.clientY < rect.bottom;
+        const fromKeyboard = !inside || (event.clientX === 0 && event.clientY === 0);
+        const clientX = fromKeyboard ? rect.left + rect.width / 2 : event.clientX;
+        const clientY = fromKeyboard ? rect.top + rect.height / 2 : event.clientY;
+        this.unhover();
+        this.#announcePoint(this.constructor.CONTEXT_EVENT, clientX, clientY);
+    }
+
+    /** a press on the view: a click if it comes up where it went down (an orbit drag moves) */
+    press(event) {
+        this.#press = event.isPrimary && event.button === 0 ? { x: event.clientX, y: event.clientY, at: event.timeStamp } : null;
+    }
+
+    /**
+     * A click on the view (not a drag that orbits the camera) announces what lies under it as
+     * configurator:select on window, with the same detail as configurator:context; the workspace
+     * selects that object (an empty spot: none).
+     */
+    release(event) {
+        const press = this.#press;
+        this.#press = null;
+        if (!press || !this.#renderer || event.button !== 0) {
+            return;
+        }
+        const moved = Math.hypot(event.clientX - press.x, event.clientY - press.y);
+        if (moved > this.constructor.CLICK_SLOP || event.timeStamp - press.at > this.constructor.CLICK_MS) {
+            return;
+        }
+        this.#announcePoint(this.constructor.SELECT_EVENT, event.clientX, event.clientY);
+    }
+
+    #announcePoint(name, clientX, clientY) {
+        const point = this.#renderer.pointAt(clientX, clientY);
+        window.dispatchEvent(new CustomEvent(name, {
+            detail: point ? {
+                clientX,
+                clientY,
+                x: Math.round(point.x * MILLIMETRES_PER_METRE),
+                z: Math.round(point.z * MILLIMETRES_PER_METRE),
+                above: point.above,
+                // a model that was hit (a tree), by where it stands
+                model: point.model ? { x: Math.round(point.model.x * MILLIMETRES_PER_METRE), z: Math.round(point.model.z * MILLIMETRES_PER_METRE) } : null,
+            } : null,
+        }));
+    }
+
+    /** a menu opened over the view (plan-context-menu:opened): the tooltip and outline give way */
+    holdHover() {
+        this.#hoverHeld = true;
+        this.unhover();
+    }
+
+    releaseHover() {
+        this.#hoverHeld = false;
+    }
+
+    /**
+     * Marks an object of the plan (plan-context-menu:highlight, detail {object}: its outline in
+     * plan millimetres or a tree's position and crown, base and top over the ground; null: none).
+     */
+    highlightObject({ detail: { object } }) {
+        if (!object) {
+            this.#renderer?.highlightObject(null);
+
+            return;
+        }
+        const metres = (value) => (value === undefined ? undefined : value / MILLIMETRES_PER_METRE);
+        this.#renderer?.highlightObject({
+            points: object.points?.map(([x, z]) => [metres(x), metres(z)]),
+            x: metres(object.x),
+            z: metres(object.z),
+            r: metres(object.r),
+            base: metres(object.base),
+            top: metres(object.top),
+        });
     }
 
     /** A stretch an editor is working on (event configurator:highlight, detail from/to/height). */

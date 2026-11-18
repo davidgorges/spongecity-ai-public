@@ -6,10 +6,12 @@ namespace App\Twig\Components;
 
 use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\DataSource;
+use App\SpongeCity\Placement\AddHere;
 use App\SpongeCity\Placement\Placements;
 use App\SpongeCity\Placement\Zone;
 use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\PlanAnalyzer;
+use App\SpongeCity\Plan\PlanObjects;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
 use App\SpongeCity\PlanEvaluator;
@@ -18,12 +20,14 @@ use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Scene\SceneSerializer;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
+use Core\Configurator\Site\SiteType;
 use Symfony\UX\LiveComponent\Attribute\AsLiveComponent;
 use Symfony\UX\LiveComponent\Attribute\LiveAction;
 use Symfony\UX\LiveComponent\Attribute\LiveArg;
 use Symfony\UX\LiveComponent\Attribute\LiveProp;
 use Symfony\UX\LiveComponent\Attribute\PreReRender;
 use Symfony\UX\LiveComponent\DefaultActionTrait;
+use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * The planning workspace: the 3D scene of the plan, its measurable balance and the
@@ -60,7 +64,27 @@ final class PlanWorkspace
     public const string PROP_EQUIPMENT = 'equipment';
     /** one press of "turn" */
     public const int EQUIPMENT_TURN_STEP = 45;
+    /** the 3D view's context menu: add here, edit, delete (removeObject), details */
+    public const string ACTION_ADD_HERE = 'addHere';
+    public const string ACTION_EDIT_OBJECT = 'editObject';
+    public const string ACTION_CLOSE_SELECTED = 'closeSelected';
+    public const string ACTION_DISMISS_NOTICE = 'dismissNotice';
+    /** the live prop the context menu sets to edit an intervention */
+    public const string PROP_SELECTED = 'selected';
+    /** what an intervention's panel lets a person change: type → field → the values offered */
+    public const array EDITABLE = [
+        O::RAINGARDEN => [O::STORAGE => [150, 300, 450]],
+        O::PERMEABLE => [O::KIND => O::PERMEABLE_KINDS],
+        O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000]],
+        O::SHADESAIL => [O::Y => [2500, 3200, 4000]],
+    ];
+    public const string NOTICE_TEXT = 'text';
+    public const string NOTICE_OK = 'ok';
+    private const string DOMAIN = 'spongecity';
+    private const string NOTICE_PREFIX = 'plan.add.';
     public const string EVENT_PLAN_CHANGED = 'plan:changed';
+    /** where the browser keeps the windows' places and which are open (window_manager_controller.js) */
+    public const string WINDOWS_STORAGE_KEY = 'spongecity-windows';
     /** ?debug=1: frame stats overlay, scene and camera on window (bin/render-loop uses them) */
     public const string QUERY_DEBUG = 'debug';
     /** ?tier=0…3: pins a quality tier (debugging) */
@@ -91,6 +115,14 @@ final class PlanWorkspace
     #[LiveProp(writable: true, onUpdated: 'onEquipmentSelected')]
     public ?string $equipment = null;
 
+    /** the object selected in the 3D view (an intervention, a tree, a building) */
+    #[LiveProp(writable: true, onUpdated: 'onObjectSelected')]
+    public ?string $selected = null;
+
+    /** @var array{text: string, ok: bool}|null what the last "add here" did, or why it did not */
+    #[LiveProp]
+    public ?array $notice = null;
+
     public function __construct(
         private readonly PlanStore $plans,
         private readonly PlanEvaluator $evaluator,
@@ -99,6 +131,9 @@ final class PlanWorkspace
         private readonly SiteEditor $editor,
         private readonly SiteConditionsStore $conditions,
         private readonly Placements $placements,
+        private readonly PlanObjects $objects,
+        private readonly AddHere $addHere,
+        private readonly TranslatorInterface $translator,
     ) {
     }
 
@@ -204,6 +239,137 @@ final class PlanWorkspace
     public function removeObject(#[LiveArg] string $id): void
     {
         $this->editor->remove($this->planId, $id);
+        foreach (['selected', 'equipment'] as $prop) {
+            if ($this->{$prop} === $id) {
+                $this->{$prop} = null;
+            }
+        }
+        $this->zones = null;
+    }
+
+    /**
+     * What can be pointed at in the 3D view (PlanObjects), for its context menu.
+     *
+     * @return list<array<string, mixed>>
+     */
+    public function pickables(): array
+    {
+        // normalised: a site as the import wrote it has no ids yet
+        return $this->objects->of(Site::fromJson((new SiteType())->normalize($this->plan()->siteJson())), $this->zones());
+    }
+
+    /**
+     * Adds a rain garden, permeable surface, shade tree or play equipment where the person pointed
+     * in the 3D view (plan millimetres), by the placement rules (AddHere); says what happened.
+     */
+    #[LiveAction]
+    public function addHere(#[LiveArg] string $type, #[LiveArg] int $x, #[LiveArg] int $z): void
+    {
+        if (!in_array($type, AddHere::TYPES, true)) {
+            return;
+        }
+        $result = $this->addHere->add($this->plan(), $type, $x, $z);
+        $this->zones = null;
+        [$this->zone, $this->equipment, $this->selected] = [null, null, null];
+        $id = $result['id'] ?? null;
+        $added = str_starts_with($result['outcome'], AddHere::ADDED);
+        // what was added opens for editing; a zone that keeps its surface opens to say what it is
+        match (true) {
+            $added && O::EQUIPMENT === $type => $this->equipment = $id,
+            $added => $this->selected = $id,
+            in_array($result['outcome'], [AddHere::ZONE_KEPT, AddHere::ZONE_UNKNOWN], true) => $this->zone = $id,
+            default => null,
+        };
+        $params = $result['params'];
+        if (isset($params['%kind%'])) {
+            $params['%kind%'] = $this->translator->trans('plan.object.kind.'.$params['%kind%'], [], self::DOMAIN);
+        }
+        if (isset($params['%use%'])) {
+            $params['%use%'] = $this->translator->trans('plan.zones.use.'.$params['%use%'], [], self::DOMAIN);
+        }
+        // a rain garden right where the person pointed needs no "… m from where you clicked"
+        $here = (AddHere::ADDED.'.'.O::RAINGARDEN) === $result['outcome'] && 0 === ($params['%distance%'] ?? null);
+        $key = $here ? $result['outcome'].'_here' : $result['outcome'];
+        $this->notice = [self::NOTICE_TEXT => $this->translator->trans(self::NOTICE_PREFIX.$key, $params, self::DOMAIN), self::NOTICE_OK => $added];
+    }
+
+    #[LiveAction]
+    public function dismissNotice(): void
+    {
+        $this->notice = null;
+    }
+
+    /** an object selected in the 3D view: the other panels give way */
+    public function onObjectSelected(): void
+    {
+        if (null !== $this->selected) {
+            [$this->zone, $this->equipment] = [null, null];
+        }
+    }
+
+    /**
+     * The object selected in the 3D view (an intervention, a tree, a building), with its facts and,
+     * for an intervention, what may be changed; null when none is (or it has a panel of its own).
+     *
+     * @return array{id: string, type: string, name: string, facts: list<array{0: string, 1: string}>, fields: array<string, array{value: mixed, options: list<int|string>}>, removable: bool}|null
+     */
+    public function selectedObject(): ?array
+    {
+        if (null === $this->selected) {
+            return null;
+        }
+        // normalised: a site as the import wrote it has no ids yet
+        $site = Site::fromJson((new SiteType())->normalize($this->plan()->siteJson()));
+        foreach ($site->objects as $object) {
+            if ($object[O::ID] !== $this->selected) {
+                continue;
+            }
+            $id = $this->selected;
+            // what PlanObjects knows (interventions, trees, buildings); zones and equipment have panels of their own
+            $row = array_values(array_filter($this->objects->of(new Site([$object]), []), static fn (array $r): bool => $r['id'] === $id))[0] ?? null;
+            if (null === $row || O::EQUIPMENT === $row['type']) {
+                return null;
+            }
+            $fields = [];
+            foreach (self::EDITABLE[$object[O::TYPE]] ?? [] as $field => $options) {
+                $fields[$field] = ['value' => $object[$field] ?? null, 'options' => $options];
+            }
+
+            return [
+                'id' => $row['id'],
+                'type' => $row['type'],
+                'name' => $row['name'],
+                'facts' => $row['facts'],
+                'fields' => $fields,
+                'removable' => in_array(PlanObjects::CAN_DELETE, $row['can'], true),
+            ];
+        }
+
+        return null;
+    }
+
+    /** a field of the intervention open for editing, set to one of the values offered */
+    #[LiveAction]
+    public function editObject(#[LiveArg] string $id, #[LiveArg] string $field, #[LiveArg] string $value): void
+    {
+        foreach (Site::fromJson($this->plan()->siteJson())->objects as $object) {
+            if ($object[O::ID] !== $id) {
+                continue;
+            }
+            $options = self::EDITABLE[$object[O::TYPE]][$field] ?? [];
+            $chosen = array_values(array_filter($options, static fn (int|string $option): bool => (string) $option === $value))[0] ?? null;
+            if (null !== $chosen) {
+                $this->editor->update($this->planId, $id, [$field => $chosen]);
+            }
+
+            return;
+        }
+    }
+
+    #[LiveAction]
+    public function closeSelected(): void
+    {
+        $this->selected = null;
     }
 
     #[LiveAction]
@@ -275,7 +441,7 @@ final class PlanWorkspace
     public function onZoneSelected(): void
     {
         if (null !== $this->zone) {
-            $this->equipment = null;
+            [$this->equipment, $this->selected] = [null, null];
         }
     }
 
@@ -283,7 +449,7 @@ final class PlanWorkspace
     public function onEquipmentSelected(): void
     {
         if (null !== $this->equipment) {
-            $this->zone = null;
+            [$this->zone, $this->selected] = [null, null];
         }
     }
 

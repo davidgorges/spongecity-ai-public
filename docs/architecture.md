@@ -530,6 +530,16 @@ get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflo
   event, so the user watches the design appear. The chat region is `data-live-ignore`.
 - The 3D canvas is `data-live-ignore`; a re-render only changes the `scene` value, and the
   `configurator_viewer_controller.js` updates the scene without moving the camera.
+- **Windows**: the view fills the screen; the agent's chat, the mini map, object details, the
+  measured effect and the measures with their costs are windows over it
+  (`templates/plan/_window.html.twig`, embedded so their content keeps the component's context),
+  opened from a dock. `window_manager_controller.js` drags them by their title bar (or moves them
+  with the arrow keys on the grip), minimises, closes and stacks them, keeps them inside the view
+  with their content scrolling, and remembers places and open windows in the browser
+  (`PlanWorkspace::WINDOWS_STORAGE_KEY`). The live re-render rewrites the windows' markup, so the
+  manager applies its layout again on `render:finished`. Object details opens by itself when
+  its `data-window-auto` (the selected intervention, equipment or zone) changes. Below 1024 px the
+  windows stack under the view and the dock switches between them like tabs.
 
 ## The 3D view
 
@@ -557,6 +567,17 @@ becomes a city:
   button is pressed; the button appears only when there is something to show. Its colours are
   saturated on purpose: at the higher tiers the composer's OutputPass tone-maps the whole frame.
   In debug mode `configuratorShowConditions(true)` turns it on (`bin/render-loop --eval`).
+- **Selecting and the context menu**: a click on the view (a press that does not orbit the camera)
+  and a right-click (or the context menu key) ask `SceneRenderer::pointAt` for the point under the
+  pointer (the nearest drawn surface, else the terrain; a model that was hit, by where it stands)
+  and announce it as `configurator:select` and `configurator:context`.
+  `plan_context_menu_controller.js` finds the object there among the plan's (`PlanObjects`: outlines
+  in plan millimetres, the one on top wins, a point above the ground picks walls, crowns and sails;
+  a tree by its model's trunk). A click selects it (highlighted by `SelectionHighlight`, its facts
+  and what may be changed in the object details window); the menu offers delete (confirmed by a
+  second click) and "add here". Adding goes through `Placement\AddHere`, by the agent's rules: a
+  rain garden where the water near the point gathers, paving as the clicked zone's use allows, a
+  tree only on free ground; where nothing fits the notice over the view says why.
 - **Models**: `garden_trees.glb` was simplified to ~40 000 triangles (see
   `assets/configurator/models/README.md`); up to 30 OSM trees are drawn three times per frame
   (view, shadow map, ambient occlusion).

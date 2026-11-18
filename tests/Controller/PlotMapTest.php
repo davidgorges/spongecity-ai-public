@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Controller;
 
 use App\SpongeCity\Plan\Plan;
+use App\SpongeCity\Plan\PlanObjects;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
 use App\SpongeCity\Placement\Zone;
@@ -125,6 +126,72 @@ final class PlotMapTest extends WebTestCase
 
         $component->call(PlanWorkspace::ACTION_REMOVE_EQUIPMENT, ['id' => $item['id']]);
         self::assertSame([], $editor->site($plan->id)->ofType(O::EQUIPMENT));
+    }
+
+    #[Test]
+    public function theViewsContextMenuAddsEditsAndDeletesWhatIsPointedAt(): void
+    {
+        $plan = $this->plan();
+        $component = $this->createLiveComponent(PlanWorkspace::class, ['planId' => $plan->id]);
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+        $types = array_column($workspace->pickables(), 'type');
+        self::assertContains(O::BUILDING, $types, 'the menu knows the building');
+        self::assertContains(O::TREE, $types);
+        self::assertContains(PlanObjects::ZONE, $types);
+
+        // "add here: shade tree" on open ground: added, opened for editing, said so
+        $component->call(PlanWorkspace::ACTION_ADD_HERE, ['type' => O::NEWTREE, 'x' => 8000, 'z' => 6000]);
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+        $tree = $workspace->selectedObject();
+        self::assertNotNull($tree);
+        self::assertSame(O::NEWTREE, $tree['type']);
+        self::assertTrue($workspace->notice[PlanWorkspace::NOTICE_OK] ?? false);
+        self::assertStringContainsString('aria-labelledby="object-title"', (string) $component->render());
+
+        // edit: a height that is offered, then one that is not
+        $component->call(PlanWorkspace::ACTION_EDIT_OBJECT, ['id' => $tree['id'], 'field' => O::HEIGHT, 'value' => '12000']);
+        $component->call(PlanWorkspace::ACTION_EDIT_OBJECT, ['id' => $tree['id'], 'field' => O::HEIGHT, 'value' => '24000']);
+        $editor = static::getContainer()->get(SiteEditor::class);
+        self::assertSame(12000, $editor->site($plan->id)->ofType(O::NEWTREE)[0][O::HEIGHT]);
+
+        // "add here" on the building: refused, with the reason
+        $component->call(PlanWorkspace::ACTION_ADD_HERE, ['type' => O::NEWTREE, 'x' => self::BUILDING[0][0] + 1000, 'z' => self::BUILDING[0][1] + 1000]);
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+        self::assertFalse($workspace->notice[PlanWorkspace::NOTICE_OK] ?? true);
+        self::assertCount(1, $editor->site($plan->id)->ofType(O::NEWTREE));
+
+        // delete
+        $component->call(PlanWorkspace::ACTION_REMOVE, ['id' => $tree['id']]);
+        self::assertSame([], $editor->site($plan->id)->ofType(O::NEWTREE));
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+        self::assertNull($workspace->selectedObject(), 'its panel closes');
+    }
+
+    #[Test]
+    public function aBuildingClickedInTheViewShowsItsFactsButCannotBeChanged(): void
+    {
+        $plan = $this->plan();
+        $component = $this->createLiveComponent(PlanWorkspace::class, ['planId' => $plan->id]);
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+        $building = array_values(array_filter($workspace->pickables(), static fn (array $o): bool => O::BUILDING === $o['type']))[0];
+
+        // what a click in the 3D view sets
+        $component->set(PlanWorkspace::PROP_SELECTED, $building['id']);
+
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+        $selected = $workspace->selectedObject();
+        self::assertNotNull($selected);
+        self::assertSame(O::BUILDING, $selected['type']);
+        self::assertNotEmpty($selected['facts']);
+        self::assertSame([], $selected['fields'], 'context: nothing to change');
+        self::assertFalse($selected['removable']);
+        self::assertStringNotContainsString('data-live-action-param="'.PlanWorkspace::ACTION_REMOVE.'" data-live-id-param="'.$building['id'].'"', (string) $component->render());
     }
 
     #[Test]

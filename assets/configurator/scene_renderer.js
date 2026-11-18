@@ -19,6 +19,7 @@ import { ProductMask } from './product_mask.js';
 import { InfiltrationOverlay } from './site_conditions.js';
 import { TerrainField } from './terrain.js';
 import { PlotHighlight } from './plot_highlight.js';
+import { SelectionHighlight } from './selection_highlight.js';
 import { RAIN_GARDEN, RainGardens } from './rain_garden.js';
 import { PERMEABLE, PermeableSurfaces } from './permeable_surface.js';
 
@@ -122,6 +123,12 @@ export class SceneRenderer {
     static SKU_PLOT = 'SC-PLOT';
     static HIGHLIGHT_DEPTH = 0.3;
     static FADE_IN_MS = 600;
+    /** pointAt: the ground is searched along the ray in steps of this many metres, as far as this, then refined */
+    static GROUND_STEP = 0.5;
+    static GROUND_REACH = 2000;
+    static GROUND_REFINE = 8;
+    /** metres: a model stands where a site object is when they are this close */
+    static MODEL_MATCH = 0.5;
     static LIGHT_POOL_RADIUS = 1.1;
     static LIGHT_POOL_HEIGHT = 0.016;
     static MAX_LAMP_LIGHTS = 4;
@@ -177,6 +184,7 @@ export class SceneRenderer {
     #lampPositions = [];
     #picker;
     #pointer = new THREE.Vector2();
+    #raycaster = new THREE.Raycaster();
     #models = new ModelLibrary();
     #generation = 0;
     #materials = new Map();
@@ -192,6 +200,9 @@ export class SceneRenderer {
     #highlight = null;
     /** the analysed area marked on the ground; its outline as the plot map is editing it (metres), null: as the scene has it */
     #plotHighlight = new PlotHighlight();
+    /** the object the context menu or a side panel is about */
+    #selection = new SelectionHighlight();
+    #selectionShape = null;
     /** rain gardens are drawn as planted basins, not as their parts' slabs */
     #rainGardens = new RainGardens();
     /** permeable surfaces are laid in their real material and size, with an edging */
@@ -227,9 +238,9 @@ export class SceneRenderer {
                 models: environmentModels,
                 onChange: () => this.#requestRender(),
             });
-        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#rainGardens.group, this.#permeable.group);
+        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#selection.group, this.#rainGardens.group, this.#permeable.group);
         // see-through: the ambient occlusion pass would draw it as a solid wall (post_processing.js)
-        this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group];
+        this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group, this.#selection.group];
 
         this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement);
         this.#controls.enableDamping = !this.#reducedMotion;
@@ -295,6 +306,92 @@ export class SceneRenderer {
     clearPick() {
         this.#picker.clear();
         this.#requestRender();
+    }
+
+    /**
+     * Marks an object of the site (SelectionHighlight), or none.
+     *
+     * @param {{points?: number[][], x?: number, z?: number, r?: number, base?: number, top?: number}|null} shape metres
+     */
+    highlightObject(shape) {
+        // a tree's ring around its crown as drawn (the model is wider than the plan's estimate)
+        const model = shape?.r > 0 ? this.#modelAt(shape.x, shape.z) : null;
+        if (model) {
+            const box = new THREE.Box3().setFromObject(model);
+            const radius = Math.max(box.max.x - box.min.x, box.max.z - box.min.z) / 2;
+            const ground = this.#terrain.heightAt(shape.x, shape.z);
+            shape = { ...shape, r: Math.max(shape.r, radius), top: Math.max(shape.top ?? 0, box.max.y - ground) };
+        }
+        this.#selectionShape = shape;
+        this.#selection.show(shape, this.#terrain);
+        this.#requestRender();
+    }
+
+    /**
+     * What the pointer (client coordinates) points at: the nearest surface drawn there (a wall,
+     * a crown, a rain garden's planting), else the ground. Metres; `above` is how high the point
+     * lies over the ground beneath it; `model` where the model that was hit stands (a tree: its
+     * crown is drawn wider than the plan's estimate of it, so its trunk is what identifies it).
+     *
+     * @returns {{x: number, y: number, z: number, above: number, model: {x: number, z: number}|null}|null}
+     */
+    pointAt(clientX, clientY) {
+        const rect = this.#renderer.domElement.getBoundingClientRect();
+        this.#pointer.set(((clientX - rect.left) / rect.width) * 2 - 1, -((clientY - rect.top) / rect.height) * 2 + 1);
+        this.#raycaster.setFromCamera(this.#pointer, this.#camera);
+        const targets = [this.#content, this.#scenery, this.#rainGardens.group, this.#permeable.group];
+        const hit = this.#raycaster.intersectObjects(targets, true).find((intersection) => intersection.object.visible);
+        const point = hit?.point ?? this.#groundAlong(this.#raycaster.ray);
+        if (!point) {
+            return null;
+        }
+
+        const model = hit ? this.#modelOf(hit.object) : null;
+
+        return {
+            x: point.x, y: point.y, z: point.z,
+            above: point.y - this.#terrain.heightAt(point.x, point.z),
+            model: model ? { x: model.position.x, z: model.position.z } : null,
+        };
+    }
+
+    /** the scenery model (a tree, a bench) a mesh belongs to, or null */
+    #modelOf(object) {
+        for (let node = object; node; node = node.parent) {
+            if (node.parent === this.#scenery) {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
+    /** the scenery model standing at plan x/z (metres), within SceneRenderer.MODEL_MATCH */
+    #modelAt(x, z) {
+        return this.#scenery.children.find((model) => Math.hypot(model.position.x - x, model.position.z - z) < SceneRenderer.MODEL_MATCH) ?? null;
+    }
+
+    /** Where a ray meets the terrain, marched in steps and refined (the ground is no mesh one can hit here). */
+    #groundAlong(ray) {
+        const point = new THREE.Vector3();
+        let previous = 0;
+        for (let distance = SceneRenderer.GROUND_STEP; distance < SceneRenderer.GROUND_REACH; distance += SceneRenderer.GROUND_STEP) {
+            ray.at(distance, point);
+            if (point.y <= this.#terrain.heightAt(point.x, point.z)) {
+                // halve the last step until it is close enough
+                let [near, far] = [previous, distance];
+                for (let i = 0; i < SceneRenderer.GROUND_REFINE; i++) {
+                    const middle = (near + far) / 2;
+                    ray.at(middle, point);
+                    [near, far] = point.y > this.#terrain.heightAt(point.x, point.z) ? [middle, far] : [near, middle];
+                }
+
+                return ray.at(far, point);
+            }
+            previous = distance;
+        }
+
+        return null;
     }
 
     get tier() {
@@ -523,6 +620,7 @@ export class SceneRenderer {
         this.clearHighlight();
         // a marking of the editor, not of the place
         this.#plotHighlight.group.visible = false;
+        this.#selection.group.visible = false;
         this.#photo ??= new PhotoMode(this.#renderer, this.#scene, this.#camera);
         // the photo is taken from where the camera is heading: finish a running
         // camera flight (intro, reset) and let the orbit damping come to rest
@@ -560,6 +658,7 @@ export class SceneRenderer {
         }
         this.#photo.stop();
         this.#plotHighlight.group.visible = true;
+        this.#selection.group.visible = true;
         this.#setPhotoTextures(Boolean(TIERS[this.#governor.tier].photoTextures));
         this.#controls.enabled = true;
         this.#requestRender();
@@ -726,7 +825,7 @@ export class SceneRenderer {
 
     /** Camera and controls, to set up a view from the console (debug mode). */
     get debugView() {
-        return { camera: this.#camera, controls: this.#controls, render: () => this.#requestRender() };
+        return { camera: this.#camera, controls: this.#controls, render: () => this.#requestRender(), heightAt: (x, z) => this.#terrain.heightAt(x, z) };
     }
 
     /** Numbers for the debug overlay. */
@@ -790,6 +889,7 @@ export class SceneRenderer {
             this.#rebuildContent(this.#lastSceneData.parts ?? []);
         }
         this.#updatePlotHighlight();
+        this.#selection.show(this.#selectionShape, this.#terrain);
         if (this.#conditionsData) {
             this.setConditions(this.#conditionsData);
         }
@@ -1085,6 +1185,7 @@ export class SceneRenderer {
         this.#highlight?.material.dispose();
         cancelAnimationFrame(this.#plotPreviewFrame);
         this.#plotHighlight.dispose();
+        this.#selection.dispose();
         this.#resizeObserver.disconnect();
         this.#controls.dispose();
         this.#composer?.dispose();
@@ -1134,7 +1235,7 @@ export class SceneRenderer {
             });
         }
         // and the plot's see-through highlight
-        this.#scene.userData.withoutAmbientOcclusion = [...effects, this.#plotHighlight.group];
+        this.#scene.userData.withoutAmbientOcclusion = [...effects, this.#plotHighlight.group, this.#selection.group];
         // models that cover the ground (the fire pit's gravel ring) keep the grass off
         const covered = [...this.#scenery.children, ...this.#decor.children]
             .filter(coversGround)
@@ -1304,6 +1405,7 @@ export class SceneRenderer {
         }
         this.#renderer.setSize(width, height, false);
         this.#plotHighlight.setResolution(width, height);
+        this.#selection.setResolution(width, height);
         if (this.#composer) {
             this.#composer.setPixelRatio(this.#renderer.getPixelRatio());
             this.#composer.setSize(width, height);

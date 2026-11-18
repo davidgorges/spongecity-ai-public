@@ -4,8 +4,8 @@ import { LineGeometry } from 'three/examples/jsm/lines/LineGeometry.js';
 import { LineMaterial } from 'three/examples/jsm/lines/LineMaterial.js';
 
 /** the app's primary colour (--primary), and a lighter one for what glows */
-const COLOUR_LINE = 0x5340f4;
-const COLOUR_GLOW = 0x8a7dff;
+export const COLOUR_LINE = 0x5340f4;
+export const COLOUR_GLOW = 0x8a7dff;
 /** metres: the curtain along the edge, the glow fading inwards from it, the rings at the corners */
 const CURTAIN_HEIGHT = 3;
 const GLOW_WIDTH = 4;
@@ -236,7 +236,7 @@ function geometry(positions, colours) {
 }
 
 /** The closed outline with every edge cut into pieces of at most STEP metres. */
-function densify(points) {
+export function densify(points) {
     const path = [];
     points.forEach(([ax, az], i) => {
         const [bx, bz] = points[(i + 1) % points.length];

@@ -33,7 +33,7 @@ final readonly class ImpactCalculator
     private const float SUN_AZIMUTH_FROM_NORTH = 225.0;
     /** mature canopy radius as a share of the tree height, the crown starts at this share of the height */
     public const float CANOPY_RADIUS_SHARE = 0.28;
-    private const float CROWN_BASE_SHARE = 0.35;
+    public const float CROWN_BASE_SHARE = 0.35;
     /** rain held on leaves and evaporated, millimetres */
     private const float CANOPY_INTERCEPTION_MM = 2.0;
     /** media storage above the ponding depth of a rain garden, metres of water */

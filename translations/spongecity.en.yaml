@@ -10,7 +10,6 @@ spongecity:
         surface_temperature: Surface temperature
     part:
         plot: Analysed area
-        area: Existing area
         equipment: Play equipment
         newtree: Shade tree
         raingarden: Rain garden
@@ -81,6 +80,7 @@ plan:
         north: North is up
         existing_tree: Existing tree
         legend: Legend
+        how: How to edit the map
         undo: Undo
         message:
             saved: Analysed area changed, now %area%.
@@ -125,6 +125,81 @@ plan:
             unknown: ground not known yet
         surface_label: Ground today
         unknown_hint: Nobody has said yet what this ground is. Until you do, it is never paved; it may be a lawn or a garden.
+    windows:
+        dock: Windows
+        chat: Planning agent
+        map: Mini map
+        details: Object details
+        effect: Measured effect
+        measures: Measures and costs
+        details_empty: Click something in the 3D view, or a zone or play equipment on the mini map, to see and change it here.
+        move: 'Move %title% (drag, or arrow keys)'
+        minimise: 'Minimise %title%'
+        close: 'Close %title%'
+    object:
+        type:
+            raingarden: Rain garden
+            permeable: Permeable surface
+            planting: Planting
+            newtree: Shade tree
+            shadesail: Shade sail
+            equipment: Play equipment
+            tree: Existing tree
+            building: Building
+            zone: Zone
+        kind:
+            pavers: Permeable pavers
+            grass_pavers: Grass pavers
+            gravel: Water-bound gravel
+        fact:
+            area: Area
+            ponding: Ponding depth
+            storage: Holds
+            kind: Kind
+            height: Height
+            height_above: Height above ground
+            crown: Crown
+            fall_zone: Fall zone
+            source: Source
+            storeys: Storeys
+            footprint: Footprint
+            use: Used as
+            surface: Ground today
+        field:
+            storage: Ponding depth
+            kind: Kind
+            height: Height when grown
+            y: Height above ground
+        value:
+            storage: '%value% mm'
+            height: '%value% m'
+            y: '%value% m'
+        close: Close
+        remove: Remove
+    menu:
+        label: '%name%: actions'
+        nothing: Open ground
+        delete: Delete
+        confirm_delete: Click again to delete
+        add_here: Add here
+        add:
+            raingarden: Rain garden
+            permeable: Permeable surface
+            newtree: Shade tree
+            equipment: Play equipment
+        hint: Click something in the 3D view to see and change it; right-click (or press the context menu key) to add something there or delete it.
+    add:
+        added:
+            raingarden: 'Rain garden added: %area% m², taking the runoff of about %catchment% m². It lies %distance% m from where you clicked, where the water gathers.'
+            raingarden_here: 'Rain garden added: %area% m², taking the runoff of about %catchment% m².'
+            permeable: '%kind% added: %area% m² of %zone%, as its use allows.'
+            newtree: Shade tree added. Change its height in the panel.
+            equipment: Play equipment marked. Say what it is in the panel.
+        nothing_fits: 'No rain garden fits near here. %reason%'
+        blocked: 'Not here: %reason%.'
+        zone_kept: '%zone% is used as %use% and keeps its surface. Change its use in the panel if that is wrong.'
+        zone_unknown: 'Nobody has said yet what the ground of %zone% is. Say it in the panel, then add the paving again.'
+        off_plot: Only on the analysed area.
     equipment:
         mark: Mark play equipment
         hint: Swings, slides and the like keep their fall zone free. Mark them with the play button, then click where they stand.

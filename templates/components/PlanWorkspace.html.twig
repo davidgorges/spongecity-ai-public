@@ -30,11 +30,17 @@
 {% set impact = this.impact %}
 {% set cost = this.cost %}
 {% set interventions = this.interventions %}
-<div {{ attributes.defaults({'class': 'flex min-h-screen flex-col lg:grid lg:h-screen lg:grid-cols-[minmax(0,1fr)_480px]', 'data-action': 'plan:changed@window->live#$render'}) }}>
+{% set plot_map = this.plotMap %}
+<div {{ attributes.defaults({'class': 'min-h-screen lg:h-screen', 'data-action': 'plan:changed@window->live#$render'}) }}>
+<div
+    class="relative flex min-h-screen flex-col lg:block lg:h-full lg:min-h-0 lg:overflow-hidden"
+    {{ stimulus_controller('window-manager', {storageKey: constant('App\\Twig\\Components\\PlanWorkspace::WINDOWS_STORAGE_KEY')}) }}
+    data-action="resize@window->window-manager#fit"
+>
     <section
-        class="relative h-[45svh] shrink-0 bg-muted lg:h-screen"
+        class="relative h-[45svh] shrink-0 bg-muted lg:absolute lg:inset-0 lg:h-auto"
         aria-label="{{ viewer_label }}"
-        data-action="pointermove->configurator-viewer#hover plot-map:preview@window->configurator-viewer#previewPlot"
+        data-action="pointermove->configurator-viewer#hover plot-map:preview@window->configurator-viewer#previewPlot plan-context-menu:opened@window->configurator-viewer#holdHover plan-context-menu:closed@window->configurator-viewer#releaseHover plan-context-menu:highlight@window->configurator-viewer#highlightObject"
         {{ stimulus_controller('configurator-viewer', {
             scene: this.scene,
             skies: configurator_skies(),
@@ -55,13 +61,64 @@
             tabindex="0"
             role="application"
             aria-label="{{ viewer_label }}"
-            data-action="keydown->configurator-viewer#keydown keyup->configurator-viewer#keyup blur->configurator-viewer#releaseKeys pointerdown->configurator-viewer#focus pointermove->configurator-viewer#hover pointerleave->configurator-viewer#unhover"
+            data-action="keydown->configurator-viewer#keydown keyup->configurator-viewer#keyup blur->configurator-viewer#releaseKeys pointerdown->configurator-viewer#focus pointermove->configurator-viewer#hover pointerleave->configurator-viewer#unhover contextmenu->configurator-viewer#contextMenu pointerdown->configurator-viewer#press pointerup->configurator-viewer#release"
         ></div>
         <div class="absolute inset-0 flex items-center justify-center p-6" data-configurator-viewer-target="unavailable" data-live-ignore hidden>
             <p class="max-w-sm text-center text-sm text-muted-foreground">{{ 'plan.viewer.unavailable'|trans({}, 'spongecity') }}</p>
         </div>
         <div class="pointer-events-none absolute z-10 rounded-md bg-popover px-2 py-1 text-xs text-popover-foreground shadow-md" data-configurator-viewer-target="tooltip" data-live-ignore aria-hidden="true" hidden></div>
         <pre class="pointer-events-none absolute bottom-4 left-4 z-10 rounded-md bg-background/85 px-2 py-1 font-mono text-[11px] leading-tight" data-configurator-viewer-target="stats" data-live-ignore hidden></pre>
+
+        {# right-click (or the context menu key) on the view: what is there, and what can be done with it #}
+        <div
+            class="contents"
+            {{ stimulus_controller('plan-context-menu', {
+                objects: this.pickables,
+                plot: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')],
+                actions: {
+                    add: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_ADD_HERE'),
+                    remove: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_REMOVE'),
+                },
+                props: {
+                    intervention: constant('App\\Twig\\Components\\PlanWorkspace::PROP_SELECTED'),
+                    equipment: constant('App\\Twig\\Components\\PlanWorkspace::PROP_EQUIPMENT'),
+                    zone: constant('App\\Twig\\Components\\PlanWorkspace::PROP_ZONE'),
+                },
+                addable: constant('App\\SpongeCity\\Placement\\AddHere::TYPES'),
+                highlighted: this.selected ?? this.equipment ?? this.zone ?? '',
+                texts: {
+                    label: 'plan.menu.label'|trans({}, 'spongecity'),
+                    nothing: 'plan.menu.nothing'|trans({}, 'spongecity'),
+                    delete: 'plan.menu.delete'|trans({}, 'spongecity'),
+                    confirmDelete: 'plan.menu.confirm_delete'|trans({}, 'spongecity'),
+                    addHere: 'plan.menu.add_here'|trans({}, 'spongecity'),
+                    add: {
+                        raingarden: 'plan.menu.add.raingarden'|trans({}, 'spongecity'),
+                        permeable: 'plan.menu.add.permeable'|trans({}, 'spongecity'),
+                        newtree: 'plan.menu.add.newtree'|trans({}, 'spongecity'),
+                        equipment: 'plan.menu.add.equipment'|trans({}, 'spongecity'),
+                    },
+                },
+            }) }}
+            data-action="configurator:select@window->plan-context-menu#select configurator:context@window->plan-context-menu#open keydown@window->plan-context-menu#keydown pointerdown@window->plan-context-menu#outside resize@window->plan-context-menu#close"
+        >
+            <div data-live-ignore>
+                <div class="absolute z-30 flex w-64 flex-col rounded-lg border border-border bg-popover p-1 text-sm text-popover-foreground shadow-lg" role="menu" data-plan-context-menu-target="menu" hidden></div>
+            </div>
+        </div>
+        {# what the last "add here" did, or why it did not #}
+        <div class="pointer-events-none absolute top-20 left-1/2 z-30 w-max max-w-md -translate-x-1/2" role="status" aria-live="polite">
+            {% if this.notice %}
+                <div class="pointer-events-auto flex items-start gap-2 rounded-md border {{ this.notice.ok ? 'border-border' : 'border-amber-500/60' }} bg-background/95 p-3 text-sm shadow-md">
+                    <twig:ux:icon name="{{ this.notice.ok ? 'lucide:circle-check' : 'lucide:info' }}" class="mt-0.5 size-4 shrink-0 {{ this.notice.ok ? 'text-primary' : 'text-amber-600' }}" aria-hidden="true" />
+                    <p class="min-w-0 flex-1">{{ this.notice.text }}</p>
+                    {% set close_label = 'plan.object.close'|trans({}, 'spongecity') %}
+                    <twig:Button variant="ghost" size="icon-xs" aria-label="{{ close_label }}" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_DISMISS_NOTICE') }}">
+                        <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                    </twig:Button>
+                </div>
+            {% endif %}
+        </div>
 
         <div class="pointer-events-none absolute inset-x-0 top-0 flex items-start justify-between gap-4 bg-linear-to-b from-background/85 via-background/50 to-transparent p-4 pb-10 sm:p-6 sm:pb-14">
             <div class="min-w-0">
@@ -108,331 +165,399 @@
         {% endif %}
     </section>
 
-    <aside class="flex min-h-0 flex-col gap-0 border-t border-border bg-card lg:border-t-0 lg:border-l lg:overflow-y-auto" aria-label="{{ 'plan.panel'|trans({}, 'spongecity') }}">
-        {# the agent #}
-        <section
-            class="flex flex-col gap-3 border-b border-border p-4"
-            aria-labelledby="chat-title"
-            data-live-ignore
-            {{ stimulus_controller('plan-chat', {url: chat_url, errors: chat_errors}) }}
-        >
-            <h2 id="chat-title" class="flex items-center gap-2 font-heading text-sm font-semibold">
-                <twig:ux:icon name="lucide:message-circle" class="size-4 text-primary" aria-hidden="true" />
-                {{ 'plan.chat.title'|trans({}, 'spongecity') }}
-            </h2>
-            <ol class="flex max-h-72 min-h-24 flex-col gap-2 overflow-y-auto text-sm" data-plan-chat-target="messages" aria-live="polite">
-                {% for turn in history %}
-                    <li data-role="{{ turn.role }}" class="rounded-lg px-3 py-2 data-[role=assistant]:bg-muted data-[role=user]:ml-8 data-[role=user]:bg-primary data-[role=user]:text-primary-foreground data-[role=error]:bg-destructive/10 data-[role=error]:text-destructive"><span data-text class="whitespace-pre-line">{{ turn.content }}</span></li>
-                {% endfor %}
-            </ol>
-            <template data-plan-chat-target="template">
-                <li class="rounded-lg px-3 py-2 text-sm data-[role=assistant]:bg-muted data-[role=user]:ml-8 data-[role=user]:bg-primary data-[role=user]:text-primary-foreground data-[role=error]:bg-destructive/10 data-[role=error]:text-destructive"><span data-text class="whitespace-pre-line"></span></li>
-            </template>
-            <p class="flex items-center gap-2 text-xs text-muted-foreground" data-plan-chat-target="status" role="status" hidden>
-                <twig:Spinner class="size-3.5" />
-                {{ 'plan.chat.working'|trans({}, 'spongecity') }}
-            </p>
-            <ul class="flex flex-wrap gap-1.5">
-                {% for suggestion in ['plan.chat.suggest.rain', 'plan.chat.suggest.shade', 'plan.chat.suggest.school'] %}
-                    {% set text = suggestion|trans({}, 'spongecity') %}
-                    <li><twig:Button type="button" variant="outline" size="xs" data-action="plan-chat#suggest" data-plan-chat-text-param="{{ text }}">{{ text|u.truncate(46, '…') }}</twig:Button></li>
-                {% endfor %}
-            </ul>
-            <form class="flex flex-col gap-2" data-action="submit->plan-chat#send">
-                <label for="chat-input" class="sr-only">{{ 'plan.chat.label'|trans({}, 'spongecity') }}</label>
-                <twig:Textarea id="chat-input" rows="3" maxlength="{{ constant('App\\Controller\\Plan\\ChatMessage::MAX_LENGTH') }}" placeholder="{{ 'plan.chat.placeholder'|trans({}, 'spongecity') }}" data-plan-chat-target="input" data-action="keydown->plan-chat#keydown" />
-                <twig:Button type="submit" data-plan-chat-target="submit" class="self-end">
-                    {{ 'plan.chat.send'|trans({}, 'spongecity') }}
-                    <twig:ux:icon name="lucide:send" aria-hidden="true" />
-                </twig:Button>
-            </form>
-        </section>
-
-        {# the plot map: the analysed area drawn over the buildings around it #}
-        {% set plot_map = this.plotMap %}
+    {# the windows over the view, and the dock that opens them (window_manager_controller.js) #}
         {% set equipment_kinds = {} %}
         {% for kind in this.equipmentKinds %}
             {% set equipment_kinds = equipment_kinds|merge({(kind): ('plan.equipment.kind.' ~ kind)|trans({}, 'spongecity')}) %}
         {% endfor %}
-        {% if plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')]|length >= this.minPlotCorners %}
+    {% set windows = {
+        chat: {icon: 'lucide:message-circle', title: 'plan.windows.chat'|trans({}, 'spongecity')},
+        map: {icon: 'lucide:map', title: 'plan.windows.map'|trans({}, 'spongecity')},
+        details: {icon: 'lucide:mouse-pointer-click', title: 'plan.windows.details'|trans({}, 'spongecity')},
+        effect: {icon: 'lucide:gauge', title: 'plan.windows.effect'|trans({}, 'spongecity')},
+        measures: {icon: 'lucide:receipt', title: 'plan.windows.measures'|trans({}, 'spongecity')},
+    } %}
+    <nav class="sticky top-0 z-30 flex justify-center gap-1 border-b border-border bg-background/95 p-1.5 lg:absolute lg:top-auto lg:bottom-6 lg:left-1/2 lg:-translate-x-1/2 lg:rounded-xl lg:border lg:shadow-lg" aria-label="{{ 'plan.windows.dock'|trans({}, 'spongecity') }}">
+        {% for id, window in windows %}
+            <twig:Button variant="ghost" size="sm" class="aria-pressed:bg-accent aria-pressed:text-primary" aria-pressed="false" aria-controls="window-{{ id }}" title="{{ window.title }}" data-window-manager-target="dock" data-window-manager-id-param="{{ id }}" data-action="window-manager#toggle">
+                <twig:ux:icon name="{{ window.icon }}" aria-hidden="true" />
+                <span class="sr-only sm:not-sr-only">{{ window.title }}</span>
+            </twig:Button>
+        {% endfor %}
+    </nav>
+
+    {% embed 'plan/_window.html.twig' with {id: 'chat', title: windows.chat.title, icon: windows.chat.icon, place: 'left top'} %}
+        {% block content %}
             <section
-                class="flex flex-col gap-2 border-b border-border p-4"
-                aria-labelledby="plot-map-title"
-                {{ stimulus_controller('plot-map', {
-                    plot: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')],
-                    buildings: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_BUILDINGS')],
-                    trees: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_TREES')],
-                    interventions: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_INTERVENTIONS')],
-                    zones: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_ZONES')],
-                    zone: this.zone ?? '',
-                    zoneProp: constant('App\\Twig\\Components\\PlanWorkspace::PROP_ZONE'),
-                    equipment: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_EQUIPMENT')],
-                    selectedEquipment: this.equipment ?? '',
-                    equipmentProp: constant('App\\Twig\\Components\\PlanWorkspace::PROP_EQUIPMENT'),
-                    addEquipmentAction: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_ADD_EQUIPMENT'),
-                    action: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_RESHAPE_PLOT'),
-                    minCorners: this.minPlotCorners,
-                    maxCorners: this.maxPlotCorners,
-                    texts: {
-                        corner: 'plan.plot_map.corner'|trans({}, 'spongecity'),
-                        insert: 'plan.plot_map.insert'|trans({}, 'spongecity'),
-                        north: 'plan.plot_map.north'|trans({}, 'spongecity'),
-                        existingTree: 'plan.plot_map.existing_tree'|trans({}, 'spongecity'),
-                        zone: 'plan.zones.select'|trans({}, 'spongecity'),
-                        equipment: 'plan.equipment.select'|trans({}, 'spongecity'),
-                        equipmentLegend: 'plan.equipment.legend'|trans({}, 'spongecity'),
-                        placing: 'plan.equipment.placing'|trans({}, 'spongecity'),
-                        placed: 'plan.equipment.placed'|trans({}, 'spongecity'),
-                        kinds: equipment_kinds,
-                        uses: {
-                            yard: 'plan.zones.use.yard'|trans({}, 'spongecity'),
-                            parking: 'plan.zones.use.parking'|trans({}, 'spongecity'),
-                            access: 'plan.zones.use.access'|trans({}, 'spongecity'),
-                            sport: 'plan.zones.use.sport'|trans({}, 'spongecity'),
-                            play: 'plan.zones.use.play'|trans({}, 'spongecity'),
-                            quiet: 'plan.zones.use.quiet'|trans({}, 'spongecity'),
-                            green: 'plan.zones.use.green'|trans({}, 'spongecity'),
-                        },
-                        types: {
-                            newtree: 'plan.measures.type.newtree'|trans({}, 'spongecity'),
-                            raingarden: 'plan.measures.type.raingarden'|trans({}, 'spongecity'),
-                            permeable: 'plan.measures.type.permeable'|trans({}, 'spongecity'),
-                            planting: 'plan.measures.type.planting'|trans({}, 'spongecity'),
-                            shadesail: 'plan.measures.type.shadesail'|trans({}, 'spongecity'),
-                        },
-                        saved: 'plan.plot_map.message.saved'|trans({}, 'spongecity'),
-                        added: 'plan.plot_map.message.added'|trans({}, 'spongecity'),
-                        removed: 'plan.plot_map.message.removed'|trans({}, 'spongecity'),
-                        undone: 'plan.plot_map.message.undone'|trans({}, 'spongecity'),
-                        crossing: 'plan.plot_map.message.crossing'|trans({}, 'spongecity'),
-                        crossingShort: 'plan.plot_map.message.crossing_short'|trans({}, 'spongecity'),
-                        tooFew: 'plan.plot_map.message.too_few'|trans({'%count%': this.minPlotCorners}, 'spongecity'),
-                        tooMany: 'plan.plot_map.message.too_many'|trans({'%count%': this.maxPlotCorners}, 'spongecity'),
-                    },
-                }) }}
-                data-action="keydown->plot-map#shortcut keydown.esc->plot-map#stopPlacing pointerenter->plot-map#engage pointerleave->plot-map#disengage focusin->plot-map#engage focusout->plot-map#disengage pointermove@window->plot-map#drag pointerup@window->plot-map#drop pointercancel@window->plot-map#cancelDrag"
+                class="flex min-h-0 flex-col gap-3"
+                data-live-ignore
+                {{ stimulus_controller('plan-chat', {url: chat_url, errors: chat_errors}) }}
             >
-                <div class="flex items-center justify-between gap-2">
-                    <h2 id="plot-map-title" class="flex items-center gap-2 font-heading text-sm font-semibold">
-                        <twig:ux:icon name="lucide:map" class="size-4 text-primary" aria-hidden="true" />
-                        {{ 'plan.plot_map.title'|trans({}, 'spongecity') }}
-                    </h2>
-                    <div class="flex items-center gap-2" data-live-ignore>
-                        <span class="font-mono text-xs text-muted-foreground" data-plot-map-target="area"></span>
-                        {% set mark_label = 'plan.equipment.mark'|trans({}, 'spongecity') %}
-                        <twig:Button variant="ghost" size="icon-xs" title="{{ mark_label }}" aria-pressed="false" data-plot-map-target="place" data-action="plot-map#togglePlacing">
-                            <twig:ux:icon name="lucide:baby" aria-hidden="true" />
-                            <span class="sr-only">{{ mark_label }}</span>
-                        </twig:Button>
-                        {% set undo_label = 'plan.plot_map.undo'|trans({}, 'spongecity') %}
-                        <twig:Button variant="ghost" size="icon-xs" title="{{ undo_label }}" data-plot-map-target="undo" data-action="plot-map#undo" disabled>
-                            <twig:ux:icon name="lucide:undo-2" aria-hidden="true" />
-                            <span class="sr-only">{{ undo_label }}</span>
-                        </twig:Button>
-                    </div>
-                </div>
-                <div data-live-ignore>
-                    {# touch-pan-y touch-pinch-zoom: a swipe over the map scrolls the panel; the handles take the finger themselves (touch-none) #}
-                    <svg
-                        id="plot-map"
-                        class="aspect-[4/3] w-full touch-pan-y touch-pinch-zoom select-none rounded-lg border border-border bg-muted/40"
-                        role="group"
-                        aria-label="{{ 'plan.plot_map.label'|trans({}, 'spongecity') }}"
-                        aria-describedby="plot-map-hint"
-                        data-plot-map-target="map"
-                        data-action="click->plot-map#place"
-                    ></svg>
-                    <p class="sr-only" role="status" aria-live="polite" data-plot-map-target="status"></p>
-                    <ul class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground" aria-label="{{ 'plan.plot_map.legend'|trans({}, 'spongecity') }}" data-plot-map-target="legend" hidden></ul>
-                </div>
-                {# the selected zone: what it is used for decides what its surface may become #}
-                {% set zone = this.selectedZone %}
-                {% if zone %}
-                    <div class="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3" role="region" aria-labelledby="zone-title">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="flex flex-col">
-                                <h3 id="zone-title" class="text-sm font-medium">{{ zone.label }}</h3>
-                                <p class="text-xs text-muted-foreground">
-                                    {{ ('plan.zones.source.' ~ zone.source)|trans({}, 'spongecity') }} · {{ zone.area_m2|number_format(0, ',', '.') }} m² · {{ ('plan.zones.surface.' ~ zone.surface)|trans({}, 'spongecity') }}
-                                </p>
-                            </div>
-                            {% set close_label = 'plan.zones.close'|trans({}, 'spongecity') %}
-                            <twig:Button variant="ghost" size="icon-xs" aria-label="{{ close_label }}" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_ZONE') }}">
-                                <twig:ux:icon name="lucide:x" aria-hidden="true" />
-                            </twig:Button>
-                        </div>
-                        <div class="flex flex-wrap gap-1.5" role="group" aria-label="{{ 'plan.zones.use_label'|trans({}, 'spongecity') }}">
-                            {% for use in this.zoneUses %}
-                                <twig:Button
-                                    variant="{{ use == zone.use ? 'default' : 'outline' }}"
-                                    size="xs"
-                                    aria-pressed="{{ use == zone.use ? 'true' : 'false' }}"
-                                    data-action="live#action"
-                                    data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_ZONE_USE') }}"
-                                    data-live-zone-param="{{ zone.id }}"
-                                    data-live-use-param="{{ use }}"
-                                >{{ ('plan.zones.use.' ~ use)|trans({}, 'spongecity') }}</twig:Button>
-                            {% endfor %}
-                        </div>
-                        <p class="text-xs text-muted-foreground">{{ ('plan.zones.means.' ~ zone.use)|trans({}, 'spongecity') }}</p>
-                        <p id="zone-surface-label" class="text-xs font-medium">{{ 'plan.zones.surface_label'|trans({}, 'spongecity') }}</p>
-                        <div class="flex flex-wrap gap-1.5" role="group" aria-labelledby="zone-surface-label">
-                            {% for surface in this.zoneSurfaces %}
-                                <twig:Button
-                                    variant="{{ surface == zone.surface ? 'default' : 'outline' }}"
-                                    size="xs"
-                                    aria-pressed="{{ surface == zone.surface ? 'true' : 'false' }}"
-                                    data-action="live#action"
-                                    data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_ZONE_SURFACE') }}"
-                                    data-live-zone-param="{{ zone.id }}"
-                                    data-live-surface-param="{{ surface }}"
-                                >{{ ('plan.zones.surface.' ~ surface)|trans({}, 'spongecity') }}</twig:Button>
-                            {% endfor %}
-                        </div>
-                        {% if zone.surface == constant('Core\\Configurator\\Site\\SiteObject::SURFACE_UNKNOWN') %}
-                            <p class="text-xs text-muted-foreground">{{ 'plan.zones.unknown_hint'|trans({}, 'spongecity') }}</p>
-                        {% endif %}
-                    </div>
-                {% endif %}
-                {# the selected play equipment: what it is decides its fall zone, which nothing planned may take #}
-                {% set item = this.selectedEquipment %}
-                {% if item %}
-                    <div class="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3" role="region" aria-labelledby="equipment-title">
-                        <div class="flex items-start justify-between gap-2">
-                            <div class="flex flex-col">
-                                <h3 id="equipment-title" class="text-sm font-medium">{{ item.label ?? ('plan.equipment.kind.' ~ item.kind)|trans({}, 'spongecity') }}</h3>
-                                <p class="text-xs text-muted-foreground">
-                                    {{ ('plan.equipment.source.' ~ item.look)|trans({}, 'spongecity') }} · {{ 'plan.equipment.fall_zone'|trans({'%width%': (item.width / 1000)|number_format(1, ',', '.'), '%depth%': (item.depth / 1000)|number_format(1, ',', '.')}, 'spongecity') }}
-                                </p>
-                            </div>
-                            {% set close_label = 'plan.zones.close'|trans({}, 'spongecity') %}
-                            <twig:Button variant="ghost" size="icon-xs" aria-label="{{ close_label }}" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_EQUIPMENT') }}">
-                                <twig:ux:icon name="lucide:x" aria-hidden="true" />
-                            </twig:Button>
-                        </div>
-                        <div class="flex flex-wrap gap-1.5" role="group" aria-label="{{ 'plan.equipment.kind_label'|trans({}, 'spongecity') }}">
-                            {% for kind in this.equipmentKinds %}
-                                <twig:Button
-                                    variant="{{ kind == item.kind ? 'default' : 'outline' }}"
-                                    size="xs"
-                                    aria-pressed="{{ kind == item.kind ? 'true' : 'false' }}"
-                                    data-action="live#action"
-                                    data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_EQUIPMENT_KIND') }}"
-                                    data-live-id-param="{{ item.id }}"
-                                    data-live-kind-param="{{ kind }}"
-                                >{{ ('plan.equipment.kind.' ~ kind)|trans({}, 'spongecity') }}</twig:Button>
-                            {% endfor %}
-                        </div>
-                        <p class="text-xs text-muted-foreground">{{ 'plan.equipment.means'|trans({}, 'spongecity') }}</p>
-                        <div class="flex flex-wrap gap-1.5">
-                            <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_TURN_EQUIPMENT') }}" data-live-id-param="{{ item.id }}">
-                                <twig:ux:icon name="lucide:rotate-cw" aria-hidden="true" />
-                                {{ 'plan.equipment.turn'|trans({'%degrees%': constant('App\\Twig\\Components\\PlanWorkspace::EQUIPMENT_TURN_STEP')}, 'spongecity') }}
-                            </twig:Button>
-                            <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_REMOVE_EQUIPMENT') }}" data-live-id-param="{{ item.id }}">
-                                <twig:ux:icon name="lucide:trash-2" aria-hidden="true" />
-                                {{ 'plan.equipment.remove'|trans({}, 'spongecity') }}
-                            </twig:Button>
-                        </div>
-                    </div>
-                {% endif %}
-                <p id="plot-map-hint" class="text-xs text-muted-foreground">{{ 'plan.plot_map.hint'|trans({}, 'spongecity') }} {{ 'plan.zones.hint'|trans({}, 'spongecity') }} {{ 'plan.equipment.hint'|trans({}, 'spongecity') }}</p>
-            </section>
-        {% endif %}
-
-        {# measurable impact #}
-        <section class="flex flex-col gap-3 border-b border-border p-4" aria-labelledby="impact-title">
-            <div class="flex items-center justify-between gap-2">
-                <h2 id="impact-title" class="font-heading text-sm font-semibold">{{ 'plan.impact.title'|trans({}, 'spongecity') }}</h2>
-                <span class="font-mono text-xs text-muted-foreground">{{ impact.plot_m2|number_format(0, ',', '.') }} m²</span>
-            </div>
-            <div class="flex items-center gap-3">
-                <label for="storm" class="shrink-0 text-xs text-muted-foreground">{{ 'plan.storm'|trans({}, 'spongecity') }}</label>
-                <input id="storm" type="range" min="{{ this.minStorm }}" max="{{ this.maxStorm }}" step="5" value="{{ storm }}" data-model="debounce(300)|storm" class="h-1.5 flex-1 accent-primary">
-                <output for="storm" class="w-16 text-right font-mono text-xs">{{ storm }} mm/h</output>
-            </div>
-            <dl class="grid grid-cols-2 gap-2">
-                {% for metric in impact.metrics %}
-                    <div class="rounded-lg border border-border p-3">
-                        <dt class="text-xs text-muted-foreground">{{ metric.label|trans({}, 'spongecity') }}</dt>
-                        <dd class="mt-1 flex items-baseline gap-1.5">
-                            <span class="font-heading text-xl font-semibold tabular-nums">{{ metric.design|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}</span>
-                            <span class="text-xs text-muted-foreground">{{ metric.unit }}</span>
-                        </dd>
-                        <dd class="mt-0.5 text-xs tabular-nums {{ metric.delta == 0 ? 'text-muted-foreground' : (metric.improved ? 'text-success' : 'text-destructive') }}">
-                            {{ 'plan.impact.today'|trans({}, 'spongecity') }} {{ metric.baseline|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}
-                            {% if metric.delta != 0 %}({{ metric.delta > 0 ? '+' : '−' }}{{ metric.delta|abs|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}){% endif %}
-                        </dd>
-                    </div>
-                {% endfor %}
-            </dl>
-            {% for warning in impact.warnings %}
-                <p class="flex gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground" role="note">
-                    <twig:ux:icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
-                    {{ warning }}
+                <ol class="flex max-h-72 min-h-24 flex-col gap-2 overflow-y-auto text-sm" data-plan-chat-target="messages" aria-live="polite">
+                    {% for turn in history %}
+                        <li data-role="{{ turn.role }}" class="rounded-lg px-3 py-2 data-[role=assistant]:bg-muted data-[role=user]:ml-8 data-[role=user]:bg-primary data-[role=user]:text-primary-foreground data-[role=error]:bg-destructive/10 data-[role=error]:text-destructive"><span data-text class="whitespace-pre-line">{{ turn.content }}</span></li>
+                    {% endfor %}
+                </ol>
+                <template data-plan-chat-target="template">
+                    <li class="rounded-lg px-3 py-2 text-sm data-[role=assistant]:bg-muted data-[role=user]:ml-8 data-[role=user]:bg-primary data-[role=user]:text-primary-foreground data-[role=error]:bg-destructive/10 data-[role=error]:text-destructive"><span data-text class="whitespace-pre-line"></span></li>
+                </template>
+                <p class="flex items-center gap-2 text-xs text-muted-foreground" data-plan-chat-target="status" role="status" hidden>
+                    <twig:Spinner class="size-3.5" />
+                    {{ 'plan.chat.working'|trans({}, 'spongecity') }}
                 </p>
-            {% endfor %}
-            <twig:Accordion id="impact-basis">
-                <twig:Accordion:Item value="basis">
-                    <twig:Accordion:Trigger>{{ 'plan.impact.basis'|trans({}, 'spongecity') }}</twig:Accordion:Trigger>
-                    <twig:Accordion:Content>
-                        <ul class="flex list-disc flex-col gap-1.5 pl-4 text-xs text-muted-foreground">
-                            {% for metric in impact.metrics %}
-                                <li><strong class="font-medium text-foreground">{{ metric.label|trans({}, 'spongecity') }}:</strong> {{ metric.basis }}</li>
-                            {% endfor %}
-                            {% for assumption in impact.assumptions %}
-                                <li>{{ assumption }}</li>
-                            {% endfor %}
-                        </ul>
-                    </twig:Accordion:Content>
-                </twig:Accordion:Item>
-            </twig:Accordion>
-        </section>
-
-        {# the plan: interventions and bill of quantities #}
-        <section class="flex flex-col gap-3 p-4" aria-labelledby="measures-title">
-            <div class="flex items-center justify-between gap-2">
-                <h2 id="measures-title" class="font-heading text-sm font-semibold">{{ 'plan.measures.title'|trans({}, 'spongecity') }}</h2>
-                {% if interventions is not empty %}
-                    <twig:Button variant="ghost" size="xs" data-action="live#action" data-live-action-param="clearInterventions">{{ 'plan.measures.clear'|trans({}, 'spongecity') }}</twig:Button>
-                {% endif %}
-            </div>
-            {% if interventions is empty %}
-                <p class="text-sm text-muted-foreground">{{ 'plan.measures.empty'|trans({}, 'spongecity') }}</p>
-            {% else %}
-                <ul class="flex flex-col divide-y divide-border rounded-lg border border-border">
-                    {% for item in interventions %}
-                        {% set item_name = item.label ?? ('plan.measures.type.' ~ item.type)|trans({}, 'spongecity') %}
-                        {% set remove_label = 'plan.measures.remove'|trans({'%name%': item_name}, 'spongecity') %}
-                        <li class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
-                            <span>{{ item_name }}</span>
-                            <twig:Button variant="ghost" size="icon-xs" aria-label="{{ remove_label }}" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ item.id }}">
-                                <twig:ux:icon name="lucide:x" aria-hidden="true" />
-                            </twig:Button>
-                        </li>
+                <ul class="flex flex-wrap gap-1.5">
+                    {% for suggestion in ['plan.chat.suggest.rain', 'plan.chat.suggest.shade', 'plan.chat.suggest.school'] %}
+                        {% set text = suggestion|trans({}, 'spongecity') %}
+                        <li><twig:Button type="button" variant="outline" size="xs" data-action="plan-chat#suggest" data-plan-chat-text-param="{{ text }}">{{ text|u.truncate(46, '…') }}</twig:Button></li>
                     {% endfor %}
                 </ul>
-                <table class="w-full text-sm">
-                    <caption class="sr-only">{{ 'plan.cost.title'|trans({}, 'spongecity') }}</caption>
-                    <tbody class="divide-y divide-border">
-                        {% for line in cost.lines %}
-                            <tr>
-                                <th scope="row" class="py-1.5 pr-2 text-left font-normal">{{ ('plan.sku.' ~ line.sku)|trans({}, 'spongecity') }}</th>
-                                <td class="py-1.5 text-right tabular-nums text-muted-foreground">{{ line.amount|number_format(1, ',', '.') }} {{ line.sku == tree_sku ? '×' : 'm²' }}</td>
-                                <td class="py-1.5 pl-3 text-right tabular-nums">{{ line.total is null ? '–' : line.total|number_format(0, ',', '.') ~ ' €' }}</td>
-                            </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr class="border-t border-border font-medium">
-                            <th scope="row" colspan="2" class="py-2 text-left">{{ 'plan.cost.total'|trans({}, 'spongecity') }}</th>
-                            <td class="py-2 pl-3 text-right tabular-nums">{{ cost.total|number_format(0, ',', '.') }} €</td>
-                        </tr>
-                    </tfoot>
-                </table>
-                <p class="text-xs text-muted-foreground">{{ 'plan.cost.note'|trans({}, 'spongecity') }}</p>
+                <form class="flex flex-col gap-2" data-action="submit->plan-chat#send">
+                    <label for="chat-input" class="sr-only">{{ 'plan.chat.label'|trans({}, 'spongecity') }}</label>
+                    <twig:Textarea id="chat-input" rows="3" maxlength="{{ constant('App\\Controller\\Plan\\ChatMessage::MAX_LENGTH') }}" placeholder="{{ 'plan.chat.placeholder'|trans({}, 'spongecity') }}" data-plan-chat-target="input" data-action="keydown->plan-chat#keydown" />
+                    <twig:Button type="submit" data-plan-chat-target="submit" class="self-end">
+                        {{ 'plan.chat.send'|trans({}, 'spongecity') }}
+                        <twig:ux:icon name="lucide:send" aria-hidden="true" />
+                    </twig:Button>
+                </form>
+            </section>
+        {% endblock %}
+    {% endembed %}
+
+    {% embed 'plan/_window.html.twig' with {id: 'map', title: windows.map.title, icon: windows.map.icon, place: 'right top', width: 'lg:w-[26rem]'} %}
+        {% block content %}
+            {% if plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')]|length >= this.minPlotCorners %}
+                <div
+                    class="flex flex-col gap-2"
+                    {{ stimulus_controller('plot-map', {
+                        plot: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')],
+                        buildings: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_BUILDINGS')],
+                        trees: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_TREES')],
+                        interventions: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_INTERVENTIONS')],
+                        zones: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_ZONES')],
+                        zone: this.zone ?? '',
+                        zoneProp: constant('App\\Twig\\Components\\PlanWorkspace::PROP_ZONE'),
+                        equipment: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_EQUIPMENT')],
+                        selectedEquipment: this.equipment ?? '',
+                        equipmentProp: constant('App\\Twig\\Components\\PlanWorkspace::PROP_EQUIPMENT'),
+                        addEquipmentAction: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_ADD_EQUIPMENT'),
+                        action: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_RESHAPE_PLOT'),
+                        minCorners: this.minPlotCorners,
+                        maxCorners: this.maxPlotCorners,
+                        texts: {
+                            corner: 'plan.plot_map.corner'|trans({}, 'spongecity'),
+                            insert: 'plan.plot_map.insert'|trans({}, 'spongecity'),
+                            north: 'plan.plot_map.north'|trans({}, 'spongecity'),
+                            existingTree: 'plan.plot_map.existing_tree'|trans({}, 'spongecity'),
+                            zone: 'plan.zones.select'|trans({}, 'spongecity'),
+                            equipment: 'plan.equipment.select'|trans({}, 'spongecity'),
+                            equipmentLegend: 'plan.equipment.legend'|trans({}, 'spongecity'),
+                            placing: 'plan.equipment.placing'|trans({}, 'spongecity'),
+                            placed: 'plan.equipment.placed'|trans({}, 'spongecity'),
+                            kinds: equipment_kinds,
+                            uses: {
+                                yard: 'plan.zones.use.yard'|trans({}, 'spongecity'),
+                                parking: 'plan.zones.use.parking'|trans({}, 'spongecity'),
+                                access: 'plan.zones.use.access'|trans({}, 'spongecity'),
+                                sport: 'plan.zones.use.sport'|trans({}, 'spongecity'),
+                                play: 'plan.zones.use.play'|trans({}, 'spongecity'),
+                                quiet: 'plan.zones.use.quiet'|trans({}, 'spongecity'),
+                                green: 'plan.zones.use.green'|trans({}, 'spongecity'),
+                            },
+                            types: {
+                                newtree: 'plan.measures.type.newtree'|trans({}, 'spongecity'),
+                                raingarden: 'plan.measures.type.raingarden'|trans({}, 'spongecity'),
+                                permeable: 'plan.measures.type.permeable'|trans({}, 'spongecity'),
+                                planting: 'plan.measures.type.planting'|trans({}, 'spongecity'),
+                                shadesail: 'plan.measures.type.shadesail'|trans({}, 'spongecity'),
+                            },
+                            saved: 'plan.plot_map.message.saved'|trans({}, 'spongecity'),
+                            added: 'plan.plot_map.message.added'|trans({}, 'spongecity'),
+                            removed: 'plan.plot_map.message.removed'|trans({}, 'spongecity'),
+                            undone: 'plan.plot_map.message.undone'|trans({}, 'spongecity'),
+                            crossing: 'plan.plot_map.message.crossing'|trans({}, 'spongecity'),
+                            crossingShort: 'plan.plot_map.message.crossing_short'|trans({}, 'spongecity'),
+                            tooFew: 'plan.plot_map.message.too_few'|trans({'%count%': this.minPlotCorners}, 'spongecity'),
+                            tooMany: 'plan.plot_map.message.too_many'|trans({'%count%': this.maxPlotCorners}, 'spongecity'),
+                        },
+                    }) }}
+                    data-action="keydown->plot-map#shortcut keydown.esc->plot-map#stopPlacing pointerenter->plot-map#engage pointerleave->plot-map#disengage focusin->plot-map#engage focusout->plot-map#disengage pointermove@window->plot-map#drag pointerup@window->plot-map#drop pointercancel@window->plot-map#cancelDrag"
+                >
+                    <div class="flex items-center justify-end gap-2">
+                        <div class="flex items-center gap-2" data-live-ignore>
+                            <span class="font-mono text-xs text-muted-foreground" data-plot-map-target="area"></span>
+                            {% set mark_label = 'plan.equipment.mark'|trans({}, 'spongecity') %}
+                            <twig:Button variant="ghost" size="icon-xs" title="{{ mark_label }}" aria-pressed="false" data-plot-map-target="place" data-action="plot-map#togglePlacing">
+                                <twig:ux:icon name="lucide:baby" aria-hidden="true" />
+                                <span class="sr-only">{{ mark_label }}</span>
+                            </twig:Button>
+                            {% set undo_label = 'plan.plot_map.undo'|trans({}, 'spongecity') %}
+                            <twig:Button variant="ghost" size="icon-xs" title="{{ undo_label }}" data-plot-map-target="undo" data-action="plot-map#undo" disabled>
+                                <twig:ux:icon name="lucide:undo-2" aria-hidden="true" />
+                                <span class="sr-only">{{ undo_label }}</span>
+                            </twig:Button>
+                        </div>
+                    </div>
+                    <div data-live-ignore>
+                        {# touch-pan-y touch-pinch-zoom: a swipe over the map scrolls the panel; the handles take the finger themselves (touch-none) #}
+                        <svg
+                            id="plot-map"
+                            class="aspect-[4/3] w-full touch-pan-y touch-pinch-zoom select-none rounded-lg border border-border bg-muted/40"
+                            role="group"
+                            aria-label="{{ 'plan.plot_map.label'|trans({}, 'spongecity') }}"
+                            aria-describedby="plot-map-hint"
+                            data-plot-map-target="map"
+                            data-action="click->plot-map#place"
+                        ></svg>
+                        <p class="sr-only" role="status" aria-live="polite" data-plot-map-target="status"></p>
+                        <ul class="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground" aria-label="{{ 'plan.plot_map.legend'|trans({}, 'spongecity') }}" data-plot-map-target="legend" hidden></ul>
+                    </div>
+                    <details class="text-xs text-muted-foreground">
+                        <summary class="cursor-pointer select-none font-medium text-foreground">{{ 'plan.plot_map.how'|trans({}, 'spongecity') }}</summary>
+                        <p id="plot-map-hint" class="mt-1">{{ 'plan.plot_map.hint'|trans({}, 'spongecity') }} {{ 'plan.zones.hint'|trans({}, 'spongecity') }} {{ 'plan.equipment.hint'|trans({}, 'spongecity') }} {{ 'plan.menu.hint'|trans({}, 'spongecity') }}</p>
+                    </details>
+                </div>
             {% endif %}
-        </section>
-    </aside>
+        {% endblock %}
+    {% endembed %}
+
+    {# what is selected: from the 3D view's menu, a zone or play equipment on the map; opens by itself #}
+    {% set selected_id = this.selected ?? this.equipment ?? this.zone ?? '' %}
+    {% embed 'plan/_window.html.twig' with {id: 'details', title: windows.details.title, icon: windows.details.icon, place: 'below map', open: false, auto: selected_id} %}
+        {% block content %}
+            {% if selected_id == '' %}
+                <p class="text-sm text-muted-foreground">{{ 'plan.windows.details_empty'|trans({}, 'spongecity') }}</p>
+            {% endif %}
+                    {# the selected zone: what it is used for decides what its surface may become #}
+                    {% set zone = this.selectedZone %}
+                    {% if zone %}
+                        <div class="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3" role="region" aria-labelledby="zone-title">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="flex flex-col">
+                                    <h3 id="zone-title" class="text-sm font-medium">{{ zone.label }}</h3>
+                                    <p class="text-xs text-muted-foreground">
+                                        {{ ('plan.zones.source.' ~ zone.source)|trans({}, 'spongecity') }} · {{ zone.area_m2|number_format(0, ',', '.') }} m² · {{ ('plan.zones.surface.' ~ zone.surface)|trans({}, 'spongecity') }}
+                                    </p>
+                                </div>
+                                {% set close_label = 'plan.zones.close'|trans({}, 'spongecity') %}
+                                <twig:Button variant="ghost" size="icon-xs" aria-label="{{ close_label }}" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_ZONE') }}">
+                                    <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                                </twig:Button>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5" role="group" aria-label="{{ 'plan.zones.use_label'|trans({}, 'spongecity') }}">
+                                {% for use in this.zoneUses %}
+                                    <twig:Button
+                                        variant="{{ use == zone.use ? 'default' : 'outline' }}"
+                                        size="xs"
+                                        aria-pressed="{{ use == zone.use ? 'true' : 'false' }}"
+                                        data-action="live#action"
+                                        data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_ZONE_USE') }}"
+                                        data-live-zone-param="{{ zone.id }}"
+                                        data-live-use-param="{{ use }}"
+                                    >{{ ('plan.zones.use.' ~ use)|trans({}, 'spongecity') }}</twig:Button>
+                                {% endfor %}
+                            </div>
+                            <p class="text-xs text-muted-foreground">{{ ('plan.zones.means.' ~ zone.use)|trans({}, 'spongecity') }}</p>
+                            <p id="zone-surface-label" class="text-xs font-medium">{{ 'plan.zones.surface_label'|trans({}, 'spongecity') }}</p>
+                            <div class="flex flex-wrap gap-1.5" role="group" aria-labelledby="zone-surface-label">
+                                {% for surface in this.zoneSurfaces %}
+                                    <twig:Button
+                                        variant="{{ surface == zone.surface ? 'default' : 'outline' }}"
+                                        size="xs"
+                                        aria-pressed="{{ surface == zone.surface ? 'true' : 'false' }}"
+                                        data-action="live#action"
+                                        data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_ZONE_SURFACE') }}"
+                                        data-live-zone-param="{{ zone.id }}"
+                                        data-live-surface-param="{{ surface }}"
+                                    >{{ ('plan.zones.surface.' ~ surface)|trans({}, 'spongecity') }}</twig:Button>
+                                {% endfor %}
+                            </div>
+                            {% if zone.surface == constant('Core\\Configurator\\Site\\SiteObject::SURFACE_UNKNOWN') %}
+                                <p class="text-xs text-muted-foreground">{{ 'plan.zones.unknown_hint'|trans({}, 'spongecity') }}</p>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                    {# the object clicked in the 3D view: its facts, for an intervention what may be changed and removing it #}
+                    {% set object = this.selectedObject %}
+                    {% if object %}
+                        <div class="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3" role="region" aria-labelledby="object-title">
+                            <div class="flex items-start justify-between gap-2">
+                                <h3 id="object-title" class="text-sm font-medium">{{ object.name }}</h3>
+                                {% set close_label = 'plan.object.close'|trans({}, 'spongecity') %}
+                                <twig:Button variant="ghost" size="icon-xs" aria-label="{{ close_label }}" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_SELECTED') }}">
+                                    <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                                </twig:Button>
+                            </div>
+                            <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+                                {% for fact in object.facts %}
+                                    <dt class="text-muted-foreground">{{ fact[0] }}</dt>
+                                    <dd class="tabular-nums">{{ fact[1] }}</dd>
+                                {% endfor %}
+                            </dl>
+                            {% for field, spec in object.fields %}
+                                <p id="object-field-{{ field }}" class="text-xs font-medium">{{ ('plan.object.field.' ~ field)|trans({}, 'spongecity') }}</p>
+                                <div class="flex flex-wrap gap-1.5" role="group" aria-labelledby="object-field-{{ field }}">
+                                    {% for option in spec.options %}
+                                        <twig:Button
+                                            variant="{{ option == spec.value ? 'default' : 'outline' }}"
+                                            size="xs"
+                                            aria-pressed="{{ option == spec.value ? 'true' : 'false' }}"
+                                            data-action="live#action"
+                                            data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_EDIT_OBJECT') }}"
+                                            data-live-id-param="{{ object.id }}"
+                                            data-live-field-param="{{ field }}"
+                                            data-live-value-param="{{ option }}"
+                                        >{% if field == 'kind' %}{{ ('plan.object.kind.' ~ option)|trans({}, 'spongecity') }}{% elseif field == 'storage' %}{{ 'plan.object.value.storage'|trans({'%value%': option}, 'spongecity') }}{% else %}{{ ('plan.object.value.' ~ field)|trans({'%value%': (option / 1000)|number_format(1, '.', ',')|trim('0', 'right')|trim('.', 'right')}, 'spongecity') }}{% endif %}</twig:Button>
+                                    {% endfor %}
+                                </div>
+                            {% endfor %}
+                            {% if object.removable %}
+                                <div>
+                                    <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ object.id }}">
+                                        <twig:ux:icon name="lucide:trash-2" aria-hidden="true" />
+                                        {{ 'plan.object.remove'|trans({}, 'spongecity') }}
+                                    </twig:Button>
+                                </div>
+                            {% endif %}
+                        </div>
+                    {% endif %}
+                    {# the selected play equipment: what it is decides its fall zone, which nothing planned may take #}
+                    {% set item = this.selectedEquipment %}
+                    {% if item %}
+                        <div class="flex flex-col gap-2 rounded-lg border border-primary/40 bg-primary/5 p-3" role="region" aria-labelledby="equipment-title">
+                            <div class="flex items-start justify-between gap-2">
+                                <div class="flex flex-col">
+                                    <h3 id="equipment-title" class="text-sm font-medium">{{ item.label ?? ('plan.equipment.kind.' ~ item.kind)|trans({}, 'spongecity') }}</h3>
+                                    <p class="text-xs text-muted-foreground">
+                                        {{ ('plan.equipment.source.' ~ item.look)|trans({}, 'spongecity') }} · {{ 'plan.equipment.fall_zone'|trans({'%width%': (item.width / 1000)|number_format(1, ',', '.'), '%depth%': (item.depth / 1000)|number_format(1, ',', '.')}, 'spongecity') }}
+                                    </p>
+                                </div>
+                                {% set close_label = 'plan.zones.close'|trans({}, 'spongecity') %}
+                                <twig:Button variant="ghost" size="icon-xs" aria-label="{{ close_label }}" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_EQUIPMENT') }}">
+                                    <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                                </twig:Button>
+                            </div>
+                            <div class="flex flex-wrap gap-1.5" role="group" aria-label="{{ 'plan.equipment.kind_label'|trans({}, 'spongecity') }}">
+                                {% for kind in this.equipmentKinds %}
+                                    <twig:Button
+                                        variant="{{ kind == item.kind ? 'default' : 'outline' }}"
+                                        size="xs"
+                                        aria-pressed="{{ kind == item.kind ? 'true' : 'false' }}"
+                                        data-action="live#action"
+                                        data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SET_EQUIPMENT_KIND') }}"
+                                        data-live-id-param="{{ item.id }}"
+                                        data-live-kind-param="{{ kind }}"
+                                    >{{ ('plan.equipment.kind.' ~ kind)|trans({}, 'spongecity') }}</twig:Button>
+                                {% endfor %}
+                            </div>
+                            <p class="text-xs text-muted-foreground">{{ 'plan.equipment.means'|trans({}, 'spongecity') }}</p>
+                            <div class="flex flex-wrap gap-1.5">
+                                <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_TURN_EQUIPMENT') }}" data-live-id-param="{{ item.id }}">
+                                    <twig:ux:icon name="lucide:rotate-cw" aria-hidden="true" />
+                                    {{ 'plan.equipment.turn'|trans({'%degrees%': constant('App\\Twig\\Components\\PlanWorkspace::EQUIPMENT_TURN_STEP')}, 'spongecity') }}
+                                </twig:Button>
+                                <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_REMOVE_EQUIPMENT') }}" data-live-id-param="{{ item.id }}">
+                                    <twig:ux:icon name="lucide:trash-2" aria-hidden="true" />
+                                    {{ 'plan.equipment.remove'|trans({}, 'spongecity') }}
+                                </twig:Button>
+                            </div>
+                        </div>
+                    {% endif %}
+        {% endblock %}
+    {% endembed %}
+
+    {% embed 'plan/_window.html.twig' with {id: 'effect', title: windows.effect.title, icon: windows.effect.icon, place: 'left bottom'} %}
+        {% block actions %}
+            <span class="font-mono text-xs text-muted-foreground">{{ impact.plot_m2|number_format(0, ',', '.') }} m²</span>
+        {% endblock %}
+        {% block content %}
+                <div class="flex items-center gap-3">
+                    <label for="storm" class="shrink-0 text-xs text-muted-foreground">{{ 'plan.storm'|trans({}, 'spongecity') }}</label>
+                    <input id="storm" type="range" min="{{ this.minStorm }}" max="{{ this.maxStorm }}" step="5" value="{{ storm }}" data-model="debounce(300)|storm" class="h-1.5 flex-1 accent-primary">
+                    <output for="storm" class="w-16 text-right font-mono text-xs">{{ storm }} mm/h</output>
+                </div>
+                <dl class="grid grid-cols-2 gap-2">
+                    {% for metric in impact.metrics %}
+                        <div class="rounded-lg border border-border p-3">
+                            <dt class="text-xs text-muted-foreground">{{ metric.label|trans({}, 'spongecity') }}</dt>
+                            <dd class="mt-1 flex items-baseline gap-1.5">
+                                <span class="font-heading text-xl font-semibold tabular-nums">{{ metric.design|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}</span>
+                                <span class="text-xs text-muted-foreground">{{ metric.unit }}</span>
+                            </dd>
+                            <dd class="mt-0.5 text-xs tabular-nums {{ metric.delta == 0 ? 'text-muted-foreground' : (metric.improved ? 'text-success' : 'text-destructive') }}">
+                                {{ 'plan.impact.today'|trans({}, 'spongecity') }} {{ metric.baseline|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}
+                                {% if metric.delta != 0 %}({{ metric.delta > 0 ? '+' : '−' }}{{ metric.delta|abs|number_format(metric.unit == '' ? 2 : 1, ',', '.') }}){% endif %}
+                            </dd>
+                        </div>
+                    {% endfor %}
+                </dl>
+                {% for warning in impact.warnings %}
+                    <p class="flex gap-2 rounded-md bg-warning/10 px-3 py-2 text-xs text-foreground" role="note">
+                        <twig:ux:icon name="lucide:triangle-alert" class="mt-0.5 size-3.5 shrink-0 text-warning" aria-hidden="true" />
+                        {{ warning }}
+                    </p>
+                {% endfor %}
+                <twig:Accordion id="impact-basis">
+                    <twig:Accordion:Item value="basis">
+                        <twig:Accordion:Trigger>{{ 'plan.impact.basis'|trans({}, 'spongecity') }}</twig:Accordion:Trigger>
+                        <twig:Accordion:Content>
+                            <ul class="flex list-disc flex-col gap-1.5 pl-4 text-xs text-muted-foreground">
+                                {% for metric in impact.metrics %}
+                                    <li><strong class="font-medium text-foreground">{{ metric.label|trans({}, 'spongecity') }}:</strong> {{ metric.basis }}</li>
+                                {% endfor %}
+                                {% for assumption in impact.assumptions %}
+                                    <li>{{ assumption }}</li>
+                                {% endfor %}
+                            </ul>
+                        </twig:Accordion:Content>
+                    </twig:Accordion:Item>
+                </twig:Accordion>
+        {% endblock %}
+    {% endembed %}
+
+    {% embed 'plan/_window.html.twig' with {id: 'measures', title: windows.measures.title, icon: windows.measures.icon, place: 'right bottom', open: false} %}
+        {% block actions %}
+            {% if interventions is not empty %}
+                <twig:Button variant="ghost" size="xs" data-action="live#action" data-live-action-param="clearInterventions">{{ 'plan.measures.clear'|trans({}, 'spongecity') }}</twig:Button>
+            {% endif %}
+        {% endblock %}
+        {% block content %}
+                {% if interventions is empty %}
+                    <p class="text-sm text-muted-foreground">{{ 'plan.measures.empty'|trans({}, 'spongecity') }}</p>
+                {% else %}
+                    <ul class="flex flex-col divide-y divide-border rounded-lg border border-border">
+                        {% for item in interventions %}
+                            {% set item_name = item.label ?? ('plan.measures.type.' ~ item.type)|trans({}, 'spongecity') %}
+                            {% set remove_label = 'plan.measures.remove'|trans({'%name%': item_name}, 'spongecity') %}
+                            <li class="flex items-center justify-between gap-2 px-3 py-2 text-sm">
+                                <span>{{ item_name }}</span>
+                                <twig:Button variant="ghost" size="icon-xs" aria-label="{{ remove_label }}" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ item.id }}">
+                                    <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                                </twig:Button>
+                            </li>
+                        {% endfor %}
+                    </ul>
+                    <table class="w-full text-sm">
+                        <caption class="sr-only">{{ 'plan.cost.title'|trans({}, 'spongecity') }}</caption>
+                        <tbody class="divide-y divide-border">
+                            {% for line in cost.lines %}
+                                <tr>
+                                    <th scope="row" class="py-1.5 pr-2 text-left font-normal">{{ ('plan.sku.' ~ line.sku)|trans({}, 'spongecity') }}</th>
+                                    <td class="py-1.5 text-right tabular-nums text-muted-foreground">{{ line.amount|number_format(1, ',', '.') }} {{ line.sku == tree_sku ? '×' : 'm²' }}</td>
+                                    <td class="py-1.5 pl-3 text-right tabular-nums">{{ line.total is null ? '–' : line.total|number_format(0, ',', '.') ~ ' €' }}</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr class="border-t border-border font-medium">
+                                <th scope="row" colspan="2" class="py-2 text-left">{{ 'plan.cost.total'|trans({}, 'spongecity') }}</th>
+                                <td class="py-2 pl-3 text-right tabular-nums">{{ cost.total|number_format(0, ',', '.') }} €</td>
+                            </tr>
+                        </tfoot>
+                    </table>
+                    <p class="text-xs text-muted-foreground">{{ 'plan.cost.note'|trans({}, 'spongecity') }}</p>
+                {% endif %}
+        {% endblock %}
+    {% endembed %}
+</div>
 </div>
 {% endif %}

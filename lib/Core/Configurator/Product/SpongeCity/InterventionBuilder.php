@@ -43,8 +43,6 @@ final class InterventionBuilder
 
     /** layers of the ground, millimetres: the plot lies lowest, interventions on top of existing paving */
     private const int PLOT_TOP = 4;
-    /** an area with another surface than the plot's lies just above it, under the interventions */
-    private const int AREA_TOP = 9;
     private const int PLOT_THICKNESS = 40;
     private const int LAYER_THICKNESS = 40;
     private const int PERMEABLE_TOP = 14;
@@ -110,18 +108,8 @@ final class InterventionBuilder
             $part = Slab::onGround(self::LABEL_PREFIX.O::PLOT, $material, Site::points($plot), self::PLOT_THICKNESS, self::PLOT_TOP - self::PLOT_THICKNESS);
             // the whole plot frames the camera, but it is not an article: counted false keeps it off the bill
             $assembly->add(new Part(SpongeCitySku::PLOT, $part->label, $part->shape, $part->material, $part->position, $part->rotation, counted: false, draped: true));
-
-            // the plot's areas whose ground is another (a lawn, a gravel court): context, not on the bill
-            foreach ($site->ofType(O::AREA) as $area) {
-                $areaSurface = is_string($area[O::SURFACE] ?? null) ? $area[O::SURFACE] : $surface;
-                if ($areaSurface === $surface || !isset(self::SURFACE_COLORS[$areaSurface]) || count(Site::points($area)) < 3) {
-                    continue;
-                }
-                $areaMaterial = self::MATERIAL_PLOT_PREFIX.$areaSurface;
-                $assembly->material($areaMaterial, new Material(self::SURFACE_COLORS[$areaSurface] ?? self::SURFACE_COLORS[O::SURFACE_ASPHALT], roughness: 0.95));
-                $slab = Slab::onGround(self::LABEL_PREFIX.O::AREA, $areaMaterial, Site::points($area), self::LAYER_THICKNESS, self::AREA_TOP - self::LAYER_THICKNESS);
-                $assembly->add(new Part(SpongeCitySku::PLOT, $slab->label, $slab->shape, $slab->material, $slab->position, $slab->rotation, counted: false, draped: true));
-            }
+            // the plot's areas (a lawn, a car park, what a person said a zone's ground is) are not drawn:
+            // they are facts for the balance and the placement, the view shows the place as it looks
         }
 
         foreach ($site->objects as $object) {
