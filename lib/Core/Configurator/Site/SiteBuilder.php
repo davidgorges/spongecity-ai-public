@@ -79,9 +79,12 @@ final class SiteBuilder
     private const float GROUND_FLOOR_MAX = 5.5;
     private const int GROUND_FLOOR_MIN_STOREYS = 3;
     private const float GLAZING_REPEAT_HEIGHT = 3.2;
-    /** millimetres a roof level is drawn inside its outline per level that is taller, at most this many times */
-    private const float LEVEL_INSET = 30.0;
-    private const int LEVEL_INSET_STEPS = 4;
+    /**
+     * millimetres a roof level is drawn inside its outline per level before it (taller, or as tall and
+     * listed first): far more than the depth buffer resolves at any distance the view allows (its near
+     * plane follows the camera: about 2 mm at 1.5 km), far less than anyone sees (40 levels: 39 cm)
+     */
+    private const float LEVEL_INSET = 10.0;
     /** an inset corner moves at most this many times the inset (a sharp corner would shoot out) */
     private const float MAX_MITER = 3.0;
 
@@ -208,14 +211,15 @@ final class SiteBuilder
             $glass = self::MATERIAL_PREFIX.'glazing';
             // one repeat: four 1.5 m panels across, the band's usual storey up
             $this->assembly->material($glass, new Material('#ffffff', roughness: 0.12, metalness: 0.35, texture: ProceduralTexture::Glazing, textureSize: self::GLAZING_REPEAT_WIDTH, textureHeight: self::GLAZING_REPEAT_HEIGHT));
-            // roof levels overlap (a top storey stands on the main block, flush with its façade): their walls
-            // in one plane flicker. The lower a level, the further its outline is drawn inside (centimetres,
-            // unseen), so the taller one's wall is the one that shows
-            $heights = array_unique(array_map(static fn (array $part): float => $part[O::HEIGHT], $parts));
-            rsort($heights);
-            $rank = array_flip(array_map('strval', $heights));
-            foreach ($parts as $part) {
-                $part[O::POINTS] = self::inset($part[O::POINTS], min($rank[(string) $part[O::HEIGHT]], self::LEVEL_INSET_STEPS) * self::LEVEL_INSET);
+            // roof levels overlap (a top storey stands on the main block, flush with its façade; two of one
+            // height side by side): their walls in one plane flicker. Each level is drawn a little further
+            // inside its outline than the one before it, the tallest first (ties in order), so no two share
+            // a plane and the taller one's wall is the one that shows
+            $order = array_keys($parts);
+            usort($order, static fn (int $a, int $b): int => [$parts[$b][O::HEIGHT], $a] <=> [$parts[$a][O::HEIGHT], $b]);
+            $rank = array_flip($order);
+            foreach ($parts as $index => $part) {
+                $part[O::POINTS] = self::inset($part[O::POINTS], $rank[$index] * self::LEVEL_INSET);
                 // a thin band rising above the main roof is the glazed front of a top storey or a glass railing
                 // (the model draws it as a wall top under a metre wide): rendered wall up to the main roof, glass above
                 if (self::meanWidth($part[O::POINTS]) < self::GLAZED_BAND_WIDTH && $part[O::HEIGHT] > $main) {

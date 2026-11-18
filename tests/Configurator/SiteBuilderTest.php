@@ -182,9 +182,26 @@ final class SiteBuilderTest extends TestCase
             $byHeight[(int) $wall->shape->depth] = $wall->shape->profile;
         }
         $xs = static fn (array $profile): array => [min(array_column($profile, 0)), max(array_column($profile, 0))];
-        // the taller level on its own outline; the lower one 3 cm inside it, behind its walls
+        // the taller level on its own outline; the lower one 1 cm inside it, behind its walls
         self::assertEqualsWithDelta([0.0, 10000.0], $xs($byHeight[15000]), 0.5);
-        self::assertEqualsWithDelta([30.0, 9970.0], $xs($byHeight[9000]), 0.5);
+        self::assertEqualsWithDelta([10.0, 9990.0], $xs($byHeight[9000]), 0.5);
+    }
+
+    #[Test]
+    public function everyRoofLevelHasAPlaneOfItsOwnEvenWhenManyAreAsTall(): void
+    {
+        // as the 3D model has an office block: many levels, several of one height, all flush on the south
+        $heights = [11570, 11570, 7970, 3420, 10930, 7970, 11170, 8470, 11170, 8470];
+        $parts = array_map(static fn (int $i): array => [O::POINTS => [[0, 0], [10000, 0], [10000, 8000 - 500 * $i], [0, 8000 - 500 * $i]], O::HEIGHT => $heights[$i]], array_keys($heights));
+        $assembly = (new SiteBuilder())->build($this->site([O::ROOF => Building::ROOF_FLAT, O::HEIGHT => 11570, O::PARTS => $parts]));
+
+        $south = [];
+        foreach ($assembly->parts() as $part) {
+            if ($part->shape instanceof Extrusion && str_contains((string) $part->material, 'facade')) {
+                $south[] = round(min(array_column($part->shape->profile, 0)), 1);
+            }
+        }
+        self::assertCount(count($heights), array_unique($south), 'no two walls in one plane');
     }
 
     private function site(array $fields): Site
