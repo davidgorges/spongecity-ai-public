@@ -16,6 +16,7 @@
 #}
 {%- props id, title, icon, place, open = true, auto = null, width = 'lg:w-96' -%}
 {#- rendered here, before they are nested two components deep (where outerBlocks would name the Card's own) -#}
+{#- floating, it stays invisible until the window manager has placed it (data-window-placed): not stacked in a corner meanwhile -#}
 {#- inside the Card's content `id` is the Card's own (window-…): the window's is kept here -#}
 {%- set window_id = id -%}
 {%- set window_actions %}{{ block('actions') }}{% endset -%}
@@ -23,7 +24,7 @@
 <twig:Card
     id="window-{{ id }}"
     role="region"
-    class="flex min-h-0 flex-col gap-0 rounded-none border-0 lg:absolute lg:z-20 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden lg:rounded-xl lg:border lg:shadow-lg {{ width }}"
+    class="flex min-h-0 flex-col gap-0 rounded-none border-0 lg:absolute lg:z-20 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden lg:rounded-xl lg:border lg:shadow-lg lg:invisible lg:data-window-placed:visible {{ width }}"
     aria-labelledby="window-{{ id }}-title"
     data-window-manager-target="window"
     data-window="{{ id }}"

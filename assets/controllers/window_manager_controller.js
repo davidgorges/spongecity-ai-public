@@ -326,6 +326,8 @@ export default class extends Controller {
     #position(element, state) {
         element.style.left = `${state.x}px`;
         element.style.top = `${state.y}px`;
+        // it stays invisible until placed (Plan:Window), so it never shows stacked in a corner
+        element.dataset.windowPlaced = '';
         // never past the bottom of the view: its content scrolls inside
         element.style.maxHeight = `${Math.max(MIN_HEIGHT, this.element.getBoundingClientRect().height - state.y - MARGIN)}px`;
     }
