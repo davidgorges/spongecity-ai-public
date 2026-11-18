@@ -34,7 +34,7 @@
     <section
         class="relative h-[45svh] shrink-0 bg-muted lg:h-screen"
         aria-label="{{ viewer_label }}"
-        data-action="pointermove->configurator-viewer#hover"
+        data-action="pointermove->configurator-viewer#hover plot-map:preview@window->configurator-viewer#previewPlot"
         {{ stimulus_controller('configurator-viewer', {
             scene: this.scene,
             skies: configurator_skies(),
@@ -147,6 +147,64 @@
                 </twig:Button>
             </form>
         </section>
+
+        {# the plot map: the analysed area drawn over the buildings around it #}
+        {% set plot_map = this.plotMap %}
+        {% if plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')]|length >= this.minPlotCorners %}
+            <section
+                class="flex flex-col gap-2 border-b border-border p-4"
+                aria-labelledby="plot-map-title"
+                {{ stimulus_controller('plot-map', {
+                    plot: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_PLOT')],
+                    buildings: plot_map[constant('App\\Twig\\Components\\PlanWorkspace::MAP_BUILDINGS')],
+                    action: constant('App\\Twig\\Components\\PlanWorkspace::ACTION_RESHAPE_PLOT'),
+                    minCorners: this.minPlotCorners,
+                    maxCorners: this.maxPlotCorners,
+                    texts: {
+                        corner: 'plan.plot_map.corner'|trans({}, 'spongecity'),
+                        insert: 'plan.plot_map.insert'|trans({}, 'spongecity'),
+                        north: 'plan.plot_map.north'|trans({}, 'spongecity'),
+                        saved: 'plan.plot_map.message.saved'|trans({}, 'spongecity'),
+                        added: 'plan.plot_map.message.added'|trans({}, 'spongecity'),
+                        removed: 'plan.plot_map.message.removed'|trans({}, 'spongecity'),
+                        undone: 'plan.plot_map.message.undone'|trans({}, 'spongecity'),
+                        crossing: 'plan.plot_map.message.crossing'|trans({}, 'spongecity'),
+                        crossingShort: 'plan.plot_map.message.crossing_short'|trans({}, 'spongecity'),
+                        tooFew: 'plan.plot_map.message.too_few'|trans({'%count%': this.minPlotCorners}, 'spongecity'),
+                        tooMany: 'plan.plot_map.message.too_many'|trans({'%count%': this.maxPlotCorners}, 'spongecity'),
+                    },
+                }) }}
+                data-action="keydown->plot-map#shortcut pointerenter->plot-map#engage pointerleave->plot-map#disengage focusin->plot-map#engage focusout->plot-map#disengage pointermove@window->plot-map#drag pointerup@window->plot-map#drop pointercancel@window->plot-map#cancelDrag"
+            >
+                <div class="flex items-center justify-between gap-2">
+                    <h2 id="plot-map-title" class="flex items-center gap-2 font-heading text-sm font-semibold">
+                        <twig:ux:icon name="lucide:map" class="size-4 text-primary" aria-hidden="true" />
+                        {{ 'plan.plot_map.title'|trans({}, 'spongecity') }}
+                    </h2>
+                    <div class="flex items-center gap-2" data-live-ignore>
+                        <span class="font-mono text-xs text-muted-foreground" data-plot-map-target="area"></span>
+                        {% set undo_label = 'plan.plot_map.undo'|trans({}, 'spongecity') %}
+                        <twig:Button variant="ghost" size="icon-xs" title="{{ undo_label }}" data-plot-map-target="undo" data-action="plot-map#undo" disabled>
+                            <twig:ux:icon name="lucide:undo-2" aria-hidden="true" />
+                            <span class="sr-only">{{ undo_label }}</span>
+                        </twig:Button>
+                    </div>
+                </div>
+                <div data-live-ignore>
+                    {# touch-pan-y touch-pinch-zoom: a swipe over the map scrolls the panel; the handles take the finger themselves (touch-none) #}
+                    <svg
+                        id="plot-map"
+                        class="aspect-[4/3] w-full touch-pan-y touch-pinch-zoom select-none rounded-lg border border-border bg-muted/40"
+                        role="group"
+                        aria-label="{{ 'plan.plot_map.label'|trans({}, 'spongecity') }}"
+                        aria-describedby="plot-map-hint"
+                        data-plot-map-target="map"
+                    ></svg>
+                    <p class="sr-only" role="status" aria-live="polite" data-plot-map-target="status"></p>
+                </div>
+                <p id="plot-map-hint" class="text-xs text-muted-foreground">{{ 'plan.plot_map.hint'|trans({}, 'spongecity') }}</p>
+            </section>
+        {% endif %}
 
         {# measurable impact #}
         <section class="flex flex-col gap-3 border-b border-border p-4" aria-labelledby="impact-title">

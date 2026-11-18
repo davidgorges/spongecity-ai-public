@@ -5,6 +5,8 @@ import { TIER_STANDARD, TIER_ULTRA } from '../configurator/quality_tiers.js';
 import { MOODS_IN_ORDER } from '../configurator/outdoor_environment.js';
 import { webGlAvailable } from '../configurator/webgl_support.js';
 
+const MILLIMETRES_PER_METRE = 1000;
+
 /**
  * 3D view of a configuration. The server renders the scene JSON into the
  * `scene` value; when a LiveComponent re-render changes it, the view updates
@@ -341,6 +343,14 @@ export default class extends Controller {
 
     unhighlight() {
         this.#renderer?.clearHighlight();
+    }
+
+    /**
+     * The plot as the plot map is editing it (event plot-map:preview, detail points [x, z] in
+     * millimetres or null for the saved one, editing: whether the map is in use): shown at once.
+     */
+    previewPlot({ detail: { points, editing } }) {
+        this.#renderer?.previewPlot(points ? points.map(([x, z]) => [x / MILLIMETRES_PER_METRE, z / MILLIMETRES_PER_METRE]) : null, { editing });
     }
 
     resetView() {

@@ -18,6 +18,7 @@ import { wireMeshGeometry } from './wire_mesh.js';
 import { ProductMask } from './product_mask.js';
 import { InfiltrationOverlay } from './site_conditions.js';
 import { TerrainField } from './terrain.js';
+import { PlotHighlight } from './plot_highlight.js';
 
 /** Whether a model (or the node the model library wraps) keeps the grass off the ground under it. */
 function coversGround(model) {
@@ -93,6 +94,8 @@ export class SceneRenderer {
     static MAX_AZIMUTH = Math.PI * 0.62;
     /** the run highlight stands this much higher and longer than the fence, metres */
     static HIGHLIGHT_MARGIN = 0.15;
+    /** the SKU of the sponge city's plot (SpongeCitySku::PLOT): the part the plot map reshapes */
+    static SKU_PLOT = 'SC-PLOT';
     static HIGHLIGHT_DEPTH = 0.3;
     static FADE_IN_MS = 600;
     static LIGHT_POOL_RADIUS = 1.1;
@@ -163,6 +166,10 @@ export class SceneRenderer {
     #hasFitted = false;
     #aerial = false;
     #highlight = null;
+    /** the analysed area marked on the ground; its outline as the plot map is editing it (metres), null: as the scene has it */
+    #plotHighlight = new PlotHighlight();
+    #plotPreview = null;
+    #plotPreviewFrame = 0;
     #reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
     /**
@@ -192,7 +199,9 @@ export class SceneRenderer {
                 models: environmentModels,
                 onChange: () => this.#requestRender(),
             });
-        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps);
+        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group);
+        // see-through: the ambient occlusion pass would draw it as a solid wall (post_processing.js)
+        this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group];
 
         this.#controls = new OrbitControls(this.#camera, this.#renderer.domElement);
         this.#controls.enableDamping = !this.#reducedMotion;
@@ -484,6 +493,8 @@ export class SceneRenderer {
      */
     async startPhoto({ skyUrl, onProgress, onDone }) {
         this.clearHighlight();
+        // a marking of the editor, not of the place
+        this.#plotHighlight.group.visible = false;
         this.#photo ??= new PhotoMode(this.#renderer, this.#scene, this.#camera);
         // the photo is taken from where the camera is heading: finish a running
         // camera flight (intro, reset) and let the orbit damping come to rest
@@ -520,6 +531,7 @@ export class SceneRenderer {
             return;
         }
         this.#photo.stop();
+        this.#plotHighlight.group.visible = true;
         this.#setPhotoTextures(Boolean(TIERS[this.#governor.tier].photoTextures));
         this.#controls.enabled = true;
         this.#requestRender();
@@ -747,6 +759,7 @@ export class SceneRenderer {
         if (this.#lastSceneData) {
             this.#rebuildContent(this.#lastSceneData.parts ?? []);
         }
+        this.#updatePlotHighlight();
         if (this.#conditionsData) {
             this.setConditions(this.#conditionsData);
         }
@@ -793,6 +806,7 @@ export class SceneRenderer {
         const models = (sceneData.parts ?? []).filter((part) => part.shape === 'model');
         this.#updateScenery(models, generation);
         this.#rebuildContent(sceneData.parts ?? []);
+        this.#updatePlotHighlight();
 
         const productBox = new THREE.Box3().setFromObject(this.#content);
         this.#aerial = true === sceneData.environment?.aerial;
@@ -819,11 +833,45 @@ export class SceneRenderer {
             .filter((part) => this.#materialDefinitions[part.material]?.lightPool)
             .map((part) => part.position);
         this.#rebuildLamps();
-        const product = parts.filter((part) => part.sku !== null && part.shape !== 'model');
-        this.#picker?.setParts(product);
+        this.#rebuildProduct(parts);
         const backdrop = parts.filter((part) => part.sku === null && part.shape !== 'model');
-        this.#mergeInto(this.#content, product);
         this.#mergeInto(this.#backdrop, backdrop);
+    }
+
+    /** The product's parts only (the plot and what is planned on it): cheap enough for every frame of a drag. */
+    #rebuildProduct(parts) {
+        const product = parts
+            .filter((part) => part.sku !== null && part.shape !== 'model')
+            .map((part) => (this.#plotPreview && part.sku === SceneRenderer.SKU_PLOT ? { ...part, profile: this.#plotPreview } : part));
+        this.#picker?.setParts(product);
+        this.#mergeInto(this.#content, product);
+    }
+
+    /**
+     * The plot as the plot map is editing it ([x, z] metres), shown at once, before the server
+     * has it: its ground and its highlight follow; null shows it as the scene has it again.
+     * One rebuild per frame, however often the pointer moves.
+     */
+    previewPlot(points, { editing = false } = {}) {
+        this.#plotPreview = points && points.length >= 3 ? points : null;
+        this.#plotHighlight.setEditing(editing);
+        if (this.#plotPreviewFrame) {
+            return;
+        }
+        this.#plotPreviewFrame = requestAnimationFrame(() => {
+            this.#plotPreviewFrame = 0;
+            if (this.#lastSceneData) {
+                this.#rebuildProduct(this.#lastSceneData.parts ?? []);
+            }
+            this.#updatePlotHighlight();
+            this.#requestRender();
+        });
+    }
+
+    /** The highlight along the plot's edge: the outline being edited, else the scene's plot. */
+    #updatePlotHighlight() {
+        const plot = (this.#lastSceneData?.parts ?? []).find((part) => part.sku === SceneRenderer.SKU_PLOT);
+        this.#plotHighlight.setOutline(this.#plotPreview ?? plot?.profile ?? null, this.#terrain);
     }
 
     #mergeInto(group, parts) {
@@ -985,6 +1033,8 @@ export class SceneRenderer {
         this.#photo?.dispose();
         this.#highlight?.geometry.dispose();
         this.#highlight?.material.dispose();
+        cancelAnimationFrame(this.#plotPreviewFrame);
+        this.#plotHighlight.dispose();
         this.#resizeObserver.disconnect();
         this.#controls.dispose();
         this.#composer?.dispose();
@@ -1033,7 +1083,8 @@ export class SceneRenderer {
                 }
             });
         }
-        this.#scene.userData.withoutAmbientOcclusion = effects;
+        // and the plot's see-through highlight
+        this.#scene.userData.withoutAmbientOcclusion = [...effects, this.#plotHighlight.group];
         // models that cover the ground (the fire pit's gravel ring) keep the grass off
         const covered = [...this.#scenery.children, ...this.#decor.children]
             .filter(coversGround)
@@ -1201,6 +1252,7 @@ export class SceneRenderer {
             return;
         }
         this.#renderer.setSize(width, height, false);
+        this.#plotHighlight.setResolution(width, height);
         if (this.#composer) {
             this.#composer.setPixelRatio(this.#renderer.getPixelRatio());
             this.#composer.setSize(width, height);

@@ -34,6 +34,10 @@ final class PlanWorkspace
 
     public const string ACTION_REMOVE = 'removeObject';
     public const string ACTION_CLEAR = 'clearInterventions';
+    public const string ACTION_RESHAPE_PLOT = 'reshapePlot';
+    /** the keys of plotMap() */
+    public const string MAP_PLOT = 'plot';
+    public const string MAP_BUILDINGS = 'buildings';
     public const string EVENT_PLAN_CHANGED = 'plan:changed';
     /** ?debug=1: frame stats overlay, scene and camera on window (bin/render-loop uses them) */
     public const string QUERY_DEBUG = 'debug';
@@ -172,5 +176,43 @@ final class PlanWorkspace
     public function clearInterventions(): void
     {
         $this->editor->clearInterventions($this->planId);
+    }
+
+    /**
+     * The plot drawn anew on the plot map.
+     *
+     * @param list<mixed> $points [x, z] in plan millimetres
+     */
+    #[LiveAction]
+    public function reshapePlot(#[LiveArg] array $points = []): void
+    {
+        $this->editor->reshapePlot($this->planId, $points);
+    }
+
+    /**
+     * What the plot map draws: the plot's outline and, around it, the buildings' footprints
+     * (plan millimetres [x, z], x east, z south).
+     *
+     * @return array{plot: list<array{float, float}>, buildings: list<list<array{float, float}>>}
+     */
+    public function plotMap(): array
+    {
+        $site = Site::fromJson($this->plan()->siteJson());
+        $plots = $site->ofType(O::PLOT);
+
+        return [
+            self::MAP_PLOT => [] === $plots ? [] : Site::points($plots[0]),
+            self::MAP_BUILDINGS => array_values(array_filter(array_map(Site::points(...), $site->ofType(O::BUILDING)), static fn (array $points): bool => count($points) >= 3)),
+        ];
+    }
+
+    public function minPlotCorners(): int
+    {
+        return SiteEditor::minPlotCorners();
+    }
+
+    public function maxPlotCorners(): int
+    {
+        return O::MAX_POINTS;
     }
 }

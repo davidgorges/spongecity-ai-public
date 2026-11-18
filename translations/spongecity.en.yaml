@@ -70,6 +70,23 @@ plan:
             rain: Make it absorb more rainwater
             shade: Add shade for heatwaves
             school: Keep room for children to play
+    plot_map:
+        title: Analysed area
+        label: Map of the analysed area with the buildings around it, north up
+        hint: Drag a corner to move it, drag or click a + to add a corner, double-click a corner to remove it. Corners line up with buildings; hold Alt to place freely. Arrow keys move a focused corner (Shift for 1 m), Delete removes it.
+        corner: Corner %number% of the analysed area
+        insert: Add a corner between corners %number% and %next%
+        north: North is up
+        undo: Undo
+        message:
+            saved: Analysed area changed, now %area%.
+            added: Corner added.
+            removed: Corner removed.
+            undone: Change undone.
+            crossing: The outline would cross itself. The change was not saved.
+            crossing_short: Edges cross
+            too_few: The analysed area needs at least %count% corners.
+            too_many: The analysed area can have at most %count% corners.
     impact:
         title: Measured effect
         today: today

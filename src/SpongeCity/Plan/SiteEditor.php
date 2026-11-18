@@ -141,6 +141,43 @@ final readonly class SiteEditor
         return count($objects) - count($kept);
     }
 
+    /**
+     * Gives the plot (the analysed area) a new outline, as a person draws it on the plan.
+     * The interventions stay where they are, inside the new outline or not.
+     *
+     * @param list<mixed> $points [x, z] in plan millimetres
+     *
+     * @return bool false when the plan has no plot or the outline is not one (too few or too many corners)
+     */
+    public function reshapePlot(string $planId, array $points): bool
+    {
+        $outline = Site::points([O::POINTS => $points]);
+        if (count($outline) !== count($points) || count($outline) < self::minPlotCorners() || count($outline) > O::MAX_POINTS) {
+            return false;
+        }
+        $plan = $this->plans->get($planId);
+        $objects = SiteType::rawObjects($plan->siteJson());
+        foreach ($objects as $i => $object) {
+            if (is_array($object) && O::PLOT === ($object[O::TYPE] ?? null)) {
+                // SiteType rounds and clamps the corners to the site's reach
+                $objects[$i][O::POINTS] = $outline;
+                $this->save($plan, (new SiteType())->normalize(['objects' => $objects]));
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** the fewest corners a plot's outline has */
+    public static function minPlotCorners(): int
+    {
+        $field = O::fields(O::PLOT)[O::POINTS];
+
+        return (int) $field[1];
+    }
+
     public function replaceSite(string $planId, string $siteJson): void
     {
         $this->save($this->plans->get($planId), (new SiteType())->normalize($siteJson));
