@@ -2,7 +2,13 @@
 
 An interactive 3D planning tool: pick a real place, rebuild it from OpenStreetMap (and Hamburg's
 official geodata), and let an AI agent redesign it with rain gardens, permeable surfaces and shade,
-with measurable effect. How it works: [docs/architecture.md](docs/architecture.md).
+with measurable effect.
+
+<p align="center">
+  <img src="docs/images/sponge-schoolyard.jpg" alt="A schoolyard half sealed asphalt, half rebuilt with rain gardens, permeable pavers and shade trees" width="100%">
+</p>
+
+**How it works:** [at a glance, in diagrams](docs/overview.md) · [architecture reference](docs/architecture.md) · [all docs](docs/README.md)
 
 ## Quick start (about 5 minutes)
 
