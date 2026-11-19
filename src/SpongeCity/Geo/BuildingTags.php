@@ -25,7 +25,11 @@ final readonly class BuildingTags
     public const string TAG_MATERIAL = 'building:material';
     public const string TAG_COLOUR = 'building:colour';
     public const string TAG_ROOF_SHAPE = 'roof:shape';
+    /** the roof's pitch in degrees (OpenStreetMap; Hamburg's from fitting its 3D model) */
+    public const string TAG_ROOF_ANGLE = 'roof:angle';
     public const string TAG_ROOF_COLOUR = 'roof:colour';
+    /** a building's id in the cadastre (Hamburg): one building drawn as several blocks looks alike */
+    public const string TAG_ALKIS_ID = 'ref:alkis';
 
     private const float STOREY_METRES = 3.0;
     private const float DEFAULT_BUILDING_METRES = 9.0;
@@ -84,8 +88,9 @@ final readonly class BuildingTags
         if (BuildingType::Apartments === $type && $storeys >= BuildingType::HIGH_RISE_STOREYS) {
             $type = BuildingType::HighRise;
         }
-        // the same pick for a building on every import: seeded by where it stands, salted per choice
-        $position = json_encode($points[0]) ?: '';
+        // the same pick for a building on every import: seeded by its cadastre id (all blocks of one building
+        // alike) or else where it stands, salted per choice
+        $position = is_string($tags[self::TAG_ALKIS_ID] ?? null) && '' !== $tags[self::TAG_ALKIS_ID] ? $tags[self::TAG_ALKIS_ID] : (json_encode($points[0]) ?: '');
         $pick = static fn (array $options, string $salt): mixed => $options[crc32($salt.$position) % count($options)];
 
         $facade = self::FACADE_MATERIALS[$this->tag($tags, self::TAG_MATERIAL)] ?? $pick($type->facades(), O::FACADE);
@@ -96,6 +101,7 @@ final readonly class BuildingTags
             O::FACADE => $facade->value,
             O::COLOR => $this->colour($tags, self::TAG_COLOUR) ?? $pick($facade->colours(), O::COLOR),
             O::ROOF => $roof,
+            O::PITCH => is_numeric($tags[self::TAG_ROOF_ANGLE] ?? null) ? (int) round((float) $tags[self::TAG_ROOF_ANGLE]) : 0,
             O::ROOF_COLOR => $this->colour($tags, self::TAG_ROOF_COLOUR) ?? $pick(BuildingType::roofColours($roof), O::ROOF_COLOR),
         ];
     }
@@ -119,6 +125,16 @@ final readonly class BuildingTags
     private function tag(array $tags, string $key): string
     {
         return is_string($tags[$key] ?? null) ? strtolower(trim($tags[$key])) : '';
+    }
+
+    /**
+     * Storeys above ground (building:levels), 0 when not mapped.
+     *
+     * @param array<string, mixed> $tags
+     */
+    public function storeys(array $tags): int
+    {
+        return is_numeric($tags[self::TAG_LEVELS] ?? null) ? max(0, (int) round((float) $tags[self::TAG_LEVELS])) : 0;
     }
 
     /**

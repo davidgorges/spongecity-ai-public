@@ -19,6 +19,8 @@ final readonly class Material
      * @param string|null          $nightGlow    colour the surface glows in the evening mood (lamps, lit windows)
      * @param float                $nightGlowIntensity strength of that glow
      * @param bool                 $lightPool    in the evening, parts of this material throw a pool of light on the floor below
+     * @param float|null           $textureHeight on upright walls, the height in metres one repeat covers (null: textureSize):
+     *                                            a façade's window rows follow the building's real storeys
      */
     public function __construct(
         public string $color,
@@ -34,6 +36,7 @@ final readonly class Material
         public ?string $nightGlow = null,
         public float $nightGlowIntensity = 0.0,
         public bool $lightPool = false,
+        public ?float $textureHeight = null,
     ) {
     }
 
@@ -60,6 +63,7 @@ final readonly class Material
             'nightGlow' => $this->nightGlow,
             'nightGlowIntensity' => $this->nightGlowIntensity,
             'lightPool' => $this->lightPool,
+            'textureHeight' => $this->textureHeight,
         ];
     }
 }

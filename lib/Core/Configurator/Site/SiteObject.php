@@ -49,6 +49,28 @@ final class SiteObject
      * upright objects are raised by it, ground layers follow the terrain in the view.
      */
     public const string GROUND = 'ground';
+    /**
+     * a building's roof levels from the 3D building model: blocks of {points, height} (a low wing,
+     * the main roof, a recessed top storey). When given, they are drawn instead of the outline at one height.
+     */
+    public const string PARTS = 'parts';
+    /** where a building's look (facade, color) comes from: guessed from the data, or set by a person who knows it */
+    public const string LOOK = 'look';
+    public const string LOOK_DATA = 'data';
+    public const string LOOK_USER = 'user';
+    public const int MAX_PARTS = 40;
+    /**
+     * a pitched roof the parametric roof cannot draw (an L, a half-hip, towers, a mix of roofs), as the
+     * 3D building model has it: {roofs, walls}, each a list of planar polygons of [x, y, z] in millimetres,
+     * x/z in the plan, y above the building's ground; the walls only above the eaves (the building's
+     * height), where the outline's façade ends. Set by the import, never by hand (not in the schema).
+     */
+    public const string MODEL = 'model';
+    public const string MODEL_ROOFS = 'roofs';
+    public const string MODEL_WALLS = 'walls';
+    /** per kind: LoD3's Johanneum has 464 roof surfaces (a dome, dormers, a lantern) */
+    public const int MAX_MODEL_SURFACES = 1000;
+    public const int MAX_MODEL_CORNERS = 64;
     public const int MAX_GROUND = 50000;
 
     public const string HOUSE = 'house';
@@ -67,6 +89,13 @@ final class SiteObject
     public const string BUILDING = 'building';
     /** a street or path along its centre line (e.g. from OpenStreetMap) */
     public const string ROAD = 'road';
+    /** an existing ground area of the plot with its use and surface (OpenStreetMap, or set by a person) */
+    public const string AREA = 'area';
+    /**
+     * existing play equipment (a swing, a slide…) with its fall zone (DIN EN 1176): x/z its middle,
+     * width × depth the fall zone, turned by turn. Nothing is planned in the fall zone.
+     */
+    public const string EQUIPMENT = 'equipment';
 
     /** what an AI agent may plan: measures that change the environmental balance (built by InterventionBuilder, SKU parts) */
     public const string NEWTREE = 'newtree';
@@ -83,8 +112,46 @@ final class SiteObject
     ];
     public const array TYPES = [
         self::HOUSE, self::OUTBUILDING, self::HEDGE, self::WALL, self::TREE, self::PAVING, self::POOL, self::BOX, self::CYLINDER, self::PRISM,
-        self::PLOT, self::BUILDING, self::ROAD, ...self::INTERVENTIONS,
+        self::PLOT, self::BUILDING, self::ROAD, self::AREA, self::EQUIPMENT, ...self::INTERVENTIONS,
     ];
+
+    public const string EQUIPMENT_SWING = 'swing';
+    public const string EQUIPMENT_SLIDE = 'slide';
+    public const string EQUIPMENT_CLIMBING = 'climbing';
+    public const string EQUIPMENT_CAROUSEL = 'carousel';
+    public const string EQUIPMENT_SEESAW = 'seesaw';
+    public const string EQUIPMENT_SPRING = 'spring';
+    public const string EQUIPMENT_OTHER = 'other';
+    /**
+     * kind → [fall zone width, fall zone depth, height of the equipment], millimetres: rough fall zones
+     * after DIN EN 1176 (a two-seat swing swings along its depth), for planning, not a safety check
+     */
+    public const array EQUIPMENT_SIZES = [
+        self::EQUIPMENT_SWING => [4000, 7500, 2500],
+        self::EQUIPMENT_SLIDE => [3000, 6500, 2500],
+        self::EQUIPMENT_CLIMBING => [6000, 6000, 3000],
+        self::EQUIPMENT_CAROUSEL => [6000, 6000, 900],
+        self::EQUIPMENT_SEESAW => [3000, 6000, 1000],
+        self::EQUIPMENT_SPRING => [3500, 3500, 900],
+        self::EQUIPMENT_OTHER => [4000, 4000, 2000],
+    ];
+    public const array EQUIPMENT_KINDS = [
+        self::EQUIPMENT_SWING, self::EQUIPMENT_SLIDE, self::EQUIPMENT_CLIMBING, self::EQUIPMENT_CAROUSEL,
+        self::EQUIPMENT_SEESAW, self::EQUIPMENT_SPRING, self::EQUIPMENT_OTHER,
+    ];
+
+    /** what an area is used for: decides what its surface may become */
+    public const string AREA_YARD = 'yard';
+    public const string AREA_PARKING = 'parking';
+    /** fire lane and deliveries: must stay passable for vehicles */
+    public const string AREA_ACCESS = 'access';
+    public const string AREA_SPORT = 'sport';
+    public const string AREA_PLAY = 'play';
+    /** edges, seating, under trees: little traffic */
+    public const string AREA_QUIET = 'quiet';
+    /** lawn, planting, already open ground */
+    public const string AREA_GREEN = 'green';
+    public const array AREA_USES = [self::AREA_YARD, self::AREA_PARKING, self::AREA_ACCESS, self::AREA_SPORT, self::AREA_PLAY, self::AREA_QUIET, self::AREA_GREEN];
 
     public const string SURFACE_ASPHALT = 'asphalt';
     public const string SURFACE_CONCRETE = 'concrete';
@@ -92,6 +159,8 @@ final class SiteObject
     public const string SURFACE_LAWN = 'lawn';
     public const string SURFACE_SOIL = 'soil';
     public const array SURFACES = [self::SURFACE_ASPHALT, self::SURFACE_CONCRETE, self::SURFACE_GRAVEL, self::SURFACE_LAWN, self::SURFACE_SOIL];
+    /** an area whose ground nobody has described: it may be lawn as well as asphalt */
+    public const string SURFACE_UNKNOWN = 'unknown';
 
     public const string KIND_PAVERS = 'pavers';
     public const string KIND_GRAVEL = 'gravel';
@@ -111,11 +180,14 @@ final class SiteObject
     public const string ENUM = 'enum';
     public const string HEX = 'color';
     public const string OUTLINE = 'points';
+    public const string BLOCKS = 'blocks';
 
     /** plan coordinates stay within this distance of the product (an 80 m import radius, with what reaches beyond it) */
     public const int REACH = 100000;
     public const int MAX_POINTS = 40;
-    public const int MAX_LABEL = 40;
+    /** a label longer than this is cut at a word, with an ellipsis (a measure named after its zone runs long) */
+    public const int MAX_LABEL = 80;
+    public const string ELLIPSIS = '…';
 
     /** what each type means, for the agent */
     public const array DESCRIPTIONS = [
@@ -132,6 +204,8 @@ final class SiteObject
         self::PLOT => 'The analysed area (closed outline). surface is what the ground is made of today. Exactly one per site, created by load_site.',
         self::BUILDING => 'An existing building footprint (closed outline) with its height in millimetres, its use, façade and roof. Context from OpenStreetMap, not changeable by the design.',
         self::ROAD => 'An existing street or footpath along its centre line (points, not closed) with its width in millimetres. Context from OpenStreetMap, not changeable by the design.',
+        self::AREA => 'An existing ground area of the plot (closed outline): its use (yard, parking, access = fire lane and deliveries, sport, play, quiet, green) and its surface today. From OpenStreetMap, or set by the user (look "user"); its use decides what its surface may become. Context, not an intervention.',
+        self::EQUIPMENT => 'Existing play equipment (swing, slide, climbing, carousel, seesaw, spring, other) at x/z, width × depth its fall zone (DIN EN 1176), turned by turn. From OpenStreetMap or marked by the user. Context: nothing may be planned in its fall zone.',
         self::NEWTREE => 'INTERVENTION: a newly planted shade tree at x/z (height is the expected height when grown). Gives shade and evaporative cooling.',
         self::RAINGARDEN => 'INTERVENTION: a sunken planted rain garden (closed outline) that takes runoff from surrounding sealed areas; storage is its ponding depth in millimetres.',
         self::PERMEABLE => 'INTERVENTION: a permeable surface (closed outline) replacing sealed ground: pavers with joints, gravel, or grass pavers.',
@@ -147,6 +221,19 @@ final class SiteObject
 
     private function __construct()
     {
+    }
+
+    /**
+     * Play equipment of a kind at x/z with its kind's fall zone and height.
+     *
+     * @return array<string, mixed>
+     */
+    public static function equipment(string $kind, int $x, int $z, int $turn = 0, string $look = self::LOOK_DATA): array
+    {
+        $kind = isset(self::EQUIPMENT_SIZES[$kind]) ? $kind : self::EQUIPMENT_OTHER;
+        [$width, $depth, $height] = self::EQUIPMENT_SIZES[$kind];
+
+        return [self::TYPE => self::EQUIPMENT, self::KIND => $kind, self::X => $x, self::Z => $z, self::TURN => $turn, self::WIDTH => $width, self::DEPTH => $depth, self::HEIGHT => $height, self::LOOK => $look];
     }
 
     /**
@@ -199,7 +286,8 @@ final class SiteObject
                 ...$color('#bdb8ae'),
             ],
             // diameter: the recorded crown diameter (e.g. a tree register); 0 when unknown, then estimated from the height
-            self::TREE => [...self::POSITION, self::HEIGHT => [self::INT, 2000, 25000, 8000], self::DIAMETER => [self::INT, 0, 30000, 0]],
+            // existing trees as measured: Hamburg's street trees reach 57 m (laser scan); a new tree is planned up to 25 m
+            self::TREE => [...self::POSITION, self::HEIGHT => [self::INT, 2000, 60000, 8000], self::DIAMETER => [self::INT, 0, 30000, 0]],
             self::PAVING => [self::POINTS => [self::OUTLINE, 3], ...$color('#b9b4aa')],
             self::POOL => [...self::POSITION, ...self::TURN_FIELD,
                 self::WIDTH => [self::INT, 2000, 15000, 8000],
@@ -225,13 +313,32 @@ final class SiteObject
                 ...$color('#9a9a95'),
             ],
             self::PLOT => [self::POINTS => [self::OUTLINE, 3], self::SURFACE => [self::ENUM, self::SURFACES, self::SURFACE_ASPHALT]],
+            self::AREA => [
+                self::POINTS => [self::OUTLINE, 3],
+                self::USE => [self::ENUM, self::AREA_USES, self::AREA_YARD],
+                self::SURFACE => [self::ENUM, [...self::SURFACES, self::SURFACE_UNKNOWN], self::SURFACE_UNKNOWN],
+                self::LOOK => [self::ENUM, [self::LOOK_DATA, self::LOOK_USER], self::LOOK_DATA],
+            ],
+            self::EQUIPMENT => [...self::POSITION, ...self::TURN_FIELD,
+                self::KIND => [self::ENUM, self::EQUIPMENT_KINDS, self::EQUIPMENT_OTHER],
+                self::WIDTH => [self::INT, 1000, 20000, self::EQUIPMENT_SIZES[self::EQUIPMENT_OTHER][0]],
+                self::DEPTH => [self::INT, 1000, 20000, self::EQUIPMENT_SIZES[self::EQUIPMENT_OTHER][1]],
+                self::HEIGHT => [self::INT, 300, 8000, self::EQUIPMENT_SIZES[self::EQUIPMENT_OTHER][2]],
+                self::LOOK => [self::ENUM, [self::LOOK_DATA, self::LOOK_USER], self::LOOK_DATA],
+            ],
             self::BUILDING => [
                 self::POINTS => [self::OUTLINE, 3],
                 self::HEIGHT => [self::INT, 2000, 80000, 9000],
                 self::USE => [self::ENUM, BuildingType::values(), BuildingType::Other->value],
                 self::FACADE => [self::ENUM, Facade::values(), Facade::Plaster->value],
+                // storeys above ground (cadastre): the façade's window rows follow them; 0 when unknown
+                self::STOREYS => [self::INT, 0, 60, 0],
+                self::PARTS => [self::BLOCKS],
+                self::LOOK => [self::ENUM, [self::LOOK_DATA, self::LOOK_USER], self::LOOK_DATA],
                 ...$color('#e9e2d6'),
                 self::ROOF => [self::ENUM, Building::ROOFS, Building::ROOF_FLAT],
+                // degrees; 0 when unknown (drawn at a usual pitch)
+                self::PITCH => [self::INT, 0, 60, 0],
                 self::ROOF_COLOR => [self::HEX, '#8d8a84'],
             ],
             self::ROAD => [

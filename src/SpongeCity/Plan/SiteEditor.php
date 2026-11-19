@@ -13,23 +13,28 @@ use Core\Configurator\Site\SiteType;
 /**
  * Changes the site of a plan through SiteType, which fills in defaults,
  * clamps every number and drops what it cannot read: nothing an agent sends
- * can break the scene.
+ * can break the scene. Interventions stay off buildings (BuildingClearance).
  */
 final readonly class SiteEditor
 {
     public function __construct(
         private PlanStore $plans,
         private TerrainStore $terrains,
-        private SiteGrounding $grounding = new SiteGrounding(),
+        private SiteGrounding $grounding,
+        private BuildingClearance $clearance,
     ) {
     }
 
+    /** the fields that move an object: a change to one is checked against the buildings again */
+    private const array PLACEMENT = [O::POINTS, O::X, O::Z];
+
     /**
-     * Adds objects; returns their ids, in the order given, and what was left out.
+     * Adds objects; returns their ids, in the order given, and what was left out: objects it
+     * could not read, and interventions that stand on a building (each with the reason).
      *
      * @param list<array<string, mixed>> $objects
      *
-     * @return array{ids: list<string>, rejected: int}
+     * @return array{ids: list<string>, rejected: int, conflicts: list<array<string, mixed>>}
      */
     public function add(string $planId, array $objects): array
     {
@@ -44,17 +49,33 @@ final readonly class SiteEditor
             unset($object[O::ID]);
             $additions[] = $object;
         }
-        $merged = $normalizer->normalize(['objects' => [...$current, ...$additions]]);
-        $result = SiteType::rawObjects($merged);
+        $result = SiteType::rawObjects($normalizer->normalize(['objects' => [...$current, ...$additions]]));
+        $buildings = self::buildings($result);
 
-        $ids = array_values(array_diff(array_column($result, O::ID), $known));
-        $this->save($plan, $merged);
+        $kept = [];
+        $ids = [];
+        $conflicts = [];
+        foreach ($result as $object) {
+            $isNew = !in_array($object[O::ID], $known, true);
+            $conflict = $isNew ? $this->clearance->conflict($object, $buildings) : null;
+            if (null !== $conflict) {
+                $conflicts[] = [O::TYPE => $object[O::TYPE], O::LABEL => $object[O::LABEL] ?? null, ...$conflict->toArray()];
+                continue;
+            }
+            $kept[] = $object;
+            if ($isNew) {
+                $ids[] = (string) $object[O::ID];
+            }
+        }
+        $this->save($plan, $normalizer->normalize(['objects' => $kept]));
 
-        return ['ids' => $ids, 'rejected' => max(0, count($objects) - count($ids))];
+        return ['ids' => $ids, 'rejected' => max(0, count($objects) - count($ids)), 'conflicts' => $conflicts];
     }
 
     /**
      * @param array<string, mixed> $changes
+     *
+     * @throws OverlapsBuilding when the change moves an intervention onto a building (nothing is changed)
      */
     public function update(string $planId, string $id, array $changes): bool
     {
@@ -64,15 +85,34 @@ final readonly class SiteEditor
         foreach ($objects as $i => $object) {
             if (is_array($object) && ($object[O::ID] ?? null) === $id) {
                 unset($changes[O::ID], $changes[O::TYPE]);
+                // a building's look set by hand is kept when the site is imported again
+                if (O::BUILDING === ($object[O::TYPE] ?? null) && (isset($changes[O::FACADE]) || isset($changes[O::COLOR]))) {
+                    $changes[O::LOOK] = O::LOOK_USER;
+                }
+                // a roof chosen by hand is drawn as chosen, not as the 3D model has it
+                if (O::BUILDING === ($object[O::TYPE] ?? null) && isset($changes[O::ROOF])) {
+                    $changes[O::MODEL] = null;
+                }
                 $objects[$i] = [...$object, ...$changes];
                 $found = true;
             }
         }
-        if ($found) {
-            $this->save($plan, (new SiteType())->normalize(['objects' => $objects]));
+        if (!$found) {
+            return false;
         }
+        $normalized = (new SiteType())->normalize(['objects' => $objects]);
+        if ([] !== array_intersect(array_keys($changes), self::PLACEMENT)) {
+            $result = SiteType::rawObjects($normalized);
+            foreach ($result as $object) {
+                $conflict = $id === $object[O::ID] ? $this->clearance->conflict($object, self::buildings($result)) : null;
+                if (null !== $conflict) {
+                    throw new OverlapsBuilding($conflict);
+                }
+            }
+        }
+        $this->save($plan, $normalized);
 
-        return $found;
+        return true;
     }
 
     public function remove(string $planId, string $id): bool
@@ -101,6 +141,43 @@ final readonly class SiteEditor
         return count($objects) - count($kept);
     }
 
+    /**
+     * Gives the plot (the analysed area) a new outline, as a person draws it on the plan.
+     * The interventions stay where they are, inside the new outline or not.
+     *
+     * @param list<mixed> $points [x, z] in plan millimetres
+     *
+     * @return bool false when the plan has no plot or the outline is not one (too few or too many corners)
+     */
+    public function reshapePlot(string $planId, array $points): bool
+    {
+        $outline = Site::points([O::POINTS => $points]);
+        if (count($outline) !== count($points) || count($outline) < self::minPlotCorners() || count($outline) > O::MAX_POINTS) {
+            return false;
+        }
+        $plan = $this->plans->get($planId);
+        $objects = SiteType::rawObjects($plan->siteJson());
+        foreach ($objects as $i => $object) {
+            if (is_array($object) && O::PLOT === ($object[O::TYPE] ?? null)) {
+                // SiteType rounds and clamps the corners to the site's reach
+                $objects[$i][O::POINTS] = $outline;
+                $this->save($plan, (new SiteType())->normalize(['objects' => $objects]));
+
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /** the fewest corners a plot's outline has */
+    public static function minPlotCorners(): int
+    {
+        $field = O::fields(O::PLOT)[O::POINTS];
+
+        return (int) $field[1];
+    }
+
     public function replaceSite(string $planId, string $siteJson): void
     {
         $this->save($this->plans->get($planId), (new SiteType())->normalize($siteJson));
@@ -111,10 +188,21 @@ final readonly class SiteEditor
         return Site::fromJson($this->plans->get($planId)->siteJson());
     }
 
+    /**
+     * @param list<array<string, mixed>> $objects
+     *
+     * @return list<array<string, mixed>>
+     */
+    private static function buildings(array $objects): array
+    {
+        return array_values(array_filter($objects, static fn (array $object): bool => O::BUILDING === $object[O::TYPE]));
+    }
+
     private function save(Plan $plan, string $siteJson): void
     {
         // whatever was added or moved stands on the ground there
         $siteJson = $this->grounding->ground($siteJson, $this->terrains->find($plan->id));
-        $this->plans->save($plan->withValues([...$plan->values, SiteType::PARAMETER => $siteJson]));
+        $plan->replaceSite($siteJson);
+        $this->plans->save($plan);
     }
 }

@@ -4,11 +4,11 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Import\ImportSite;
-use App\SpongeCity\Import\ImportSiteHandler;
+use App\SpongeCity\Import\PlanImporter;
 use App\SpongeCity\Plan\PlanStore;
-use App\SpongeCity\Plan\SiteEditor;
-use Core\Configurator\Site\SiteObject as O;
+use App\SpongeCity\Plan\SiteCarryOver;
 use Symfony\Component\Console\Attribute\Argument;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
@@ -17,15 +17,15 @@ use Symfony\Component\Console\Style\SymfonyStyle;
 
 /**
  * Rebuilds a plan's site and surroundings from OpenStreetMap right away (no worker),
- * e.g. after the importer changed. The planned interventions are kept.
+ * e.g. after the importer changed. The planned interventions and corrected looks are kept.
  */
 #[AsCommand(name: 'app:plan:reimport', description: 'Re-imports the site and surroundings of a plan from OpenStreetMap, keeping its interventions')]
 final class ReimportPlanCommand
 {
     public function __construct(
         private readonly PlanStore $plans,
-        private readonly ImportSiteHandler $handler,
-        private readonly SiteEditor $editor,
+        private readonly PlanImporter $importer,
+        private readonly SiteCarryOver $carryOver,
     ) {
     }
 
@@ -37,15 +37,17 @@ final class ReimportPlanCommand
         int $radius = ImportSite::DEFAULT_RADIUS_METRES,
     ): int {
         $plan = $this->plans->get($id);
-        $interventions = array_values(array_filter(
-            $this->editor->site($plan->id)->objects,
-            static fn (array $object): bool => in_array($object[O::TYPE] ?? null, O::INTERVENTIONS, true),
-        ));
-        ($this->handler)(new ImportSite($plan->id, $plan->latitude, $plan->longitude, $radius));
-        if ([] !== $interventions) {
-            $this->editor->add($plan->id, $interventions);
+        $kept = $this->carryOver->capture($plan->id);
+        if (!$this->importer->request($plan, new GeoPoint($plan->latitude, $plan->longitude, $plan->title), $radius, now: true)) {
+            $io->error(sprintf('Plan %s is being imported right now (%s).', $plan->id, $plan->status->value));
+
+            return Command::FAILURE;
         }
-        $io->success(sprintf('Re-imported /plan/%s, kept %d interventions', $plan->id, count($interventions)));
+        $restored = $this->carryOver->restore($plan->id, $kept);
+        foreach ($restored['conflicts'] as $conflict) {
+            $io->warning(sprintf('Left out %s "%s": %s', $conflict['type'], $conflict['label'] ?? '', $conflict['reason']));
+        }
+        $io->success(sprintf('Re-imported /plan/%s, kept %d interventions and %d corrected building looks', $plan->id, count($kept->interventions) - count($restored['conflicts']), $restored['looks']));
 
         return Command::SUCCESS;
     }

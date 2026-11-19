@@ -7,7 +7,6 @@ namespace App\Command;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\SiteImporter;
 use App\SpongeCity\Plan\PlanStore;
-use Core\Configurator\Site\SiteType;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -17,7 +16,7 @@ use Symfony\Component\Console\Style\SymfonyStyle;
  * OpenStreetMap-shaped data: for trying the planner without the network.
  */
 #[AsCommand(name: 'app:plan:demo', description: 'Creates a plan with a synthetic, fully sealed schoolyard')]
-final class CreateDemoPlanCommand extends Command
+final class CreateDemoPlanCommand
 {
     private const float LATITUDE = 51.3397;
     private const float LONGITUDE = 12.3731;
@@ -27,12 +26,10 @@ final class CreateDemoPlanCommand extends Command
         private readonly SiteImporter $importer,
         private readonly PlanStore $plans,
     ) {
-        parent::__construct();
     }
 
-    protected function execute(\Symfony\Component\Console\Input\InputInterface $input, \Symfony\Component\Console\Output\OutputInterface $output): int
+    public function __invoke(SymfonyStyle $io): int
     {
-        $io = new SymfonyStyle($input, $output);
         $centre = new GeoPoint(self::LATITUDE, self::LONGITUDE, 'Demo schoolyard');
 
         $import = $this->importer->import($centre, [
@@ -45,7 +42,8 @@ final class CreateDemoPlanCommand extends Command
         ]);
 
         $plan = $this->plans->create($centre->label, $centre->latitude, $centre->longitude);
-        $this->plans->save($plan->withValues([SiteType::PARAMETER => $import->siteJson]));
+        $plan->replaceSite($import->siteJson);
+        $this->plans->save($plan);
         $io->success(sprintf('Plan %s: /plan/%s', $plan->id, $plan->id));
 
         return Command::SUCCESS;

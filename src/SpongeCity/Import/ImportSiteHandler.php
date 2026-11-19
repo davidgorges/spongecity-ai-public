@@ -4,67 +4,79 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Import;
 
-use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\GeoPoint;
-use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
-use App\SpongeCity\Geo\OverpassClient;
-use App\SpongeCity\Geo\SiteImporter;
-use App\SpongeCity\Geo\SurroundingsLoader;
 use App\SpongeCity\Plan\Plan;
+use App\SpongeCity\Plan\PlanImport;
 use App\SpongeCity\Plan\PlanStore;
-use App\SpongeCity\Terrain\SiteGrounding;
-use App\SpongeCity\Terrain\TerrainStore;
-use Core\Configurator\Site\SiteType;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\AutowireIterator;
+use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\Attribute\AsMessageHandler;
 use Symfony\Component\Messenger\Exception\UnrecoverableMessageHandlingException;
 
+/**
+ * Imports a plan's site in a worker: takes the plan up, runs every SiteImportStep, then
+ * completes the import with the new site (or fails it, and the plan shows an error).
+ */
 #[AsMessageHandler]
 final readonly class ImportSiteHandler
 {
+    /**
+     * @param iterable<SiteImportStep> $steps
+     */
     public function __construct(
-        private OverpassClient $overpass,
-        private SiteImporter $importer,
         private PlanStore $plans,
+        private PlanImport $import,
+        #[AutowireIterator(SiteImportStep::class)]
+        private iterable $steps,
+        private LockFactory $locks,
         private LoggerInterface $logger,
-        private SurroundingsLoader $surroundings,
-        private HamburgGeodata $hamburg,
-        private SiteConditionsStore $conditions,
-        private TerrainStore $terrains,
-        private SiteGrounding $grounding = new SiteGrounding(),
     ) {
     }
 
     public function __invoke(ImportSite $message): void
     {
-        $plan = $this->plans->find($message->planId);
+        $plan = $this->takeUp($message->planId);
         if (null === $plan) {
-            throw new UnrecoverableMessageHandlingException(sprintf('Plan "%s" is gone.', $message->planId));
+            return; // not requested, or another worker has it
         }
 
+        $context = new SiteImportContext($plan->id, new GeoPoint($message->latitude, $message->longitude, $plan->title), $message->radiusMetres);
         try {
-            $centre = new GeoPoint($message->latitude, $message->longitude, $plan->title);
-            // in Hamburg, the city's own buildings and street trees replace OpenStreetMap's (each layer falls back on its own)
-            [$elements, $sources] = $this->hamburg->site($centre, $this->overpass->around($centre, $message->radiusMetres), $message->radiusMetres);
-            $import = $this->importer->import($centre, $elements);
+            foreach ($this->steps as $step) {
+                $step->process($context);
+            }
         } catch (\Throwable $exception) {
-            $this->logger->error('OpenStreetMap import failed', ['plan' => $plan->id, 'exception' => $exception]);
-            $this->plans->save($plan->withStatus(Plan::STATUS_FAILED));
+            $this->logger->error('Site import failed', ['plan' => $plan->id, 'step' => isset($step) ? $step::class : null, 'exception' => $exception]);
+            $this->import->apply($plan, PlanImport::FAIL);
 
             throw $exception;
         }
 
-        // the ground (terrain model): upright objects stand on it, the view drapes the rest over it
-        $terrain = $this->hamburg->terrain($centre);
-        $this->terrains->save($plan->id, $terrain);
-        if (null !== $terrain) {
-            $sources[] = $terrain->source;
+        $plan->relocate($message->latitude, $message->longitude);
+        $plan->replaceSite($context->siteJson);
+        $this->import->apply($plan, PlanImport::COMPLETE);
+    }
+
+    /**
+     * Starts the import under the plan's lock: of two workers with the same plan, the second
+     * reads it as importing and leaves it alone.
+     */
+    private function takeUp(string $planId): ?Plan
+    {
+        $lock = $this->locks->createLock(PlanImport::LOCK_PREFIX.$planId);
+        $lock->acquire(true);
+        try {
+            $plan = $this->plans->find($planId)
+                ?? throw new UnrecoverableMessageHandlingException(sprintf('Plan "%s" is gone.', $planId));
+            if (!$this->import->can($plan, PlanImport::START)) {
+                return null;
+            }
+            $this->import->apply($plan, PlanImport::START);
+
+            return $plan;
+        } finally {
+            $lock->release();
         }
-        // what official data says about the ground (infiltration potential), with the sources of every layer
-        $this->conditions->save($plan->id, $this->hamburg->conditions($centre, ImportSite::CONDITIONS_RADIUS_METRES, $sources));
-        $siteJson = $this->grounding->ground($import->siteJson, $terrain);
-        $this->plans->save($plan->withLocation($message->latitude, $message->longitude)->withValues([...$plan->values, SiteType::PARAMETER => $siteJson])->withStatus(Plan::STATUS_READY));
-        // the real city around the site, for the 3D view (context only: may fail without failing the plan)
-        $this->surroundings->import($this->plans->get($plan->id));
     }
 }

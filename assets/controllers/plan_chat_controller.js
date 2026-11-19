@@ -1,5 +1,8 @@
 import { Controller } from '@hotwired/stimulus';
 
+/** the error key of a message the server did not accept */
+const INVALID = 'plan.chat.invalid';
+
 /**
  * Chat with the planning agent. A message is posted to the plan's chat endpoint; while the
  * agent works it changes the plan through MCP tools, so the plan is refreshed when it
@@ -7,6 +10,9 @@ import { Controller } from '@hotwired/stimulus';
  * and after a while during the wait, so the user watches the design appear.
  *
  *   <section data-controller="plan-chat" data-plan-chat-url-value="/plan/…/chat" data-live-ignore>
+ *
+ * A new message is a copy of the template for its role (user, assistant, error: a Bubble each),
+ * its text put into the element marked data-text.
  */
 export default class extends Controller {
     static targets = ['messages', 'input', 'submit', 'status', 'template'];
@@ -47,7 +53,9 @@ export default class extends Controller {
             if (response.ok && data.reply) {
                 this.#append('assistant', data.reply);
             } else {
-                this.#append('error', this.errorsValue[data.error] ?? this.errorsValue.failed ?? '');
+                // 422: the message did not pass validation (empty, or too long)
+                const error = data.error ?? (422 === response.status ? INVALID : null);
+                this.#append('error', this.errorsValue[error] ?? this.errorsValue.failed ?? '');
             }
         } catch {
             this.#append('error', this.errorsValue.failed ?? '');
@@ -71,8 +79,8 @@ export default class extends Controller {
     }
 
     #append(role, text) {
-        const node = this.templateTarget.content.firstElementChild.cloneNode(true);
-        node.dataset.role = role;
+        const template = this.templateTargets.find((candidate) => candidate.dataset.role === role) ?? this.templateTarget;
+        const node = template.content.firstElementChild.cloneNode(true);
         node.querySelector('[data-text]').textContent = text;
         this.messagesTarget.append(node);
         this.#scrollDown();

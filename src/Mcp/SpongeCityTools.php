@@ -10,19 +10,23 @@ use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\DataSource;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\NominatimGeocoder;
-use App\SpongeCity\Import\ImportSite;
-use App\SpongeCity\Plan\Plan;
+use App\SpongeCity\Import\PlanImporter;
+use App\SpongeCity\Plan\OverlapsBuilding;
+use App\SpongeCity\Plan\PlanStatus;
 use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
+use App\SpongeCity\Rationale\Rationale;
+use App\SpongeCity\Rationale\RationaleStore;
 use App\SpongeCity\Terrain\TerrainAnalysis;
 use App\SpongeCity\Terrain\TerrainStore;
+use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Mcp\Capability\Attribute\McpTool;
+use Mcp\Capability\Attribute\Schema;
 use Mcp\Schema\ToolAnnotations;
-use Symfony\Component\Messenger\MessageBusInterface;
 
 /**
  * The tools the planning agent works with, exposed over MCP: geodata, the
@@ -47,16 +51,19 @@ final readonly class SpongeCityTools
     private const int MAX_RADIUS_METRES = 150;
     private const int DEFAULT_RADIUS_METRES = 70;
     private const float MILLIMETRES_PER_METRE = 1000.0;
+    /** an object's field in add_objects for the agent's reasons (kept as a Rationale, not on the object) */
+    public const string WHY = 'why';
 
     public function __construct(
         private NominatimGeocoder $geocoder,
         private PlanStore $plans,
         private SiteEditor $editor,
         private PlanAnalyzer $analyzer,
-        private MessageBusInterface $bus,
+        private PlanImporter $importer,
         private SiteConditionsStore $conditions,
         private TerrainStore $terrains,
-        private TerrainAnalysis $terrainAnalysis = new TerrainAnalysis(),
+        private TerrainAnalysis $terrainAnalysis,
+        private RationaleStore $rationales,
     ) {
     }
 
@@ -72,7 +79,7 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * Starts rebuilding the real surroundings of a point from OpenStreetMap into the plan: the plot (the school yard, park or garden the point lies in; a 40 m square if none is mapped), buildings with heights and existing trees. This runs in the background and takes from a few seconds to a minute: the plan has status "pending" until it is "ready". Poll get_site until its status is "ready" before you plan anything. Replaces the site of the plan, planned interventions are removed. The plan's origin (0, 0) is the given point; x runs east, z south, all in millimetres.
+     * Starts rebuilding the real surroundings of a point from OpenStreetMap into the plan: the plot (the school yard, park or garden the point lies in; a 40 m square if none is mapped), buildings with heights and existing trees. This runs in the background and takes from a few seconds to a minute: the plan has status "pending", then "importing", until it is "ready" (or "failed"). Poll get_site until its status is "ready" before you plan anything. Replaces the site of the plan, planned interventions are removed. The plan's origin (0, 0) is the given point; x runs east, z south, all in millimetres.
      *
      * @return array<string, mixed>
      */
@@ -80,10 +87,12 @@ final readonly class SpongeCityTools
     public function loadSite(string $planId, float $latitude, float $longitude, int $radiusMetres = self::DEFAULT_RADIUS_METRES): array
     {
         $plan = $this->plans->get($planId);
-        $this->plans->save($plan->withStatus(Plan::STATUS_PENDING));
-        $this->bus->dispatch(new ImportSite($plan->id, $latitude, $longitude, max(self::MIN_RADIUS_METRES, min(self::MAX_RADIUS_METRES, $radiusMetres))));
+        $radius = max(self::MIN_RADIUS_METRES, min(self::MAX_RADIUS_METRES, $radiusMetres));
+        if (!$this->importer->request($plan, new GeoPoint($latitude, $longitude), $radius)) {
+            return ['status' => $plan->status->value, 'note' => 'The site is already being imported. Call get_site until its status is "ready".'];
+        }
 
-        return ['status' => Plan::STATUS_PENDING, 'note' => 'The import runs in the background. Call get_site until its status is "ready".'];
+        return ['status' => PlanStatus::Pending->value, 'note' => 'The import runs in the background. Call get_site until its status is "ready".'];
     }
 
     /**
@@ -110,7 +119,7 @@ final readonly class SpongeCityTools
 
         return [
             'plan' => $plan->id,
-            'status' => $plan->status,
+            'status' => $plan->status->value,
             'title' => $plan->title,
             'design_storm_mm_per_hour' => $plan->storm(),
             'plot_bounds_mm' => $bounds,
@@ -185,27 +194,55 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * Plans interventions: adds objects to the 3D scene. Each object needs "type" (one of the interventions: newtree, raingarden, permeable, planting, shadesail) and its fields; outlines are "points": [[x, z], ...] in millimetres inside the plot and away from buildings. Out-of-range values are corrected, not rejected. Returns the new ids.
+     * Plans interventions: adds objects to the 3D scene. Each object needs "type" (one of the interventions: newtree, raingarden, permeable, planting, shadesail) and its fields; outlines are "points": [[x, z], ...] in millimetres inside the plot and outside every building's outline (existing_buildings in get_site). Out-of-range values are corrected, not rejected. An intervention on a building is not added: it comes back in "conflicts" with the building and the overlap; draw it again in the open. Give each object a "why": one or two sentences for the user, in their language, on why it goes there; it is shown over the object in the 3D view. Returns the new ids.
      *
      * @param list<array<string, mixed>> $objects
      *
-     * @return array{ids: list<string>, rejected: int}
+     * @return array{ids: list<string>, rejected: int, conflicts: list<array<string, mixed>>}
      */
     #[McpTool(name: self::TOOL_ADD, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false))]
     public function addObjects(string $planId, array $objects): array
     {
-        return $this->editor->add($planId, $objects);
+        $result = ['ids' => [], 'rejected' => 0, 'conflicts' => []];
+        // one by one: each new id is the object whose "why" it keeps
+        foreach ($objects as $object) {
+            $why = is_array($object) && is_string($object[self::WHY] ?? null) ? Rationale::clean($object[self::WHY]) : null;
+            if (is_array($object)) {
+                unset($object[self::WHY]);
+            }
+            $added = $this->editor->add($planId, [$object]);
+            array_push($result['ids'], ...$added['ids']);
+            $result['rejected'] += $added['rejected'];
+            array_push($result['conflicts'], ...$added['conflicts']);
+            if (null !== $why && [] !== $added['ids']) {
+                $this->rationales->record($planId, new Rationale($added['ids'][0], $why));
+            }
+        }
+
+        return $result;
     }
 
     /**
-     * Changes fields of one object by id; the other fields stay.
+     * Changes fields of one object by id; the other fields stay. A move that puts an intervention on a building is not made: "updated" is false and "conflict" says which building.
      *
      * @param array<string, mixed> $changes
+     *
+     * @return array{updated: bool, conflict?: array<string, mixed>}
      */
     #[McpTool(name: self::TOOL_UPDATE, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false, idempotentHint: true))]
-    public function updateObject(string $planId, string $id, array $changes): bool
+    public function updateObject(
+        string $planId,
+        string $id,
+        // a PHP array is advertised as a JSON list by default, but the changes are a map of field → value
+        #[Schema(type: 'object', description: 'The fields to change and their new values, e.g. {"facade": "plaster", "color": "#f2efe8"}.', additionalProperties: true)]
+        array $changes,
+    ): array
     {
-        return $this->editor->update($planId, $id, $changes);
+        try {
+            return ['updated' => $this->editor->update($planId, $id, $changes)];
+        } catch (OverlapsBuilding $e) {
+            return ['updated' => false, 'conflict' => $e->conflict->toArray()];
+        }
     }
 
     /**
@@ -234,7 +271,8 @@ final readonly class SpongeCityTools
     {
         $storm = max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $millimetresPerHour));
         $plan = $this->plans->get($planId);
-        $this->plans->save($plan->withValues([...$plan->values, SpongeCityParameter::STORM => $storm]));
+        $plan->setStorm($storm);
+        $this->plans->save($plan);
 
         return $storm;
     }
@@ -278,12 +316,23 @@ final readonly class SpongeCityTools
     private function buildingSummary(Site $site): array
     {
         $summary = [];
+        $plots = $site->ofType(O::PLOT);
+        $plot = [] === $plots ? null : Polygon::bounds(Site::points($plots[0]));
         foreach ($site->ofType(O::BUILDING) as $building) {
             $points = Site::points($building);
+            [$minX, $maxX, $minZ, $maxZ] = Polygon::bounds($points);
+            // interventions stay on the plot: the outlines that matter are of the buildings on it or touching it
+            $onThePlot = null === $plot || ($minX <= $plot[1] && $plot[0] <= $maxX && $minZ <= $plot[3] && $plot[2] <= $maxZ);
             $summary[] = [
+                // the id lets a building's look (facade, color) be corrected with update_object when the user knows better
+                'id' => $building[O::ID] ?? null,
                 'label' => is_string($building[O::LABEL] ?? null) ? $building[O::LABEL] : null,
                 'height_mm' => (int) ($building[O::HEIGHT] ?? 0),
+                'storeys' => (int) ($building[O::STOREYS] ?? 0),
+                O::FACADE => $building[O::FACADE] ?? null,
+                O::COLOR => $building[O::COLOR] ?? null,
                 'centre' => [(int) round(array_sum(array_column($points, 0)) / count($points)), (int) round(array_sum(array_column($points, 1)) / count($points))],
+                ...($onThePlot ? ['outline' => array_map(static fn (array $p): array => [(int) $p[0], (int) $p[1]], $points)] : []),
             ];
         }
 

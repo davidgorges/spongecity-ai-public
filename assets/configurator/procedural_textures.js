@@ -20,11 +20,40 @@ export const LAWN = 'lawn';
 export const STONES = 'stones';
 export const WOOD_GRAIN = 'wood_grain';
 export const FACADE_PLASTER = 'facade_plaster';
+export const FACADE_RENDER = 'facade_render';
+export const GLAZING = 'glazing';
 export const FACADE_BRICK = 'facade_brick';
 export const FACADE_RIBBON = 'facade_ribbon';
 export const FACADE_CLADDING = 'facade_cladding';
 export const ROOF_GRAVEL = 'roof_gravel';
 export const ASPHALT = 'asphalt';
+/**
+ * Permeable surfaces at their real size: one repeat of each texture is this many metres
+ * (PERMEABLE_REPEAT), the views map their UVs to it.
+ */
+export const PERMEABLE_PAVERS = 'permeable_pavers';
+export const GRASS_PAVERS = 'grass_pavers';
+export const WATER_BOUND = 'water_bound';
+export const SETTS = 'setts';
+/** soft patches (grey around 0.5) to modulate a field's colour on a scale of metres */
+export const WEATHERING = 'weathering';
+export const PERMEABLE_REPEAT = {
+    // 8 × 16 concrete pavers of 20 × 10 cm in running bond, 8 mm joints of grit
+    [PERMEABLE_PAVERS]: 1.6,
+    // a concrete grid block with 4 × 4 openings, grass in them
+    [GRASS_PAVERS]: 0.6,
+    // a water-bound path: fine gravel and sand, rolled
+    [WATER_BOUND]: 1.6,
+    // granite setts of 10 cm, 4 × 4, 1 cm joints
+    [SETTS]: 0.44,
+};
+
+const PAVER_COLUMNS = 8;
+const PAVER_ROWS = 16;
+const PAVER_JOINT_METRES = 0.008;
+/** the pavers' mean grey (0–255) and how far one stone strays from it */
+const PAVER_SHADE = 150;
+const PAVER_SHADE_SPREAD = 32;
 
 /**
  * Façade patterns cover FACADE_BAYS × FACADE_BAYS window bays of BAY_METRES per repeat
@@ -81,7 +110,8 @@ export function proceduralTexture(name) {
  * foot to -depth/2 at the top (the part is turned by +90° about x). `seed` shifts the
  * pattern by whole bays and storeys, so neighbouring buildings differ.
  */
-export function applyUprightUVs(geometry, depth, textureSize, seed = 0) {
+/** @param {number} textureHeight metres one repeat covers upwards (a storey per window row); textureSize when not given */
+export function applyUprightUVs(geometry, depth, textureSize, seed = 0, textureHeight = textureSize) {
     const position = geometry.attributes.position;
     const normal = geometry.attributes.normal;
     const uv = geometry.attributes.uv;
@@ -100,7 +130,7 @@ export function applyUprightUVs(geometry, depth, textureSize, seed = 0) {
         corner.set(-normal.getY(i), normal.getX(i), 0).normalize();
         for (let k = i; k < i + 3; k++) {
             const along = position.getX(k) * corner.x + position.getY(k) * corner.y;
-            uv.setXY(k, along / textureSize + shiftU, (depth / 2 - position.getZ(k)) / textureSize + shiftV);
+            uv.setXY(k, along / textureSize + shiftU, (depth / 2 - position.getZ(k)) / textureHeight + shiftV);
         }
     }
     uv.needsUpdate = true;
@@ -134,6 +164,161 @@ export function applyMetricUVs(geometry, textureSize) {
 }
 
 const PATTERNS = {
+    [PERMEABLE_PAVERS]: {
+        bumpScale: 3,
+        size: 1024,
+        draw(colour, bump, random) {
+            const size = colour.canvas.width;
+            const columns = PAVER_COLUMNS;
+            const rows = PAVER_ROWS;
+            const paver = size / columns;
+            const row = size / rows;
+            // the joints: grit, in the shadow of the pavers' chamfers, darker than their tops and sunk below them
+            fill(colour, '#6d665b');
+            speckle(colour, random, 80000, 0.35);
+            fill(bump, '#1a1a1a');
+            const joint = Math.max(3, Math.round(size * PAVER_JOINT_METRES / PERMEABLE_REPEAT[PERMEABLE_PAVERS]));
+            for (let r = 0; r < rows; r++) {
+                const offset = r % 2 ? paver / 2 : 0;
+                // one shade per paver of the row: a paver cut by the texture's edge is the same on both sides
+                const shades = Array.from({ length: columns }, () => PAVER_SHADE + Math.round((random() - 0.55) * PAVER_SHADE_SPREAD));
+                for (let c = -1; c <= columns; c++) {
+                    const x = c * paver + offset + joint / 2;
+                    const y = r * row + joint / 2;
+                    const [w, h] = [paver - joint, row - joint];
+                    // one concrete in a warm, sandy grey, the stones only a little lighter or darker than each other
+                    const base = shades[((c % columns) + columns) % columns];
+                    const stone = colour.createLinearGradient(x, y, x + w * 0.3, y + h);
+                    stone.addColorStop(0, `rgb(${base + 10},${base + 4},${base - 8})`);
+                    stone.addColorStop(1, `rgb(${base + 1},${base - 5},${base - 16})`);
+                    colour.fillStyle = stone;
+                    roundedRect(colour, x, y, w, h, joint * 0.8);
+                    colour.fill();
+                    // chamfered edges: the bump rises from the joint to a flat top
+                    const top = bump.createLinearGradient(x, y, x, y + h);
+                    top.addColorStop(0, '#9a9a9a');
+                    top.addColorStop(0.08, '#f2f2f2');
+                    top.addColorStop(0.92, '#f2f2f2');
+                    top.addColorStop(1, '#9a9a9a');
+                    bump.fillStyle = top;
+                    roundedRect(bump, x, y, w, h, joint * 0.8);
+                    bump.fill();
+                }
+            }
+            // the aggregate of the concrete, and the wear of a yard
+            speckle(colour, random, 160000, 0.06);
+            blotches(colour, random, 10, 0.06);
+            speckle(bump, random, 60000, 0.14);
+        },
+    },
+    [WEATHERING]: {
+        bumpScale: 0,
+        size: 256,
+        // drawn on the bump sheet: its values stay linear (0.5 = unchanged) when a shader reads them
+        draw(_colour, bump, random) {
+            // soft light and dark patches, metres across: laid over a field at another scale than its pattern
+            fill(bump, '#808080');
+            blotches(bump, random, 40, 0.35, [40, 40, 40]);
+            blotches(bump, random, 30, 0.3, [210, 210, 210]);
+        },
+    },
+    [GRASS_PAVERS]: {
+        bumpScale: 5,
+        size: 1024,
+        draw(colour, bump, random) {
+            const size = colour.canvas.width;
+            const cells = 4;
+            const cell = size / cells;
+            const web = cell * 0.3;
+            // the concrete web, weathered
+            fill(colour, '#8d897f');
+            blotches(colour, random, 30, 0.18);
+            speckle(colour, random, 70000, 0.14);
+            fill(bump, '#e8e8e8');
+            for (let x = 0; x < cells; x++) {
+                for (let y = 0; y < cells; y++) {
+                    const [cx, cy] = [x * cell + web / 2, y * cell + web / 2];
+                    const side = cell - web;
+                    // soil at the bottom, grass growing up through it, spilling over the web a little
+                    // a green sward, not bare soil: the openings are grown in
+                    colour.fillStyle = '#3e5a26';
+                    roundedRect(colour, cx, cy, side, side, side * 0.15);
+                    colour.fill();
+                    for (let blade = 0; blade < 2600; blade++) {
+                        const bx = cx - side * 0.1 + random() * side * 1.2;
+                        const by = cy - side * 0.1 + random() * side * 1.2;
+                        const green = 110 + Math.round(random() * 90);
+                        colour.strokeStyle = `rgba(${Math.round(green * 0.6)},${green},${Math.round(green * 0.32)},${0.6 + random() * 0.4})`;
+                        colour.lineWidth = 1.2 + random() * 1.8;
+                        colour.beginPath();
+                        colour.moveTo(bx, by);
+                        colour.lineTo(bx + (random() - 0.5) * 12, by + (random() - 0.5) * 12);
+                        colour.stroke();
+                    }
+                    bump.fillStyle = '#5a5a5a';
+                    roundedRect(bump, cx, cy, side, side, side * 0.15);
+                    bump.fill();
+                }
+            }
+            speckle(bump, random, 40000, 0.3);
+        },
+    },
+    [WATER_BOUND]: {
+        bumpScale: 2,
+        size: 1024,
+        draw(colour, bump, random) {
+            const size = colour.canvas.width;
+            // sand and fine gravel, rolled: ochre-beige, grains of every size, damp patches
+            fill(colour, '#b9a581');
+            blotches(colour, random, 40, 0.16, [70, 55, 30]);
+            blotches(colour, random, 25, 0.12, [255, 245, 220]);
+            fill(bump, '#7a7a7a');
+            for (let i = 0; i < 5200; i++) {
+                const x = random() * size;
+                const y = random() * size;
+                const r = 1.2 + random() ** 3 * 6;
+                const shade = 140 + Math.round(random() * 95);
+                colour.fillStyle = `rgb(${shade},${Math.round(shade * 0.92)},${Math.round(shade * 0.78)})`;
+                colour.beginPath();
+                colour.ellipse(x, y, r, r * (0.7 + random() * 0.3), random() * Math.PI, 0, Math.PI * 2);
+                colour.fill();
+                bump.fillStyle = `rgb(${170 + Math.round(random() * 80)},0,0)`;
+                bump.beginPath();
+                bump.arc(x, y, r, 0, Math.PI * 2);
+                bump.fill();
+            }
+            speckle(colour, random, 160000, 0.12);
+        },
+    },
+    [SETTS]: {
+        bumpScale: 4,
+        size: 512,
+        draw(colour, bump, random) {
+            const size = colour.canvas.width;
+            const count = 4;
+            const sett = size / count;
+            const joint = Math.round(sett * 0.1);
+            fill(colour, '#6d6a64');
+            speckle(colour, random, 20000, 0.2);
+            fill(bump, '#202020');
+            for (let r = 0; r < count; r++) {
+                for (let c = 0; c < count; c++) {
+                    // granite: grey with a speckle of mica and feldspar, each sett a little irregular
+                    const shade = 125 + Math.round(random() * 40);
+                    const x = c * sett + joint / 2 + (random() - 0.5) * joint * 0.6;
+                    const y = r * sett + joint / 2 + (random() - 0.5) * joint * 0.6;
+                    const w = sett - joint * (0.9 + random() * 0.3);
+                    colour.fillStyle = `rgb(${shade},${shade - 1},${shade - 4})`;
+                    roundedRect(colour, x, y, w, w, joint * 1.2);
+                    colour.fill();
+                    bump.fillStyle = '#f0f0f0';
+                    roundedRect(bump, x, y, w, w, joint * 1.2);
+                    bump.fill();
+                }
+            }
+            speckle(colour, random, 26000, 0.22);
+        },
+    },
     // 2 × 2 large slabs per repeat, each slightly different, with sunken joints
     [PAVING]: {
         bumpScale: 2,
@@ -398,6 +583,50 @@ const PATTERNS = {
             eachBay((x, y) => punchedWindow(colour, bump, random, PATTERNS[FACADE_PLASTER].windows(x, y, BAY)[0]));
         },
     },
+    // a newer rendered wall: tall windows in dark (anthracite) frames, a slim metal sill
+    [FACADE_RENDER]: {
+        bumpScale: 1.2,
+        size: FACADE_SIZE,
+        windows: (x, y, bay) => [punched(x, y, bay, 1.5, 2.2, 0.55)],
+        draw(colour, bump, random) {
+            fill(colour, '#f6f5f2');
+            fill(bump, '#808080');
+            blotches(colour, random, 60, 0.015);
+            speckle(colour, random, 60000, 0.04);
+            speckle(bump, random, 60000, 0.3);
+            eachBay((x, y) => punchedWindow(colour, bump, random, PATTERNS[FACADE_RENDER].windows(x, y, BAY)[0], DARK_FRAME, METAL_SILL));
+        },
+    },
+    // a glazed storey behind a glass railing: four panels across between slim dark mullions,
+    // a handrail at a third of the height; one repeat is 6 m wide and one storey (3.2 m) high
+    [GLAZING]: {
+        bumpScale: 0.5,
+        size: FACADE_SIZE,
+        draw(colour, bump, random) {
+            fill(bump, '#808080');
+            const panels = 4;
+            const width = FACADE_SIZE / panels;
+            for (let i = 0; i < panels; i++) {
+                glass(colour, i * width, 0, width, FACADE_SIZE, random);
+                // a few blinds half down, as in any office or classroom
+                if (random() < 0.3) {
+                    colour.fillStyle = 'rgba(220,216,206,0.55)';
+                    colour.fillRect(i * width + 10, 10, width - 20, FACADE_SIZE * (0.15 + random() * 0.3));
+                }
+            }
+            colour.fillStyle = '#2f2c2a';
+            for (let i = 0; i <= panels; i++) {
+                colour.fillRect(i * width - 7, 0, 14, FACADE_SIZE);
+            }
+            // the floor slab's edge at the top and bottom, the railing's handrail and its glass
+            colour.fillRect(0, 0, FACADE_SIZE, 18);
+            colour.fillRect(0, FACADE_SIZE - 18, FACADE_SIZE, 18);
+            colour.fillStyle = '#5a5552';
+            colour.fillRect(0, FACADE_SIZE * 0.66, FACADE_SIZE, 10);
+            colour.fillStyle = 'rgba(190,210,215,0.25)';
+            colour.fillRect(0, FACADE_SIZE * 0.66 + 10, FACADE_SIZE, FACADE_SIZE * 0.34 - 18);
+        },
+    },
     // facing brick in running bond, a soldier course over each punched window
     [FACADE_BRICK]: {
         bumpScale: 2,
@@ -554,20 +783,25 @@ function punched(bayX, bayY, bay, width, height, sill) {
     return { x: bayX + (bay - width * metre) / 2, y: bayY + bay - (sill + height) * metre, width: width * metre, height: height * metre };
 }
 
-/** A punched window: reveal shadow, frame, glass with a mullion (blinds or curtains in some), a light sill. */
-function punchedWindow(colour, bump, random, { x, y, width: w, height: h }) {
+const LIGHT_FRAME = '#eceae6';
+const DARK_FRAME = '#3a3735';
+const STONE_SILL = '#ffffff';
+const METAL_SILL = '#cfd0ce';
+
+/** A punched window: reveal shadow, frame, glass with a mullion (blinds or curtains in some), a sill. */
+function punchedWindow(colour, bump, random, { x, y, width: w, height: h }, frameColour = LIGHT_FRAME, sillColour = STONE_SILL) {
     const frame = 4;
-    colour.fillStyle = '#eceae6';
+    colour.fillStyle = frameColour;
     colour.fillRect(x, y, w, h);
     glass(colour, x + frame, y + frame, w - 2 * frame, h - 2 * frame, random);
     blind(colour, x + frame, y + frame, w - 2 * frame, h - 2 * frame, random);
-    colour.fillStyle = '#eceae6';
+    colour.fillStyle = frameColour;
     colour.fillRect(x + w / 2 - frame / 2, y, frame, h);
     // the reveal: shade from the lintel and the left jamb
     colour.fillStyle = 'rgba(0,0,0,0.28)';
     colour.fillRect(x, y, w, 5);
     colour.fillRect(x, y, 4, h);
-    colour.fillStyle = '#ffffff';
+    colour.fillStyle = sillColour;
     colour.fillRect(x - 5, y + h, w + 10, 4);
     colour.fillStyle = 'rgba(0,0,0,0.2)';
     colour.fillRect(x - 5, y + h + 4, w + 10, 2);
@@ -656,6 +890,11 @@ function toTexture(canvas, colorSpace) {
     texture.anisotropy = 8;
 
     return texture;
+}
+
+function roundedRect(ctx, x, y, width, height, radius) {
+    ctx.beginPath();
+    ctx.roundRect(x, y, width, height, radius);
 }
 
 function fill(ctx, style) {

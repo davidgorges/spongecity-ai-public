@@ -1,0 +1,73 @@
+{#
+    A window over the 3D view (window_manager_controller.js): a Card with a title bar to drag it by,
+    minimise and close, its content below.
+
+        <twig:Plan:Window id="chat" title="…" icon="lucide:…" place="left top">
+            <twig:block name="actions">…buttons beside the title…</twig:block>
+            …content…
+        </twig:Plan:Window>
+
+    A window can be resized by its corner handle (dragged, or the arrow keys on it; a double click
+    gives it its own size back).
+
+    place: where it opens first (left|right and top|bottom, or "below <id>" of another window);
+    open: whether it is open before the person decides; auto: a value that opens it whenever it
+    changes to a non-empty one (an object being selected); width: its width on large screens.
+#}
+{%- props id, title, icon, place, open = true, auto = null, width = 'lg:w-96' -%}
+{#- rendered here, before they are nested two components deep (where outerBlocks would name the Card's own) -#}
+{#- floating, it stays invisible until the window manager has placed it (data-window-placed): not stacked in a corner meanwhile -#}
+{#- inside the Card's content `id` is the Card's own (window-…): the window's is kept here -#}
+{%- set window_id = id -%}
+{%- set window_actions %}{{ block('actions') }}{% endset -%}
+{%- set window_content %}{{ block('content') }}{% endset -%}
+<twig:Card
+    id="window-{{ id }}"
+    role="region"
+    class="flex min-h-0 flex-col gap-0 rounded-none border-0 lg:absolute lg:z-20 lg:max-h-[calc(100vh-8rem)] lg:overflow-hidden lg:rounded-xl lg:border lg:shadow-lg lg:invisible lg:data-window-placed:visible {{ width }}"
+    aria-labelledby="window-{{ id }}-title"
+    data-window-manager-target="window"
+    data-window="{{ id }}"
+    data-window-place="{{ place }}"
+    data-window-open="{{ open ? 'true' : 'false' }}"
+    data-window-auto="{{ auto ?? '' }}"
+    data-action="pointerdown->window-manager#raise focusin->window-manager#raise"
+    {{ ...attributes }}
+>
+    <twig:Card:Header class="flex-row items-center gap-2 space-y-0 border-b px-3 py-2 lg:cursor-grab lg:select-none lg:active:cursor-grabbing" data-window-header data-action="pointerdown->window-manager#grab">
+        {% set move_label = 'plan.windows.move'|trans({'%title%': title}, 'spongecity') %}
+        <twig:Button variant="ghost" size="icon-xs" class="hidden text-muted-foreground lg:inline-flex" title="{{ move_label }}" aria-label="{{ move_label }}" data-action="keydown->window-manager#nudge" data-window-manager-id-param="{{ window_id }}">
+            <twig:ux:icon name="lucide:grip-vertical" aria-hidden="true" />
+        </twig:Button>
+        <twig:Card:Title id="window-{{ window_id }}-title" role="heading" aria-level="2" class="flex min-w-0 flex-1 items-center gap-2 text-sm">
+            <twig:ux:icon name="{{ icon }}" class="size-4 shrink-0 text-primary" aria-hidden="true" />
+            <span class="truncate">{{ title }}</span>
+        </twig:Card:Title>
+        {{ window_actions }}
+        {% set minimise_label = 'plan.windows.minimise'|trans({'%title%': title}, 'spongecity') %}
+        <twig:Button variant="ghost" size="icon-xs" class="hidden lg:inline-flex" title="{{ minimise_label }}" aria-label="{{ minimise_label }}" aria-expanded="true" aria-controls="window-{{ window_id }}-body" data-window-manager-target="minimise" data-action="window-manager#minimise" data-window-manager-id-param="{{ window_id }}">
+            <twig:ux:icon name="lucide:minus" aria-hidden="true" />
+        </twig:Button>
+        {% set close_label = 'plan.windows.close'|trans({'%title%': title}, 'spongecity') %}
+        <twig:Button variant="ghost" size="icon-xs" class="hidden lg:inline-flex" title="{{ close_label }}" aria-label="{{ close_label }}" data-action="window-manager#close" data-window-manager-id-param="{{ window_id }}">
+            <twig:ux:icon name="lucide:x" aria-hidden="true" />
+        </twig:Button>
+    </twig:Card:Header>
+    <twig:Card:Content id="window-{{ window_id }}-body" class="flex min-h-0 flex-col gap-3 overflow-y-auto p-4" data-window-body>
+        {{ window_content }}
+    </twig:Card:Content>
+    {% set resize_label = 'plan.windows.resize'|trans({'%title%': title}, 'spongecity') %}
+    <button
+        type="button"
+        class="absolute right-0 bottom-0 hidden size-5 cursor-se-resize touch-none items-end justify-end p-0.5 text-muted-foreground/60 outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:flex"
+        title="{{ resize_label }}"
+        aria-label="{{ resize_label }}"
+        data-window-resize
+        data-action="pointerdown->window-manager#resize keydown->window-manager#resizeByKey dblclick->window-manager#resetSize"
+        data-window-manager-id-param="{{ window_id }}"
+    >
+        <twig:ux:icon name="lucide:grip" class="size-3" aria-hidden="true" />
+    </button>
+</twig:Card>
+{#- declared so a window without actions renders; shown in the title bar above -#}
+{%- if false %}{% block actions %}{% endblock %}{% block content %}{% endblock %}{% endif -%}

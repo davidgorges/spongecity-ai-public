@@ -181,10 +181,17 @@ final readonly class SiteType implements StructuredValue
             $normalized[$name] = $value;
         }
         $label = $object[O::LABEL] ?? null;
-        $normalized[O::LABEL] = is_string($label) && '' !== trim($label) ? mb_substr(trim($label), 0, O::MAX_LABEL) : null;
+        $normalized[O::LABEL] = is_string($label) && '' !== trim($label) ? self::shortLabel(trim($label)) : null;
         // set from the terrain (not part of the schema: nobody types it in)
         $ground = $object[O::GROUND] ?? null;
         $normalized[O::GROUND] = is_numeric($ground) ? max(-O::MAX_GROUND, min(O::MAX_GROUND, (int) round((float) $ground))) : 0;
+        // a building's own roof from the 3D model (not part of the schema either: the import sets it)
+        if (O::BUILDING === $type) {
+            $model = self::model($object[O::MODEL] ?? null);
+            if (null !== $model) {
+                $normalized[O::MODEL] = $model;
+            }
+        }
 
         return $normalized;
     }
@@ -225,8 +232,66 @@ final readonly class SiteType implements StructuredValue
             O::ENUM => is_string($value) && is_array($field[1]) && in_array($value, $field[1], true) ? $value : $text(2),
             O::HEX => is_string($value) && 1 === preg_match(self::HEX_PATTERN, $value) ? strtolower($value) : $text(1),
             O::OUTLINE => self::outline($value, $int(1)),
+            O::BLOCKS => self::blocks($value),
             default => null,
         };
+    }
+
+    /**
+     * Roof-level blocks: each an outline and a height (as a building's); unreadable ones are left out.
+     *
+     * @return list<array{points: list<array{int, int}>, height: int}>
+     */
+    private static function blocks(mixed $value): array
+    {
+        $blocks = [];
+        $height = O::fields(O::BUILDING)[O::HEIGHT];
+        foreach (is_array($value) ? array_slice($value, 0, O::MAX_PARTS) : [] as $block) {
+            $points = is_array($block) ? self::outline($block[O::POINTS] ?? null, 3) : null;
+            if (null !== $points && is_numeric($block[O::HEIGHT] ?? null)) {
+                $blocks[] = [O::POINTS => $points, O::HEIGHT => max($height[1], min($height[2], (int) round((float) $block[O::HEIGHT])))];
+            }
+        }
+
+        return $blocks;
+    }
+
+    /**
+     * A building's model (SiteObject::MODEL): planar polygons of [x, y, z] millimetres within the
+     * site's reach; unreadable polygons are left out, null when no roof is left.
+     *
+     * @return array{roofs: list<list<array{int, int, int}>>, walls: list<list<array{int, int, int}>>}|null
+     */
+    private static function model(mixed $value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+        $height = O::fields(O::BUILDING)[O::HEIGHT][2];
+        $polygons = static function (mixed $list) use ($height): array {
+            $polygons = [];
+            foreach (is_array($list) ? array_slice($list, 0, O::MAX_MODEL_SURFACES) : [] as $polygon) {
+                $corners = [];
+                foreach (is_array($polygon) ? array_slice($polygon, 0, O::MAX_MODEL_CORNERS) : [] as $corner) {
+                    if (!is_array($corner) || !is_numeric($corner[0] ?? null) || !is_numeric($corner[1] ?? null) || !is_numeric($corner[2] ?? null)) {
+                        continue 2;
+                    }
+                    $corners[] = [
+                        max(-O::REACH, min(O::REACH, (int) round((float) $corner[0]))),
+                        max(0, min($height, (int) round((float) $corner[1]))),
+                        max(-O::REACH, min(O::REACH, (int) round((float) $corner[2]))),
+                    ];
+                }
+                if (count($corners) >= 3) {
+                    $polygons[] = $corners;
+                }
+            }
+
+            return $polygons;
+        };
+        $roofs = $polygons($value[O::MODEL_ROOFS] ?? null);
+
+        return [] === $roofs ? null : [O::MODEL_ROOFS => $roofs, O::MODEL_WALLS => $polygons($value[O::MODEL_WALLS] ?? null)];
     }
 
     /**
@@ -308,6 +373,7 @@ final readonly class SiteType implements StructuredValue
                 O::INT => ['type' => 'integer', 'minimum' => $field[1], 'maximum' => $field[2], 'default' => $field[3]],
                 O::ENUM => ['type' => 'string', 'enum' => $field[1], 'default' => $field[2]],
                 O::HEX => ['type' => 'string', 'pattern' => '^#[0-9a-fA-F]{6}$', 'default' => $field[1]],
+                O::BLOCKS => ['type' => 'array', 'maxItems' => O::MAX_PARTS, 'description' => 'Roof levels from the 3D building model: leave as they are.', 'items' => ['type' => 'object', 'properties' => [O::POINTS => ['type' => 'array'], O::HEIGHT => ['type' => 'integer']]]],
                 default => ['type' => 'array', 'minItems' => $field[1], 'maxItems' => O::MAX_POINTS, 'items' => ['type' => 'array', 'items' => ['type' => 'integer'], 'minItems' => 2, 'maxItems' => 2], 'description' => 'Plan points [x, z] in millimetres.'],
             };
         }
@@ -319,5 +385,17 @@ final readonly class SiteType implements StructuredValue
             'required' => $partial ? [] : [O::TYPE, ...array_keys(array_filter(O::fields($type), static fn (array $field): bool => O::OUTLINE === $field[0]))],
             'additionalProperties' => false,
         ];
+    }
+
+    /** at most MAX_LABEL characters, cut after a whole word with an ellipsis */
+    public static function shortLabel(string $label): string
+    {
+        if (mb_strlen($label) <= O::MAX_LABEL) {
+            return $label;
+        }
+        $cut = mb_substr($label, 0, O::MAX_LABEL - mb_strlen(O::ELLIPSIS));
+        $space = mb_strrpos($cut, ' ');
+
+        return rtrim(false !== $space ? mb_substr($cut, 0, $space) : $cut, ' ,:;-').O::ELLIPSIS;
     }
 }

@@ -61,6 +61,7 @@ final readonly class SceneSerializer
                 'label' => $part->label,
                 'decor' => $part->decor,
                 'draped' => $part->draped,
+                ...(null === $part->appearance ? [] : ['appearance' => $part->appearance]),
             ];
         }
 

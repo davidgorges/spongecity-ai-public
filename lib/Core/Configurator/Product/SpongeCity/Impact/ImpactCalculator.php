@@ -16,6 +16,7 @@ use Core\Configurator\Site\SiteObject as O;
  */
 final readonly class ImpactCalculator
 {
+    private const int SQUARE_MILLIMETRES_PER_SQUARE_METRE = 1_000_000;
     public const string METRIC_PERMEABLE_SHARE = 'permeable_share';
     public const string METRIC_RUNOFF = 'runoff_volume';
     public const string METRIC_RETENTION = 'retained_volume';
@@ -32,14 +33,14 @@ final readonly class ImpactCalculator
     private const float SUN_ELEVATION = 52.0;
     private const float SUN_AZIMUTH_FROM_NORTH = 225.0;
     /** mature canopy radius as a share of the tree height, the crown starts at this share of the height */
-    private const float CANOPY_RADIUS_SHARE = 0.28;
-    private const float CROWN_BASE_SHARE = 0.35;
+    public const float CANOPY_RADIUS_SHARE = 0.28;
+    public const float CROWN_BASE_SHARE = 0.35;
     /** rain held on leaves and evaporated, millimetres */
     private const float CANOPY_INTERCEPTION_MM = 2.0;
     /** media storage above the ponding depth of a rain garden, metres of water */
-    private const float RAIN_GARDEN_MEDIA_STORAGE = 0.12;
+    public const float RAIN_GARDEN_MEDIA_STORAGE = 0.12;
     /** a rain garden should not drain more than this many times its own area */
-    private const float MAX_CATCHMENT_RATIO = 10.0;
+    public const float MAX_CATCHMENT_RATIO = 10.0;
     private const float SHADE_TEMPERATURE_REDUCTION = 12.0;
     private const float MILLIMETRES_PER_METRE = 1000.0;
     private const float SHADE_RAY_STEP_METRES = 1.5;
@@ -77,7 +78,8 @@ final readonly class ImpactCalculator
         ];
 
         return new ImpactReport(
-            $baseline['area'],
+            // the outline's own area, as the plot map shows it (the grid's sum of cells differs by a few m²)
+            Polygon::area($outline) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE,
             $stormMillimetres,
             $metrics,
             $design['classes'],
@@ -94,7 +96,7 @@ final readonly class ImpactCalculator
     private function grid(array $outline): array
     {
         [$minX, $maxX, $minZ, $maxZ] = Polygon::bounds($outline);
-        $areaM2 = Polygon::area($outline) / 1_000_000;
+        $areaM2 = Polygon::area($outline) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE;
         $cell = max(self::MIN_CELL_METRES, sqrt(max($areaM2, 1.0) / self::MAX_CELLS)) * 1000;
         $cells = [];
         for ($x = $minX + $cell / 2; $x < $maxX; $x += $cell) {
@@ -118,6 +120,13 @@ final readonly class ImpactCalculator
     {
         $layers = $this->layers($site);
         $occluders = $this->occluders($site);
+        $shadeMap = ShadeMap::of(
+            Polygon::bounds($outline),
+            $occluders['buildings'],
+            array_map(static fn (array $t): array => ['x' => $t['x'], 'z' => $t['z'], 'radius' => $t['radius'], 'base' => $t['height'] * self::CROWN_BASE_SHARE, 'top' => $t['height']], $occluders['trees']),
+            self::towardsSun(),
+            self::SHADE_RAY_REACH_METRES * self::MILLIMETRES_PER_METRE,
+        );
         $cellM2 = ($grid['cell'] / 1000) ** 2;
         $rain = $storm / self::MILLIMETRES_PER_METRE;
 
@@ -156,7 +165,7 @@ final readonly class ImpactCalculator
             } else {
                 $sealedGround += $cellM2;
             }
-            $shaded = $this->isShaded($occluders, $x, $z);
+            $shaded = $this->isShaded($shadeMap, $occluders['sails'], $x, $z);
             $shadedGround += $shaded ? 1 : 0;
             $temperatureSum += $class->surfaceTemperature() - ($shaded ? self::SHADE_TEMPERATURE_REDUCTION : 0.0);
         }
@@ -198,7 +207,7 @@ final readonly class ImpactCalculator
     /**
      * Ground layers from the top: what lies on the plot's own surface, highest priority first.
      *
-     * @return list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, storage: float}>
+     * @return list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float}>
      */
     private function layers(Site $site): array
     {
@@ -206,7 +215,7 @@ final readonly class ImpactCalculator
         $add = static function (GroundClass $class, array $object, float $storage = 0.0) use (&$layers): void {
             foreach (Site::outlinesOf($object) as $polygon) {
                 if (count($polygon) >= 3) {
-                    $layers[] = ['class' => $class, 'polygon' => $polygon, 'storage' => $storage];
+                    $layers[] = ['class' => $class, 'polygon' => $polygon, 'bounds' => Polygon::bounds($polygon), 'storage' => $storage];
                 }
             }
         };
@@ -235,17 +244,26 @@ final readonly class ImpactCalculator
                 $add(GroundClass::Paving, $object);
             }
         }
+        // the ground areas known from the map or the user, under everything planned on them
+        foreach ($site->objects as $object) {
+            // an area of unknown ground leaves it to the plot's surface
+            if (O::AREA === $object[O::TYPE] && in_array($object[O::SURFACE] ?? null, O::SURFACES, true)) {
+                $add(GroundClass::fromSurface(is_string($object[O::SURFACE] ?? null) ? $object[O::SURFACE] : O::SURFACE_ASPHALT), $object);
+            }
+        }
 
         return $layers;
     }
 
     /**
-     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, storage: float}> $layers
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float}> $layers
      */
     private function classAt(array $layers, GroundClass $plotSurface, float $x, float $z): GroundClass
     {
         foreach ($layers as $layer) {
-            if (Polygon::contains($layer['polygon'], $x, $z)) {
+            // most layers lie elsewhere: their box rules them out without the polygon test
+            [$minX, $maxX, $minZ, $maxZ] = $layer['bounds'];
+            if ($x >= $minX && $x <= $maxX && $z >= $minZ && $z <= $maxZ && Polygon::contains($layer['polygon'], $x, $z)) {
                 return $layer['class'];
             }
         }
@@ -254,7 +272,7 @@ final readonly class ImpactCalculator
     }
 
     /**
-     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, storage: float}> $layers
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float}> $layers
      */
     private function storageAt(array $layers, float $x, float $z): float
     {
@@ -279,7 +297,11 @@ final readonly class ImpactCalculator
             $num = static fn (string $key): float => is_numeric($object[$key] ?? null) ? (float) $object[$key] : 0.0;
             switch ($object[O::TYPE]) {
                 case O::BUILDING:
-                    $buildings[] = ['polygon' => Site::points($object), 'height' => $num(O::HEIGHT)];
+                    // its roof levels cast their own shadows (a low wing less than the tower beside it)
+                    $parts = Site::parts($object);
+                    foreach ([] === $parts ? [[O::POINTS => Site::points($object), O::HEIGHT => $num(O::HEIGHT)]] : $parts as $part) {
+                        $buildings[] = ['polygon' => $part[O::POINTS], 'height' => $part[O::HEIGHT]];
+                    }
                     break;
                 case O::HOUSE:
                     foreach (Site::outlinesOf($object) as $polygon) {
@@ -309,40 +331,42 @@ final readonly class ImpactCalculator
     /**
      * A cell is shaded when the ray towards the sun meets a building, a tree crown or a sail.
      *
-     * @param array{buildings: list<array{polygon: list<array{0: float, 1: float}>, height: float}>, trees: list<array{x: float, z: float, radius: float, height: float}>, sails: list<array{polygon: list<array{0: float, 1: float}>, height: float}>} $occluders
+     * @param list<array{polygon: list<array{0: float, 1: float}>, height: float}> $sails
      */
-    private function isShaded(array $occluders, float $x, float $z): bool
+    private function isShaded(ShadeMap $map, array $sails, float $x, float $z): bool
     {
-        $azimuth = deg2rad(self::SUN_AZIMUTH_FROM_NORTH);
-        // x east, z south: towards the sun is the azimuth direction, north = -z
-        $dx = sin($azimuth);
-        $dz = -cos($azimuth);
+        [$dx, $dz] = self::towardsSun();
         $tan = tan(deg2rad(self::SUN_ELEVATION));
 
-        foreach ($occluders['sails'] as $sail) {
+        foreach ($sails as $sail) {
             $d = $sail['height'] / $tan;
             if (Polygon::contains($sail['polygon'], $x + $dx * $d, $z + $dz * $d)) {
                 return true;
             }
         }
         for ($d = self::SHADE_RAY_STEP_METRES; $d <= self::SHADE_RAY_REACH_METRES; $d += self::SHADE_RAY_STEP_METRES) {
-            $meters = $d * 1000;
+            $meters = $d * self::MILLIMETRES_PER_METRE;
             $rayHeight = $meters * $tan;
-            $px = $x + $dx * $meters;
-            $pz = $z + $dz * $meters;
-            foreach ($occluders['trees'] as $tree) {
-                if ($rayHeight >= $tree['height'] * self::CROWN_BASE_SHARE && $rayHeight <= $tree['height'] && hypot($px - $tree['x'], $pz - $tree['z']) <= $tree['radius']) {
-                    return true;
-                }
+            // above everything there is: nothing further along shades it
+            if ($rayHeight > $map->tallest()) {
+                return false;
             }
-            foreach ($occluders['buildings'] as $building) {
-                if ($rayHeight <= $building['height'] && Polygon::contains($building['polygon'], $px, $pz)) {
-                    return true;
-                }
+            if ($map->blocks($x + $dx * $meters, $z + $dz * $meters, $rayHeight)) {
+                return true;
             }
         }
 
         return false;
+    }
+
+    /**
+     * @return array{0: float, 1: float} the unit vector towards the sun in plan (x east, z south: north is -z)
+     */
+    private static function towardsSun(): array
+    {
+        $azimuth = deg2rad(self::SUN_AZIMUTH_FROM_NORTH);
+
+        return [sin($azimuth), -cos($azimuth)];
     }
 
     /**
@@ -356,7 +380,7 @@ final readonly class ImpactCalculator
             'Tree crowns are modelled at their recorded diameter (tree register) or, without one, at mature size (radius 28 % of the height); they intercept 2 mm of rain.',
             'Shade is evaluated at one moment (14:00, mid-summer); shade sails let rain through.',
             'Surface temperatures are indicative values of a sunny summer midday, not a thermal simulation.',
-            'Ground that is not covered by another object has the surface of the plot.',
+            'Ground that is not covered by another object has the surface of its area (OpenStreetMap, or as the user set it), else that of the plot.',
         ];
     }
 }

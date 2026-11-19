@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller\Plan;
 
-use App\SpongeCity\Plan\PlanStore;
+use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Terrain\TerrainStore;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -21,15 +21,13 @@ final class TerrainController extends AbstractController
     private const int MAX_AGE_SECONDS = 300;
 
     public function __construct(
-        private readonly PlanStore $plans,
         private readonly TerrainStore $terrains,
     ) {
     }
 
     #[Route('/plan/{id}/terrain', name: self::ROUTE, methods: ['GET'])]
-    public function __invoke(string $id): JsonResponse
+    public function __invoke(Plan $plan): JsonResponse
     {
-        $plan = $this->plans->find($id) ?? throw $this->createNotFoundException();
         $terrain = $this->terrains->find($plan->id);
         $response = null === $terrain ? new JsonResponse(null, JsonResponse::HTTP_NO_CONTENT) : $this->json($terrain->toArray());
         $response->setPrivate();

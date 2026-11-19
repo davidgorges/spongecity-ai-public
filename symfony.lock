@@ -143,6 +143,18 @@
             "AGENTS.md"
         ]
     },
+    "symfony/lock": {
+        "version": "8.2",
+        "recipe": {
+            "repo": "github.com/symfony/recipes",
+            "branch": "main",
+            "version": "8.2",
+            "ref": "472277fb1c5d4445a9f474a9c2dd66c9b59a3167"
+        },
+        "files": [
+            "config/packages/lock.yaml"
+        ]
+    },
     "symfony/maker-bundle": {
         "version": "1.68",
         "recipe": {
@@ -362,6 +374,15 @@
             "config/packages/web_profiler.yaml",
             "config/routes/web_profiler.yaml"
         ]
+    },
+    "symfony/workflow": {
+        "version": "8.2",
+        "recipe": {
+            "repo": "github.com/symfony/recipes",
+            "branch": "main",
+            "version": "8.2",
+            "ref": "46c0212530169ce92351ce7d58336db04f77c2a6"
+        }
     },
     "symfonycasts/tailwind-bundle": {
         "version": "1.0",

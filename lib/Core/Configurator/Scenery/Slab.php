@@ -36,17 +36,21 @@ final class Slab
     public static function planar(string $label, string $material, array $points, float $thickness, bool $centred = false): ?Part
     {
         $origin = $points[0];
-        $u = self::normalize(self::sub($points[1], $origin));
-        $n = null;
-        // the first point that is not on the line through the first two spans the plane
-        for ($i = 2, $count = count($points); $i < $count && null === $n; ++$i) {
-            $n = self::normalize(self::cross($u ?? [0.0, 0.0, 0.0], self::sub($points[$i], $origin)));
-        }
-        if (null === $u || null === $n) {
+        // Newell's normal, from all the corners: a point nearly on the line through the first two
+        // (common where a 3D model's surfaces meet) would tilt a normal taken from three points
+        $n = self::normalize(self::newell($points));
+        if (null === $n) {
             return null;
         }
         if ($n[1] < -self::EPSILON) {
             $n = [-$n[0], -$n[1], -$n[2]];
+        }
+        // along the first edge, within the plane
+        $edge = self::sub($points[1], $origin);
+        $along = self::dot($edge, $n);
+        $u = self::normalize([$edge[0] - $n[0] * $along, $edge[1] - $n[1] * $along, $edge[2] - $n[2] * $along]);
+        if (null === $u) {
+            return null;
         }
         $v = self::cross($n, $u);
         $lift = $centred ? 0.0 : $thickness / 2;
@@ -78,6 +82,24 @@ final class Slab
             new Vector3(0, $bottom + $height / 2, 0),
             new Vector3(self::FLAT, 0, 0),
         );
+    }
+
+    /**
+     * @param list<array{float, float, float}> $points
+     *
+     * @return array{float, float, float} along the normal, twice the polygon's area long
+     */
+    private static function newell(array $points): array
+    {
+        $n = [0.0, 0.0, 0.0];
+        for ($i = 0, $count = count($points); $i < $count; ++$i) {
+            [$a, $b] = [$points[$i], $points[($i + 1) % $count]];
+            $n[0] += ($a[1] - $b[1]) * ($a[2] + $b[2]);
+            $n[1] += ($a[2] - $b[2]) * ($a[0] + $b[0]);
+            $n[2] += ($a[0] - $b[0]) * ($a[1] + $b[1]);
+        }
+
+        return $n;
     }
 
     /**

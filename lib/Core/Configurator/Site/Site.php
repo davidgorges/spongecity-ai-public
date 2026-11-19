@@ -102,13 +102,54 @@ final readonly class Site
 
         return match ($object[O::TYPE]) {
             O::HOUSE, O::OUTBUILDING => [self::rectangle($num(O::X), $num(O::Z), $num(O::TURN), $num(O::WIDTH), $num(O::DEPTH), true)],
-            O::POOL, O::BOX => [self::rectangle($num(O::X), $num(O::Z), $num(O::TURN), $num(O::WIDTH), $num(O::DEPTH), false)],
+            O::POOL, O::BOX, O::EQUIPMENT => [self::rectangle($num(O::X), $num(O::Z), $num(O::TURN), $num(O::WIDTH), $num(O::DEPTH), false)],
             O::CYLINDER => [self::circle($num(O::X), $num(O::Z), $num(O::DIAMETER) / 2)],
             O::TREE, O::NEWTREE => [self::circle($num(O::X), $num(O::Z), self::TREE_RADIUS)],
             O::HEDGE, O::WALL => self::bands($points, $num(O::THICKNESS)),
             O::ROAD => self::bands($points, $num(O::WIDTH)),
             default => [$points],
         };
+    }
+
+    /**
+     * A building's own roof from its 3D model (SiteObject::MODEL), null when it has none.
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return array{roofs: list<list<array{float, float, float}>>, walls: list<list<array{float, float, float}>>}|null
+     */
+    public static function model(array $object): ?array
+    {
+        $model = $object[O::MODEL] ?? null;
+        if (!is_array($model) || !is_array($model[O::MODEL_ROOFS] ?? null) || [] === $model[O::MODEL_ROOFS]) {
+            return null;
+        }
+        $polygons = static fn (mixed $list): array => array_values(array_map(
+            static fn (array $polygon): array => array_map(static fn (array $c): array => [(float) $c[0], (float) $c[1], (float) $c[2]], $polygon),
+            array_filter(is_array($list) ? $list : [], 'is_array'),
+        ));
+
+        return [O::MODEL_ROOFS => $polygons($model[O::MODEL_ROOFS]), O::MODEL_WALLS => $polygons($model[O::MODEL_WALLS] ?? [])];
+    }
+
+    /**
+     * A building's roof levels (SiteObject::PARTS): outlines in plan millimetres and heights.
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return list<array{points: list<array{float, float}>, height: float}>
+     */
+    public static function parts(array $object): array
+    {
+        $parts = [];
+        foreach (is_array($object[O::PARTS] ?? null) ? $object[O::PARTS] : [] as $part) {
+            $points = is_array($part) ? self::points($part) : [];
+            if (count($points) >= 3 && is_numeric($part[O::HEIGHT] ?? null)) {
+                $parts[] = [O::POINTS => $points, O::HEIGHT => (float) $part[O::HEIGHT]];
+            }
+        }
+
+        return $parts;
     }
 
     /**

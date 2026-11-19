@@ -2,4 +2,7 @@ workers:
     # the OpenStreetMap import of new plans (App\SpongeCity\Import\ImportSiteHandler)
     messenger:
         cmd: ['symfony', 'console', 'messenger:consume', 'async', '-vv', '--time-limit=3600']
+    # SimStadt building simulations (App\SpongeCity\SimStadt\RunSimulationHandler): needs Docker
+    simstadt:
+        cmd: ['symfony', 'console', 'messenger:consume', 'simstadt', '-vv', '--time-limit=3600']
         watch: ['config', 'src', 'lib', 'vendor']

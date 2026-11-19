@@ -13,14 +13,15 @@ Stimulus, Tailwind v4, three.js. The 3D engine and UI kit come from the `sf_conf
  Browser                              Symfony app                                External
  ───────                              ───────────                                ────────
  home form ── POST / ───────────────► HomeController ── geocode ───────────────► Nominatim
-                                         │  create Plan(pending), dispatch
+                                         │  create Plan(new), PlanImporter → dispatch
                                          ▼
                                       Messenger (async, Doctrine/SQLite)
                                          │  worker: messenger:consume async
                                          ▼
-                                      ImportSiteHandler ── Overpass query ─────► Overpass mirrors
-                                         │  HamburgGeodata (in Hamburg) ──────────► api.hamburg.de (OGC API)
-                                         │  SiteImporter → site JSON, SiteConditions
+                                      ImportSiteHandler: PlanImport start → steps → complete
+                                         │  FetchOpenStreetMap ───────────────────► Overpass mirrors
+                                         │  ApplyOfficialLayers (MapLayer, in Hamburg) ► api.hamburg.de (OGC API)
+                                         │  BuildSite, ImportTerrain, CollectSiteConditions, GroundSite
                                          ▼
  plan page ◄── Live Component ──────  PlanStore (cache.app)  ◄───────────┐
   (3D view, impact, list)             Plan: values + status               │ reads/writes
@@ -95,7 +96,9 @@ A `building` carries its `height`, `use` (`Site\BuildingType`), `facade` (`Site\
 `roof` and `roofColor`; a `road` is a centre line with `width` and `kind` (carriageway or footway).
 `SiteBuilder` draws a footprint as walls with the façade's window texture plus a roof slab (gravel
 when flat, tiles when pitched); a near-rectangular footprint with a pitched roof gets a real gable or
-hip roof over its minimum-area rectangle. Roads are thin strips (carriageways 7 mm, footways 10 mm
+hip roof over its minimum-area rectangle (`Site\PitchedRoof`, at the building's `pitch` when known), and
+a building with its own `model` (Hamburg) gets the model's roof surfaces and gables
+([roof-geometry.md](roof-geometry.md)). Roads are thin strips (carriageways 7 mm, footways 10 mm
 above ground, the plot 4 mm: see "Depth and flicker").
 
 `InterventionBuilder` sets the environment hints `Environment::AERIAL` (the viewer looks down on the
@@ -125,8 +128,9 @@ This is a planning-level estimate, not a simulation. Keep new rules in `GroundCl
 
 ## Plans and state
 
-`App\SpongeCity\Plan\Plan` is an immutable value: id, title, location, configuration `values`
-(`storm`, `site`) and a `status` (`pending` → `ready` | `failed`). `PlanStore` keeps plans in the
+`App\SpongeCity\Plan\Plan` is an entity: id, title, location, configuration `values` (`storm`,
+`site`, changed through `replaceSite()` and `setStorm()`) and a `PlanStatus`, which only the
+`PlanImport` state machine moves (below). `PlanStore` keeps plans in the
 application cache pool (`cache.app`), with no database entities. This is deliberate for the demo:
 the browser and the MCP tools read and write the same plan in separate requests.
 `SiteEditor` is the only code that mutates the site (add, update, remove, clear interventions); it
@@ -134,21 +138,60 @@ always goes through `SiteType::normalize()`.
 
 `PlanAnalyzer` combines `PlanEvaluator` (engine) and `ImpactCalculator` into impact and cost.
 
+### The import as a state machine (`PlanImport`)
+
+A Symfony Workflow state machine, defined in its class (`#[AsWorkflow]`, a `#[Transition]` per
+constant, the places from the `PlanStatus` enum; `symfony console workflow:dump plan_import`):
+
+```
+new ──request──► pending ──start──► importing ──complete──► ready
+                    │                   │                     │
+                    └──────fail─────────┴──► failed           │
+                    ▲                          │              │
+                    └──────── request ◄────────┴──────────────┘
+```
+
+- `PlanImporter::request()` is the one way in (home page, `load_site`, `app:plan:reimport`): a new,
+  ready or failed plan is requested and queued; one that is pending or importing is left alone
+  (`load_site` says so). Pending always means a message is queued.
+- The worker applies `start` (a second worker for the same plan finds it importing and stops),
+  then `complete` with the new site, or `fail`.
+- Both `request` and `start` read the plan again and apply the transition under a per-plan lock
+  (`symfony/lock`, `PlanImport::LOCK_PREFIX`): the cache store has no compare-and-set, so without
+  it two requests could queue a plan twice, or two workers both start it. The lock is released
+  before dispatching, since a sync dispatch (the console) runs the worker in the same process.
+- `PlanImport::store()` (`#[AsEnteredListener]`) saves the plan in every status it enters: the
+  page and the agent poll it. `ImportSurroundings` (`#[AsCompletedListener]` on `complete`)
+  imports the surroundings once the site is in place.
+
+SimStadt runs have their own state machine, `SimulationRun` (`queued → running → done | failed`),
+built the same way. Its worker takes a run up under a lock as well, and ignores a repeated or stale
+message for a run that is no longer queued.
+
 Plans are not persisted beyond the cache. For production, replace `PlanStore` with a database
 backed implementation (the interface is small: `create`, `find`, `get`, `save`).
+
+`PlanStore`, `SimulationStore`, `TerrainStore`, `SurroundingsStore` and `SiteConditionsStore`
+extend `CacheStore` (one kind of object per key in `cache.app`). Controllers take the plan as an
+argument (`Plan $plan`): `PlanValueResolver` looks up the route's `{id}` and answers 404 when
+there is none. The chat binds its message with `#[MapRequestPayload]` to `ChatMessage`
+(validated: not blank, at most 2000 characters).
 
 ## Geodata and the import (async)
 
 1. `HomeController` geocodes the text with `NominatimGeocoder` (synchronous, fast), takes the
-   first hit, creates a `pending` plan and dispatches `ImportSite`. It redirects at once.
-2. `ImportSiteHandler` (Messenger worker) asks `OverpassClient` for the area:
+   first hit, creates a `new` plan and has `PlanImporter` dispatch `ImportSite`. It redirects
+   at once.
+2. `ImportSiteHandler` (Messenger worker) runs every `SiteImportStep` (a tagged interface,
+   `#[AutowireIterator]`, ordered by `#[AsTaggedItem(priority)]`), handing a `SiteImportContext`
+   from one to the next. `FetchOpenStreetMap` asks `OverpassClient` for the area:
    - the ways the point lies in (`is_in` + `pivot`): leisure (playground, pitch, garden, park,
      schoolyard), amenity (school, kindergarten, …), landuse (education, residential). Not
      `around:1`: that measures the distance to a way's *outline*, so a point well inside a school
      yard was never "around" its polygon and every plan fell back to the square;
    - buildings, streets (`highway=*`) and `natural=tree` nodes within the radius (80 m, 30 to 150 m
      via the MCP tool).
-3. `SiteImporter` projects lat/lon to plan millimetres (`LocalProjection`) and builds the site
+3. `BuildSite`: `SiteImporter` projects lat/lon to plan millimetres (`LocalProjection`) and builds the site
    JSON: the **plot** is the most specific polygon containing the point (leisure > amenity >
    landuse, smaller wins), else a 40 m square; buildings (nearest first, at most 80) cut to the
    reach with Sutherland-Hodgman rather than squashed by the clamp; streets as `road` objects cut
@@ -160,34 +203,86 @@ backed implementation (the interface is small: `create`, `find`, `get`, `save`).
    `roof:colour` from the map win. Missing colours are picked from the façade's palette, seeded by
    the building's position, so a re-import looks the same. Heights from `height`, else
    `building:levels` × 3 m, else 9 m.
-5. In Hamburg, `HamburgGeodata` replaces OpenStreetMap's buildings and street trees with the
-   city's own before `SiteImporter` runs (below, "Hamburg's official geodata").
-6. The handler saves the site and its `SiteConditions` and sets the plan `ready` (or `failed`),
-   then imports the **surroundings** (below). A failure there never fails the plan.
+5. Before that, `ApplyOfficialLayers` has `MapLayers` apply every `MapLayer` (a tagged
+   interface) that covers the area: in Hamburg, the city's own buildings and street trees replace
+   OpenStreetMap's (below, "Hamburg's official geodata"). A layer whose service fails is skipped,
+   and that kind of element stays as OpenStreetMap has it.
+6. `ImportTerrain` and `CollectSiteConditions` store the ground and what official data says
+   about it, with the sources of every layer; `GroundSite` puts the objects onto the terrain.
+7. The handler completes the import with the new site (or fails it when a step throws); the
+   **surroundings** (below) follow on `complete`. A failure there never fails the plan.
 
 ### Hamburg's official geodata
 
-Inside Hamburg (a bounding box, `HamburgGeodata::covers`) three layers come from the city's
+Inside Hamburg (a bounding box, `Hamburg::covers`) three layers come from the city's
 OGC API Features (`HamburgApi`, `https://api.hamburg.de/datasets/v1`, GeoJSON or CityJSON per
 bounding box, paged, cached a day per box: `CACHE_VERSION` in the key):
 
 | Layer | Datasets | Becomes |
 |---|---|---|
-| Buildings | ALKIS `alkis_vereinfacht/GebaeudeBauwerk` (footprint, function, storeys) joined with LoD2 `lod2_hamburg/building` (measured height, roof form, eaves) by ALKIS id (LoD2 id + `BL`) | `building` objects of the site and the surroundings |
-| Street trees | Straßenbaumkataster `strassenbaumkataster/strassenbaumkataster_hh` (species, planting year, crown diameter) | `tree` objects with `diameter` (crown) and a label ("Spitz-Ahorn, 1982") |
-| Infiltration | Versickerungspotentialkarte `versickerung/versickerungspotential` | `SiteConditions` (areas with holes, cut to 100 m around the site) |
+| Buildings (`HamburgBuildingLayer`) | ALKIS `alkis_vereinfacht/GebaeudeBauwerk` (footprint, function, storeys) joined with LoD2 `lod2_hamburg/building` (measured height, roof form, eaves) by ALKIS id (LoD2 id + `BL`) | `building` objects of the site and the surroundings |
+| Street trees (`HamburgTreeLayer`, the site only) | Straßenbaumkataster `strassenbaumkataster/strassenbaumkataster_hh` (species, planting year, crown diameter), heights from the 3D Straßenbaumkataster (laser scan) | `tree` objects with `diameter` (crown), measured `height` and a label ("Spitz-Ahorn, 1982") |
+| Infiltration (`HamburgInfiltration`) | Versickerungspotentialkarte `versickerung/versickerungspotential` | `SiteConditions` (areas with holes, cut to 100 m around the site) |
 
 - The Hamburg layers are turned into **Overpass-like elements with OpenStreetMap tags**
   (`building=school`, `height`, `building:levels`, `roof:shape`, `diameter_crown`, …), so
   `SiteImporter`, `SurroundingsImporter` and `BuildingTags` stay unaware of the source.
   ALKIS functions map to `building=*` by keyword (`HamburgBuildings::FUNCTIONS`), the LoD2
   roof codes (ALKIS Dachform) to `roof:shape`; Bauteile and buildings below ground are left out.
+- **Roof levels**: a flat-roofed building whose roof has several levels (a low wing, the main
+  roof, a recessed top storey, a stair core) carries them as `parts` (`SiteObject::PARTS`:
+  `{points, height}` per roof surface, at most 40), drawn as a block each and casting their own
+  shade in the impact calculation. As one block at the measured height (the highest point) a
+  two-storey wing stood as tall as the tower beside it. The cadastre's storeys belong to the
+  largest part (the window rows follow it).
+  - On the site, from **LoD3.0-HH** (`HamburgLod3`, LGV, dl-de/by-2-0): the roofscape modelled by
+    hand from 2020 aerial photos, with recessed storeys and roof structures from 1 m². Five area
+    ZIPs of 1 km CityGML tiles named by the last two digits of the UTM kilometre (`6734.gml`); a
+    tile may be split over two areas. Tiles are 10–60 MB unpacked, so they are **streamed**
+    (`RemoteZip::stream`: range request unbuffered, inflated piece by piece, each building parsed
+    as soon as it is complete, `CityGmlRoofs::streamed`) and only the result per site is cached.
+    Its ids are mostly the cadastre's; where they are not (area 4), buildings are matched by
+    position. The Brecht-Schule: 14 levels (main roof 20.8 m, recessed top storey 23.7–24.5 m,
+    stepped wing 5.5–7.1 m) where LoD2 had 3.
+  - Elsewhere (the surroundings), from LoD2's full-precision CityGML (`HamburgCityGml`).
+  - Pitched roofs keep their gable or hip; parts only for roofs at least 80 % flat.
+- **Pitched roofs** (site only) are fitted to LoD2's roof surfaces (`RoofFit`): a plain gable or
+  hip within 0.4 m (root mean square, at most 1 m anywhere) is drawn parametrically at the
+  model's pitch; anything else (an L or U, half-hips, towers, a mix) as the model's own roof
+  surfaces and its walls above the eaves (`model`). See [roof-geometry.md](roof-geometry.md).
+- **Long outlines** (more than 36 corners) lose their least significant corners first
+  (Visvalingam–Whyatt), not every n-th one, so walls stay where they are.
+- **Storeys**: buildings keep the cadastre's storeys (`storeys`); the façade texture is stretched
+  upwards so each row of windows is one storey (`Facade::textureHeight`, 2.6 to 6 m). From three
+  storeys on, the ground floor is a quarter taller than the rest (3.5 to 5.5 m): the walls are two
+  stacked pieces, each with its own rows (`SiteBuilder::facadeWalls`). Before, every
+  façade had 3 m rows, and a school with 4–5 m floors looked twice as many storeys high.
+- **Looks are a guess**: no dataset records façade material, so it is picked from the use
+  (`BuildingType::facades`; `render` is the newer rendered wall with tall, dark-framed windows).
+  A user who knows better tells the agent, which corrects `facade` and `color` with
+  `update_object` (`get_site` lists building ids). Such a building's `look` becomes `user`, and
+  `app:plan:reimport` gives it back to the building standing in the same place.
+- **Glazed bands**: roof parts under a metre wide that rise above the main roof are wall tops the
+  model draws for a glazed top storey or a glass railing: rendered wall up to the main roof, glass
+  above it.
 - A pitched roof stands on its eaves: the eaves height is the lowest roof point over the lowest
-  ground point of the LoD2 solid. The API quantises LoD2 vertices to whole metres, which is why
+  ground point of the LoD2 solid (on the site from the full-precision CityGML, see `RoofFit`). The API quantises LoD2 vertices to whole metres, which is why
   footprints come from ALKIS, not from LoD2.
 - The register knows **street trees only**: OpenStreetMap trees more than 3 m from a registered
-  one (yards, parks) stay. It has no heights: they are estimated as 1.3 × crown + 2 m. A recorded
-  crown is used by the impact calculation instead of the 28 %-of-height estimate.
+  one (yards, parks) stay. A recorded crown is used by the impact calculation instead of the
+  28 %-of-height estimate.
+- **Tree heights** come from the "3D Straßenbaumkataster Hamburg" (LGV, dl-de/by-2-0, metadata
+  `24513F73-D928-450C-A334-E30037945729`): the highest point of the airborne laser scan (April
+  2022) within the crown above the DGM1 ground, joined by tree number (`Baumnummer`). It is read
+  per site from the layer's 3D Tiles (`Hamburg3dTiles`: the tileset walked down to the leaf tiles
+  touching the site, external tilesets followed, batch tables of i3dm/b3dm/composite tiles read;
+  no geometry decoded). The same data exists as one 487 MB CityGML file, which cannot be read in
+  pieces. Trees the scan could not measure, or all of them when the layer is unavailable, get the
+  estimate 1.3 × crown + 2 m; `height:source` says which. On the Brecht-Schule the estimate was off
+  by up to 6.6 m (old limes 20.8 m measured against 15 m estimated).
+- Not used: "Grünes Hamburg in 3D" (CC0, all other vegetation from the laser scan, no species): its
+  metadata limits it to visualisation and rules out shade, crown areas and counts. "3D Stadtbäume"
+  in the 3D portal has no metadata or licence.
 - **Each layer falls back on its own**: when a service fails, that layer stays as OpenStreetMap
   has it (logged as a warning); outside Hamburg nothing is asked.
 - Every layer used is a `DataSource` (title, publisher, as of, licence, URL, limitations), kept in
@@ -210,7 +305,7 @@ and the deflated bytes of each tile it needs (about 1.7 MB); both are cached for
 `ElevationTile` reads the GeoTIFF itself (one strip, LZW or none, float32, tie point and pixel
 scale; no GDAL). `Utm` projects ETRS89 to UTM 32 (Krüger series; matches PROJ to 0.1 mm).
 
-`HamburgGeodata::terrain()` samples two grids around the origin, each node the mean of the 1 m
+`HamburgTerrain::around()` samples two grids around the origin, each node the mean of the 1 m
 heights in its cell: **2 m out to ±120 m** (the site and the lawn) and **4 m out to ±360 m** (the
 real surroundings), in centimetres relative to the origin's height (`Terrain::reference`, m
 above sea level). Between 300 and 350 m the heights fade to 0, so the generic city beyond stays
@@ -254,10 +349,10 @@ imports them on that first request. The viewer fetches them once in the backgrou
 `symfony console app:plan:reimport <id>` rebuilds a plan's site and surroundings at once (no
 worker), keeping its interventions: useful after importer changes.
 
-The plan page polls (`data-poll`) while pending and shows a clear failed state with a way back.
+The plan page polls (`data-poll`) while pending or importing and shows a clear failed state with a way back.
 
 `OverpassClient` tries several public mirrors in order (`overpass.openstreetmap.fr` first), skips
-a silent one after 12 s, and caches results per place and radius for a day (`CACHE_VERSION` in the
+a silent one after 30 s (under load they take 20 s even for small queries), and caches results per place and radius for a day (`CACHE_VERSION` in the
 key: bump it when a query changes). Public Overpass
 instances are shared and often overloaded, and they reject generic user agents: set
 `OSM_USER_AGENT` to something identifying you (also required by Nominatim's usage policy).
@@ -285,13 +380,81 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | Tool | Does |
 |---|---|
 | `search_place` | Nominatim lookup. |
-| `load_site` | Queues the OSM import for a plan (status `pending`; poll `get_site`). |
+| `load_site` | Queues the OSM import for a plan (status `pending`, then `importing`; poll `get_site`). |
 | `get_site` | Status, plot bounds, objects, existing buildings and trees. |
 | `list_object_types` | Types, fields, ranges, defaults. |
 | `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |
 | `set_design_storm` | Rain depth for the calculation (10 to 120 mm/h). |
 | `calculate_impact` | Metrics with bases, assumptions, warnings, cost. |
+| `simulate_buildings` / `get_building_simulation` | Hamburg only: a SimStadt run (heat demand, heat demand with shadow, PV potential) for the buildings within 100 m, started and polled (see "Building simulations"). |
 | `get_site_conditions` | Hamburg only: terrain of the plot (elevation, slope, where water runs and collects), infiltration potential as shares of the plot with their meaning, and the sources (publisher, date, licence, limitations) of the site's official layers. |
+| `propose_placements` / `place_candidate` | Where an intervention works, worked out by the server (rain gardens so far, see "Placing interventions"): candidates with metrics and reasons, then one placed by its id. |
+
+`add_objects` and `update_object` leave out any intervention that covers a building (more than
+0.5 m², `BuildingClearance`) or a tree planted inside one, and return it under `conflicts`;
+`get_site` gives the outline of every building on or touching the plot.
+
+### Placing interventions (`App\SpongeCity\Placement`)
+
+An LLM decides well *what* goes *where* ("a rain garden at the bottom of the yard") and badly
+which corners keep it off a wall. So the agent asks for candidates and chooses; the server does
+the geometry and applies the planning rules:
+
+- `OpenGround`: the plot on a 1 m grid, each cell with what rules it out (outside, plot edge,
+  building, path, tree root zone = crown + 1.5 m after DIN 18920, planned intervention) and its
+  distance to the nearest wall.
+- `RunoffModel`: D8 steepest descent on the DGM1 fine grid (2 m) inside the plot, around buildings;
+  planned rain gardens keep what reaches them. A node's accumulation is the sealed area upstream;
+  `catchmentOfNodes()` scores any shape by what really drains into it.
+- `InterventionSiting` (tagged, indexed by type, behind a `ServiceLocator` in `Placements`): one
+  per type. `RainGardenSiting` walks the flow paths from the largest, skips water a garden already
+  catches, and grows a basin from the path's cell the way water fills the ground: lowest cells
+  first, a little pull towards the seed so it stays compact (on a slope it spreads along the
+  contour, across the flow, like a swale). It only takes allowed cells, so it bends around root
+  zones and paths. `CellOutline` traces the cells, straightens the staircase and rounds it
+  (Chaikin) into a soft edge of at most 40 corners; where the rounded edge strays onto ruled-out
+  ground, the cells beside it are given up and it is traced again, and it is topped up when it
+  came out smaller than wanted. Sized to ~12 % of its catchment (8 to 150 m²). Clearance from buildings: 6 m
+  where the Versickerungspotentialkarte says infiltration is possible or likely (DWA-A 138, cellars
+  unknown), 2 m for a lined garden elsewhere. No terrain, no candidate.
+- `Candidate` carries the object to add, metrics (area, catchment, storage, inflow and retained
+  water in the design storm, infiltration, lined, wall distance) and reasons; `Proposal` adds what
+  ruled out the plot's ground. `ProposalStore` keeps the latest per plan and type; `place_candidate`
+  checks the candidate against the plan as it is by then (`stillFits`) and adds it via `SiteEditor`.
+- The candidates are shaped so a solver can pick among them later (each has its effect and cost
+  drivers); today the agent picks.
+
+**Zones and permeable surfaces.** Paving is not dropped on a yard as a patch: a hard surface becomes
+another, zone by zone, the way landscape architects plan it.
+
+- `area` site objects are the plot's ground areas with a `use` (`yard`, `parking`, `access` = fire
+  lane and deliveries, `sport`, `play`, `quiet`, `green`) and a `surface`. The import takes them from
+  OpenStreetMap inside the plot (`AreaTags`: parking, pitches, playgrounds, service and pedestrian
+  areas, grass; a highway area is no longer imported as a street along its outline). A person says
+  what a zone is used for and what its ground is today on the plot map (or the agent,
+  `describe_zone`): that is an area with `look: user`,
+  carried over a re-import. The impact calculation counts an area's surface (a lawn is no asphalt
+  today); the 3D view draws areas whose surface differs from the plot's.
+- `SurfaceZones` reads the plot as zones: the areas first (the user's over the map's), then each
+  coherent piece of open ground between buildings and paths, taken as a yard of **unknown** ground
+  (`source: assumed`, `surface: unknown`): the plot's surface is a default, not a fact, and such
+  ground is as likely a lawn or a garden as asphalt. Unknown ground is never paved; the proposal says
+  so and the agent asks.
+  A 1 m drip strip along every wall belongs to no zone; ground under trees and planned
+  interventions does. `CellOutline` draws zones and paving with straight lines (rounded only for
+  basins) and cuts a slit to an enclosed building, so every outline is one polygon.
+- `PermeableSiting`: the use decides the material (yard: permeable pavers, car park: grass pavers,
+  quiet area: water-bound gravel) or that it stays (access lanes stay passable, DIN 14090; sports and
+  play surfaces are their own; green is open already). Per zone its alternatives side by side: a
+  band along the façade (6 m, the middle of a yard stays open for play), the trees' root zones
+  (gravel, no deep excavation), the whole zone. Each with the runoff it removes in the design storm,
+  its slope (above 5 % the base needs terraces), infiltration (limited: drained base) and whether its
+  water fed a planned rain garden. What is kept and why is in `excluded_share_of_plot`.
+- The plot map shows the zones under the interventions (dashed when assumed); a click selects one
+  (the `zone` live prop) and a row of uses under the map sets it (`PlanWorkspace::setZoneUse`).
+
+`symfony console app:plan:propose <plan> [--type=permeable] [--area=60] [--near=x,z] [--place=raingarden-1]`
+shows what the agent gets on a real plan.
 
 Tools are stateless: the plan id is part of every call (`PlanAssistant` prefixes each user message
 with `plan_id: …`). The system prompt tells the agent to look first, design with tools, measure
@@ -300,10 +463,82 @@ before it claims anything, and never state a number that did not come from a too
 Because the app calls its own `/mcp` over HTTP while handling a request, the web server needs more
 than one worker (the Symfony CLI server has several).
 
+
+**Why it is there (`App\SpongeCity\Rationale`).** `place_candidate` takes the agent's `why` (one or
+two sentences for the user) and keeps a `Rationale` for the new object in `RationaleStore`: the
+words, the candidate's reasons, warnings and numbers, and the candidates it was chosen over
+(`Alternative`: a zone's other shapes for paving, the proposal's other candidates otherwise).
+`add_objects` keeps a `why` given per object. The 3D view floats a badge over every object that has
+one (`rationale_markers.js`, `PlanWorkspace::markers`): a small dot, so many close together do not
+cover the yard, and the full badge for the object pointed at or selected. A click on it selects the object, whose
+details show the reasons and the alternatives. Hovering an alternative previews it in amber,
+"use this instead" swaps it in (`Rationale::swappedFor`: whose choice it is now, the one before
+among the alternatives), and the agent's choice can be taken back the same way.
+## Building simulations (SimStadt)
+
+[SimStadt 2](https://simstadt.hft-stuttgart.de/) (HFT Stuttgart, MIT licence) simulates the
+energy of buildings from CityGML: heat demand after DIN V 18599, PV potential of roof surfaces,
+shading. It covers the buildings, not the open ground, so it complements the impact calculation
+rather than replacing it. Its tools are part of this application's MCP server
+(`App\Mcp\SimStadtTools`, Symfony MCP bundle), next to `SpongeCityTools`.
+
+```
+simulate_buildings ─► Simulation (queued) + RunSimulation ─► Messenger transport "simstadt"
+                                                                  │ worker
+                     HamburgCityGml: LoD2 tiles (RemoteZip) ─► CityGML of the site's buildings
+                     SimStadtTemplates → the workflow's SimStadtTemplate
+                     SimStadtRunner: docker run simstadt/simstadt:cli simstadt <Template> …
+                     SimStadtResults: summary + one row per building (plan x/z)
+get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflow)
+```
+
+- **Workflows and templates**: `SimStadtWorkflow` names what the agent can run (and describes it
+  to the agent); what SimStadt needs for it is a `SimStadtTemplate` service (`Template\HeatDemand`,
+  `HeatDemandWithShadow`, `PvPotential`): the template's name, the result columns, whether rows
+  are roof surfaces, the sort key. They are tagged with the workflow's value as their index, and
+  `SimStadtTemplates` finds one through a service locator (`#[AutowireLocator]`). A new workflow
+  is an enum case and one template class.
+- **State**: `SimulationRun` is a state machine like `PlanImport` (`queued → running → done |
+  failed`); it stores the run in every status it enters, so the agent can poll it.
+
+- **SimStadt runs in its own Docker image** (`SIMSTADT_IMAGE`, default `simstadt/simstadt:cli`:
+  Java, INSEL and simstadtpy). Nothing is installed on the host: INSEL has `/usr/local/insel`
+  compiled in, so a native install would need admin rights. The image is amd64 only
+  (`SIMSTADT_PLATFORM=linux/amd64`, emulated on Apple Silicon). **Docker must be available to the
+  worker**; `.symfony.local.yaml` starts a second worker for the `simstadt` transport, so a run of
+  a minute never holds up a site import.
+- **Input**: `HamburgCityGml` cuts the buildings whose first vertex lies within the site's reach
+  (100 m) out of Hamburg's LoD2 model (CityGML 1.0, AdV profile, 1 km tiles in a 660 MB ZIP read by
+  range requests through `RemoteZip`, shared with the terrain). It adds the envelope with its
+  reference system (SimStadt locates the model and fetches its weather by it) and a
+  **construction year**, which Hamburg's model lacks and without which SimStadt drops a building.
+  The year (default 1970, the agent may pass another) decides the U-values: every result lists it
+  among its assumptions.
+- **Runs**: `var/simstadt` is mounted as `/data` and is SimStadt's repository. Each run uses its
+  own file names there and removes them afterwards; the repository's `.cache` (PVGIS weather,
+  irradiance, shadows) stays, so only the first run downloads. A run that fails on the PVGIS
+  download (which drops connections now and then) is tried once more. Timeout
+  `SIMSTADT_TIMEOUT_SECONDS` (900).
+- **Results** (`SimStadtResults`): simstadtpy's printed totals as they are, and the saved table
+  condensed to one row per building (PV: the roof surfaces added up), with the position in plan
+  millimetres, largest first, at most 40.
+- Measured on the Brecht-Schule (21 buildings, M4, emulated amd64): heat demand 28 s, PV 5 s,
+  heat demand with shadow about 75 s.
+- Not used yet: GreenWater (needs trees in the CityGML: the tree register could provide them),
+  refurbishment scenarios, load profiles. SimStadt has no cooling demand.
+
 ## Chat and the live UI
 
-- `POST /plan/{id}/chat` (`ChatController`) → `PlanAssistant::ask()`. The conversation is kept in
-  the session per plan (last 20 turns) so user and agent refine the design together. One turn is
+- `POST /plan/{id}/chat` (`ChatController`) → `PlanAssistant::ask()`. The conversation is kept with
+  the plan (`ConversationStore`, last 20 turns), so it is there again after a reload or in another
+  browser, and user and agent refine the design together. Every message carries the plan id and
+  the interface's language (`PlanAssistant::MESSAGE_FORMAT`): the agent answers in the user's
+  language but writes the reasons the interface shows in the interface's.
+- Numbers are written as the interface's language writes them (`twig.number_format` in
+  `config/packages/twig.yaml`; JavaScript formats by the page's `lang`).
+- The home page lists the plans opened in this browser (`recent_plans_controller.js`, in
+  localStorage under `HomeController::RECENT_PLANS_STORAGE_KEY`): there are no accounts, a plan is
+  reached by its link. One turn is
   several model calls with tools in between (40 to 60 s when the agent places interventions), so
   the action raises PHP's time limit to 180 s.
 - `PlanWorkspace` (Live Component) renders the 3D view, the impact cards, the storm slider, the
@@ -314,6 +549,20 @@ than one worker (the Symfony CLI server has several).
   event, so the user watches the design appear. The chat region is `data-live-ignore`.
 - The 3D canvas is `data-live-ignore`; a re-render only changes the `scene` value, and the
   `configurator_viewer_controller.js` updates the scene without moving the camera.
+- **Windows**: the view fills the screen; the agent's chat, the mini map, object details, the
+  measured effect and the measures with their costs are windows over it
+  (`<twig:Plan:Window>`, `templates/components/Plan/Window.html.twig`: a Toolkit Card),
+  opened from a dock. `window_manager_controller.js` drags them by their title bar (or moves them
+  with the arrow keys on the grip), resizes them by their corner handle (dragged or arrow keys;
+  a double click gives a window its own size back), minimises, closes and stacks them (a window
+  opened below others that would have less than `MIN_ROOM` above the dock opens over them at the
+  top instead, a step down for each one on its side), keeps them inside the view
+  with their content scrolling, and remembers places and open windows in the browser
+  (`PlanWorkspace::WINDOWS_STORAGE_KEY`, sizes too). Inside the Card's content `id` names the Card's
+  own (`window-…`), so `Plan:Window` keeps the window's in `window_id`. The live re-render rewrites the windows' markup, so the
+  manager applies its layout again on `render:finished`. Object details opens by itself when
+  its `data-window-auto` (the selected intervention, equipment or zone) changes. Below 1024 px the
+  windows stack under the view and the dock switches between them like tabs.
 
 ## The 3D view
 
@@ -341,6 +590,28 @@ becomes a city:
   button is pressed; the button appears only when there is something to show. Its colours are
   saturated on purpose: at the higher tiers the composer's OutputPass tone-maps the whole frame.
   In debug mode `configuratorShowConditions(true)` turns it on (`bin/render-loop --eval`).
+- **Selecting and the context menu**: a click on the view (a press that does not orbit the camera)
+  and a right-click (or the context menu key) ask `SceneRenderer::pointAt` for the point under the
+  pointer (the nearest drawn surface, else the terrain; a model that was hit, by where it stands)
+  and announce it as `configurator:select` and `configurator:context`.
+  `plan_context_menu_controller.js` finds the object there among the plan's (`PlanObjects`: outlines
+  in plan millimetres, the one on top wins, a point above the ground picks walls, crowns and sails;
+  a tree by its model's trunk). A click selects it (highlighted by `SelectionHighlight`, its facts
+  and what may be changed in the object details window); the menu offers delete (confirmed by a
+  second click) and "add here". Adding goes through `Placement\AddHere`, by the agent's rules: a
+  rain garden where the water near the point gathers, paving as the clicked zone's use allows, a
+  tree only on free ground; where nothing fits the notice over the view says why.
+- **Measures list**: each measure is named (numbered where several share a name) and sized; a click
+  selects it as a click in the view would (`PlanWorkspace::ACTION_SELECT_OBJECT`). "Remove all" asks
+  first (a Toolkit AlertDialog). An object's details list only facts that cannot be changed below;
+  "Deselect" clears the selection, the window's own ✕ closes the window.
+- **Hover and long press**: the mouse over the view is looked up once per frame
+  (`configurator:hover`, same detail); the context menu answers with the object there
+  (`plan-context-menu:hovered`), which the view marks faintly (a second `SelectionHighlight`: thinner
+  line, lighter tint, no x-ray; not for the selected object) and names in a tooltip (a badge's title
+  over its object). On touch, a finger held still for `LONG_PRESS_MS` opens the context menu;
+  moving, a second finger or `pointercancel` cancel it, and Android's own `contextmenu` for the same
+  press is not a second menu.
 - **Models**: `garden_trees.glb` was simplified to ~40 000 triangles (see
   `assets/configurator/models/README.md`); up to 30 OSM trees are drawn three times per frame
   (view, shadow map, ambient occlusion).
@@ -389,7 +660,16 @@ and writes screenshots and a report (errors, meshes, frame times, flicker) to
 - Translations in `translations/spongecity.<locale>.yaml` (domain `spongecity`); inside `<twig:…>`
   bodies pass the domain to `|trans`.
 - Run Composer and the console through the Symfony CLI (`symfony composer …`, `symfony console …`).
-- UI: Tailwind v4 with shadcn token names, the UX Toolkit components in `templates/components/`.
+- UI: Tailwind v4 with shadcn token names, the UX Toolkit components in `templates/components/`
+  (`ux:install <recipe> --kit=shadcn`). The workspace is built from them: Card (windows, panels),
+  ToggleGroup (a zone's use and surface, an object's options, the mood), Toggle (dock, overlay),
+  Slider (the storm, bound to its LiveProp by `slider_model_controller.js`), Bubble (chat), Item
+  and Table (measures, costs), Alert, Badge, Collapsible, Empty, InputGroup, and DropdownMenu
+  templates that `plan_context_menu_controller.js` copies for its menu. Inside a nested
+  component's content `this` is that component, so the workspace template reads its own values
+  through `workspace`. A Toggle that another controller presses (dock, mood, overlay, placing
+  equipment) is pressed through `assets/configurator/press.js`: the Toggle's controller would
+  otherwise reset aria-pressed when it connects.
   Build CSS with `symfony console tailwind:build`.
 
 ## Running it
@@ -399,7 +679,8 @@ symfony composer install
 symfony console importmap:install
 symfony console tailwind:build
 # .env.local: ANTHROPIC_API_KEY=…  OSM_USER_AGENT="YourApp contact@example.com"
-symfony server:start --no-tls      # also starts the Messenger worker
+symfony server:start --no-tls      # also starts the Messenger workers (import, SimStadt)
+docker pull simstadt/simstadt:cli  # building simulations (about 1.3 GB)
 symfony console app:plan:demo      # offline demo plan (synthetic sealed schoolyard)
 symfony console app:plan:reimport <id>   # re-import site and surroundings, keeping interventions
 bin/render-loop <id> --perf --dpr=2      # renders and frame times (installs puppeteer-core on first run)
@@ -408,7 +689,7 @@ symfony php vendor/bin/phpunit
 
 ## Known limitations and next steps
 
-- Plans live in the cache pool; sessions hold the chat history. Not for production as is.
+- Plans, their conversations and rationales live in the cache pool. Not for production as is.
 - The plot's ground is assumed to be asphalt. Reading `surface` tags from OSM would fix parks;
   in Hamburg the Bodenversiegelung dataset would, once its service is back.
 - LoD2 roofs are drawn as simple flat, gable or hip roofs over the footprint, not the model's own
@@ -420,6 +701,8 @@ symfony php vendor/bin/phpunit
 - Outside Hamburg the ground is flat (no terrain source).
 - The terrain model is bare earth: ramps, stairwells and light wells appear as hollows; kerbs,
   gutters and drains are below its resolution.
+- SimStadt results rest on an assumed construction year for every building. A better source
+  (e.g. the heat-planning dataset's building-age classes, per block) would sharpen heat demand.
 - The geocoder takes the first hit; a pick-list for ambiguous names would help.
 - Public Overpass/Nominatim instances are rate limited; self-host Overpass for reliability.
 - The chat shows the final answer only; streaming the agent's tool steps (Symfony AI

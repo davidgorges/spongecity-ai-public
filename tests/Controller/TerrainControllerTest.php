@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace App\Tests\Controller;
 
 use App\Controller\Plan\TerrainController;
-use App\SpongeCity\Geo\Hamburg\HamburgGeodata;
+use App\SpongeCity\Geo\Hamburg\HamburgTerrain;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
 use App\SpongeCity\Terrain\Terrain;
@@ -25,7 +25,7 @@ final class TerrainControllerTest extends WebTestCase
         $plan = $container->get(PlanStore::class)->create('Test', 53.5513, 10.0188);
         // a level 2 m above the origin everywhere
         $grid = new TerrainGrid(-10.0, -10.0, 10.0, 3, 3, array_fill(0, 9, 200));
-        $container->get(TerrainStore::class)->save($plan->id, new Terrain(5.0, $grid, $grid, HamburgGeodata::terrainSource()));
+        $container->get(TerrainStore::class)->save($plan->id, new Terrain(5.0, $grid, $grid, HamburgTerrain::source()));
 
         $client->request('GET', $container->get('router')->generate(TerrainController::ROUTE, ['id' => $plan->id]));
 

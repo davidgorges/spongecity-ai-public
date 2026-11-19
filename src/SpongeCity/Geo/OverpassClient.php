@@ -23,12 +23,15 @@ final readonly class OverpassClient
         'https://overpass.kumi.systems/api/interpreter',
     ];
     private const int QUERY_TIMEOUT_SECONDS = 25;
-    /** a mirror that does not start answering within this is skipped */
-    private const int REQUEST_TIMEOUT_SECONDS = 12;
+    /**
+     * a mirror that does not start answering within this is skipped. Generous: under load the public
+     * mirrors take 20 s even for small queries, and the import runs in a worker, so waiting costs nothing
+     */
+    private const int REQUEST_TIMEOUT_SECONDS = 30;
 
     private const int CACHE_SECONDS = 86400;
     /** bump when the query changes, so answers to the old query are not reused */
-    private const int CACHE_VERSION = 3;
+    private const int CACHE_VERSION = 5;
     private const int COORDINATE_DECIMALS = 4;
     /** the streets and paths imported (highway=*) */
     private const string HIGHWAYS = 'primary|secondary|tertiary|unclassified|residential|living_street|service|pedestrian|footway|path|cycleway';
@@ -97,6 +100,14 @@ final readonly class OverpassClient
             .'way(around:%4$d,%2$F,%3$F)["building"];'
             .'way(around:%4$d,%2$F,%3$F)["highway"~"^(%5$s)$"];'
             .'node(around:%4$d,%2$F,%3$F)["natural"="tree"];'
+            // play equipment (a swing, a slide…): its fall zone keeps every intervention off
+            .'node(around:%4$d,%2$F,%3$F)["playground"];'
+            // the ground areas on the plot: what they are used for decides what they may become
+            .'way(around:%4$d,%2$F,%3$F)["amenity"~"^(parking|bicycle_parking)$"];'
+            .'way(around:%4$d,%2$F,%3$F)["leisure"~"^(pitch|playground|track|garden)$"];'
+            .'way(around:%4$d,%2$F,%3$F)["area:highway"];'
+            .'way(around:%4$d,%2$F,%3$F)["landuse"~"^(grass|flowerbed|village_green)$"];'
+            .'way(around:%4$d,%2$F,%3$F)["natural"~"^(scrub|grassland|heath)$"];'
             .');out geom;',
             self::QUERY_TIMEOUT_SECONDS,
             $centre->latitude,
