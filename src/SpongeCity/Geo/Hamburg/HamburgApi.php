@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\SpongeCity\Geo\Hamburg;
 
 use App\SpongeCity\Geo\GeoBox;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -37,8 +36,6 @@ final readonly class HamburgApi
     public function __construct(
         private HttpClientInterface $httpClient,
         private CacheInterface $cache,
-        #[Autowire(env: 'OSM_USER_AGENT')]
-        private string $userAgent,
     ) {
     }
 
@@ -47,7 +44,7 @@ final readonly class HamburgApi
      */
     public function features(string $dataset, string $collection, GeoBox $box): array
     {
-        /** @var list<array<string, mixed>> */
+        /* @var list<array<string, mixed>> */
         return $this->cached($dataset, $collection, $box, self::FORMAT_JSON, static function (array $page): array {
             return array_values(array_filter(is_array($page['features'] ?? null) ? $page['features'] : [], 'is_array'));
         });
@@ -62,10 +59,9 @@ final readonly class HamburgApi
      */
     public function each(string $dataset, string $collection, GeoBox $box, callable $consume): void
     {
-        for ($offset = 0; ; $offset += self::SINGLE_PAGE) {
+        for ($offset = 0;; $offset += self::SINGLE_PAGE) {
             $page = $this->httpClient->request('GET', sprintf('%s/%s/collections/%s/items', self::BASE_URL, $dataset, $collection), [
                 'query' => ['f' => self::FORMAT_JSON, 'bbox' => $box->toBbox(), 'limit' => self::SINGLE_PAGE, 'offset' => $offset],
-                'headers' => ['User-Agent' => $this->userAgent],
                 'timeout' => self::REQUEST_TIMEOUT_SECONDS,
                 'max_duration' => self::MAX_DURATION_SECONDS,
             ])->toArray();
@@ -157,7 +153,6 @@ final readonly class HamburgApi
             for ($page = 0; $page < self::MAX_PAGES; ++$page) {
                 $data = $this->httpClient->request('GET', sprintf('%s/%s/collections/%s/items', self::BASE_URL, $dataset, $collection), [
                     'query' => ['f' => $format, 'bbox' => $box->toBbox(), 'limit' => self::PAGE_SIZE, 'offset' => $page * self::PAGE_SIZE],
-                    'headers' => ['User-Agent' => $this->userAgent],
                     'timeout' => self::REQUEST_TIMEOUT_SECONDS,
                     'max_duration' => self::MAX_DURATION_SECONDS,
                 ])->toArray();

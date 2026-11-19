@@ -81,7 +81,7 @@ final class TerrainTest extends TestCase
             return new MockResponse(substr($bytes, (int) $m[1], (int) $m[2] - (int) $m[1] + 1), ['http_code' => 206]);
         });
 
-        $tiles = (new HamburgElevation($client, new ArrayAdapter(), 'test'))->tiles(567100, 5934100, 567900, 5934900);
+        $tiles = (new HamburgElevation($client, new ArrayAdapter()))->tiles(567100, 5934100, 567900, 5934900);
 
         self::assertSame(['567_5934'], array_keys($tiles));
         self::assertEqualsWithDelta(1.0, $tiles['567_5934']->heightAt(567000.5, 5934999.5), 1e-6);

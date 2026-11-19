@@ -14,10 +14,10 @@ use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanObjects;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
+use App\SpongeCity\PlanEvaluator;
 use App\SpongeCity\Rationale\Alternative;
 use App\SpongeCity\Rationale\Rationale;
 use App\SpongeCity\Rationale\RationaleStore;
-use App\SpongeCity\PlanEvaluator;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
@@ -25,13 +25,13 @@ use Core\Configurator\Scene\SceneSerializer;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
+use Symfony\Contracts\Translation\TranslatorInterface;
 use Symfony\UX\LiveComponent\Attribute\AsLiveComponent;
 use Symfony\UX\LiveComponent\Attribute\LiveAction;
 use Symfony\UX\LiveComponent\Attribute\LiveArg;
 use Symfony\UX\LiveComponent\Attribute\LiveProp;
 use Symfony\UX\LiveComponent\Attribute\PreReRender;
 use Symfony\UX\LiveComponent\DefaultActionTrait;
-use Symfony\Contracts\Translation\TranslatorInterface;
 
 /**
  * The planning workspace: the 3D scene of the plan, its measurable balance and the
@@ -90,7 +90,6 @@ final class PlanWorkspace
     public const int MARKER_ABOVE = 1500;
     public const string NOTICE_TEXT = 'text';
     public const string NOTICE_OK = 'ok';
-    private const string DOMAIN = 'spongecity';
     private const int MILLIMETRES_PER_METRE = 1000;
     private const int SQUARE_MILLIMETRES_PER_SQUARE_METRE = 1_000_000;
     private const string NOTICE_PREFIX = 'plan.add.';
@@ -155,11 +154,42 @@ final class PlanWorkspace
         return $this->plans->get($this->planId);
     }
 
+    private function site(): Site
+    {
+        return Site::fromJson($this->plan()->siteJson());
+    }
+
+    /** the site with an id on every object (a site as the import wrote it has none yet) */
+    private function normalizedSite(): Site
+    {
+        return Site::fromJson((new SiteType())->normalize($this->plan()->siteJson()));
+    }
+
+    /**
+     * @return array<string, mixed>|null
+     */
+    private function objectById(string $id, ?string $type = null): ?array
+    {
+        $objects = null === $type ? $this->site()->objects : $this->site()->ofType($type);
+
+        return array_find($objects, static fn (array $object): bool => $object[O::ID] === $id);
+    }
+
+    /**
+     * One panel is open at a time: the selected object, zone or equipment ($panel, a prop name);
+     * opening one closes the others.
+     */
+    private function open(string $panel, ?string $id): void
+    {
+        [$this->selected, $this->zone, $this->equipment] = [null, null, null];
+        $this->{$panel} = $id;
+    }
+
     /** the user moved the slider */
     public function onStormUpdated(): void
     {
         $plan = $this->plan();
-        $plan->setStorm(max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $this->storm)));
+        $plan->setStorm($this->storm);
         $this->plans->save($plan);
     }
 
@@ -205,14 +235,14 @@ final class PlanWorkspace
     public function interventions(): array
     {
         $rows = [];
-        foreach (Site::fromJson($this->plan()->siteJson())->objects as $object) {
+        foreach ($this->site()->objects as $object) {
             if (in_array($object[O::TYPE], O::INTERVENTIONS, true)) {
-                $label = is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : null;
+                $label = Site::label($object);
                 $rows[] = [
                     'id' => (string) $object[O::ID],
                     'type' => (string) $object[O::TYPE],
                     'label' => $label,
-                    'name' => $label ?? $this->translator->trans('plan.measures.type.'.$object[O::TYPE], [], self::DOMAIN),
+                    'name' => $label ?? $this->translator->trans('plan.measures.type.'.$object[O::TYPE]),
                     'size' => $this->sizeOf($object),
                 ];
             }
@@ -222,7 +252,7 @@ final class PlanWorkspace
         foreach ($rows as $i => $row) {
             if (isset($shared[$row['name']])) {
                 $seen[$row['name']] = ($seen[$row['name']] ?? 0) + 1;
-                $rows[$i]['name'] = $this->translator->trans('plan.measures.numbered', ['%name%' => $row['name'], '%number%' => $seen[$row['name']]], self::DOMAIN);
+                $rows[$i]['name'] = $this->translator->trans('plan.measures.numbered', ['%name%' => $row['name'], '%number%' => $seen[$row['name']]]);
             }
         }
 
@@ -235,10 +265,10 @@ final class PlanWorkspace
     private function sizeOf(array $object): string
     {
         if (O::NEWTREE === $object[O::TYPE]) {
-            return $this->translator->trans('plan.measures.size.height', ['%height%' => round((float) ($object[O::HEIGHT] ?? 0) / self::MILLIMETRES_PER_METRE, 1)], self::DOMAIN);
+            return $this->translator->trans('plan.measures.size.height', ['%height%' => round((float) ($object[O::HEIGHT] ?? 0) / self::MILLIMETRES_PER_METRE, 1)]);
         }
 
-        return $this->translator->trans('plan.measures.size.area', ['%area%' => (int) round(Polygon::area(Site::points($object)) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE)], self::DOMAIN);
+        return $this->translator->trans('plan.measures.size.area', ['%area%' => (int) round(Polygon::area(Site::points($object)) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE)]);
     }
 
     /**
@@ -282,11 +312,8 @@ final class PlanWorkspace
     {
         $this->editor->remove($this->planId, $id);
         $this->rationales->forget($this->planId, $id);
-        foreach (['selected', 'equipment'] as $prop) {
-            if ($this->{$prop} === $id) {
-                $this->{$prop} = null;
-            }
-        }
+        $this->selected = $this->selected === $id ? null : $this->selected;
+        $this->equipment = $this->equipment === $id ? null : $this->equipment;
         $this->zones = null;
     }
 
@@ -297,8 +324,7 @@ final class PlanWorkspace
      */
     public function pickables(): array
     {
-        // normalised: a site as the import wrote it has no ids yet
-        return $this->objects->of(Site::fromJson((new SiteType())->normalize($this->plan()->siteJson())), $this->zones());
+        return $this->objects->of($this->normalizedSite(), $this->zones());
     }
 
     /**
@@ -313,27 +339,26 @@ final class PlanWorkspace
         }
         $result = $this->addHere->add($this->plan(), $type, $x, $z);
         $this->zones = null;
-        [$this->zone, $this->equipment, $this->selected] = [null, null, null];
         $id = $result['id'] ?? null;
         $added = str_starts_with($result['outcome'], AddHere::ADDED);
         // what was added opens for editing; a zone that keeps its surface opens to say what it is
         match (true) {
-            $added && O::EQUIPMENT === $type => $this->equipment = $id,
-            $added => $this->selected = $id,
-            in_array($result['outcome'], [AddHere::ZONE_KEPT, AddHere::ZONE_UNKNOWN], true) => $this->zone = $id,
-            default => null,
+            $added && O::EQUIPMENT === $type => $this->open(self::PROP_EQUIPMENT, $id),
+            $added => $this->open(self::PROP_SELECTED, $id),
+            in_array($result['outcome'], [AddHere::ZONE_KEPT, AddHere::ZONE_UNKNOWN], true) => $this->open(self::PROP_ZONE, $id),
+            default => $this->open(self::PROP_SELECTED, null),
         };
         $params = $result['params'];
         if (isset($params['%kind%'])) {
-            $params['%kind%'] = $this->translator->trans('plan.object.kind.'.$params['%kind%'], [], self::DOMAIN);
+            $params['%kind%'] = $this->translator->trans('plan.object.kind.'.$params['%kind%']);
         }
         if (isset($params['%use%'])) {
-            $params['%use%'] = $this->translator->trans('plan.zones.use.'.$params['%use%'], [], self::DOMAIN);
+            $params['%use%'] = $this->translator->trans('plan.zones.use.'.$params['%use%']);
         }
         // a rain garden right where the person pointed needs no "… m from where you clicked"
         $here = (AddHere::ADDED.'.'.O::RAINGARDEN) === $result['outcome'] && 0 === ($params['%distance%'] ?? null);
         $key = $here ? $result['outcome'].'_here' : $result['outcome'];
-        $this->notice = [self::NOTICE_TEXT => $this->translator->trans(self::NOTICE_PREFIX.$key, $params, self::DOMAIN), self::NOTICE_OK => $added];
+        $this->notice = [self::NOTICE_TEXT => $this->translator->trans(self::NOTICE_PREFIX.$key, $params), self::NOTICE_OK => $added];
     }
 
     #[LiveAction]
@@ -346,7 +371,7 @@ final class PlanWorkspace
     public function onObjectSelected(): void
     {
         if (null !== $this->selected) {
-            [$this->zone, $this->equipment] = [null, null];
+            $this->open(self::PROP_SELECTED, $this->selected);
         }
     }
 
@@ -358,39 +383,31 @@ final class PlanWorkspace
      */
     public function selectedObject(): ?array
     {
-        if (null === $this->selected) {
+        $id = $this->selected;
+        $object = null === $id ? null : array_find($this->normalizedSite()->objects, static fn (array $object): bool => $object[O::ID] === $id);
+        if (null === $object) {
             return null;
         }
-        // normalised: a site as the import wrote it has no ids yet
-        $site = Site::fromJson((new SiteType())->normalize($this->plan()->siteJson()));
-        foreach ($site->objects as $object) {
-            if ($object[O::ID] !== $this->selected) {
-                continue;
-            }
-            $id = $this->selected;
-            // what PlanObjects knows (interventions, trees, buildings); zones and equipment have panels of their own
-            $row = array_values(array_filter($this->objects->of(new Site([$object]), []), static fn (array $r): bool => $r['id'] === $id))[0] ?? null;
-            if (null === $row || O::EQUIPMENT === $row['type']) {
-                return null;
-            }
-            $fields = [];
-            foreach (self::EDITABLE[$object[O::TYPE]] ?? [] as $field => $options) {
-                $fields[$field] = ['value' => $object[$field] ?? null, 'options' => $options];
-            }
-
-            return [
-                'id' => $row['id'],
-                'type' => $row['type'],
-                'name' => $row['name'],
-                // a fact that may be changed shows as the choice made below, not twice
-                'facts' => array_values(array_filter($row['facts'], static fn (array $fact): bool => !isset($fields[$fact[2] ?? '']))),
-                'fields' => $fields,
-                'removable' => in_array(PlanObjects::CAN_DELETE, $row['can'], true),
-                'rationale' => $this->rationale($row['id']),
-            ];
+        // what PlanObjects knows (interventions, trees, buildings); zones and equipment have panels of their own
+        $row = array_find($this->objects->of(new Site([$object]), []), static fn (array $row): bool => $row['id'] === $id);
+        if (null === $row || O::EQUIPMENT === $row['type']) {
+            return null;
+        }
+        $fields = [];
+        foreach (self::EDITABLE[$object[O::TYPE]] ?? [] as $field => $options) {
+            $fields[$field] = ['value' => $object[$field] ?? null, 'options' => $options];
         }
 
-        return null;
+        return [
+            'id' => $row['id'],
+            'type' => $row['type'],
+            'name' => $row['name'],
+            // a fact that may be changed shows as the choice made below, not twice
+            'facts' => array_values(array_filter($row['facts'], static fn (array $fact): bool => !isset($fields[$fact[2] ?? '']))),
+            'fields' => $fields,
+            'removable' => in_array(PlanObjects::CAN_DELETE, $row['can'], true),
+            'rationale' => $this->rationale($row['id']),
+        ];
     }
 
     /**
@@ -417,7 +434,7 @@ final class PlanWorkspace
                 'z' => round($z),
                 'lift' => (float) ($object['top'] ?? 0) + self::MARKER_ABOVE,
                 'by' => $rationale->by,
-                'title' => $this->translator->trans('plan.rationale.badge', ['%name%' => $object['name']], self::DOMAIN),
+                'title' => $this->translator->trans('plan.rationale.badge', ['%name%' => $object['name']]),
             ];
         }
 
@@ -460,11 +477,11 @@ final class PlanWorkspace
             '%catchment%' => (int) round((float) ($metrics['catchment_m2'] ?? 0), -1),
             '%retained%' => number_format((float) ($metrics['retained_m3'] ?? 0), 1),
             '%removed%' => number_format((float) ($metrics['runoff_removed_m3'] ?? 0), 1),
-            '%kind%' => isset($metrics['kind']) ? $this->translator->trans('plan.object.kind.'.$metrics['kind'], [], self::DOMAIN) : '',
-            '%shape%' => isset($metrics['shape']) ? $this->translator->trans('plan.rationale.shape.'.$metrics['shape'], [], self::DOMAIN) : '',
+            '%kind%' => isset($metrics['kind']) ? $this->translator->trans('plan.object.kind.'.$metrics['kind']) : '',
+            '%shape%' => isset($metrics['shape']) ? $this->translator->trans('plan.rationale.shape.'.$metrics['shape']) : '',
         ];
 
-        return $this->translator->trans('plan.rationale.summary.'.($alternative->object[O::TYPE] ?? ''), $parameters, self::DOMAIN);
+        return $this->translator->trans('plan.rationale.summary.'.($alternative->object[O::TYPE] ?? ''), $parameters);
     }
 
     /**
@@ -476,10 +493,7 @@ final class PlanWorkspace
     {
         $rationale = $this->rationales->of($this->planId)->for($id);
         $taken = $rationale?->alternative($alternative);
-        $current = null;
-        foreach (Site::fromJson($this->plan()->siteJson())->objects as $object) {
-            $current = $object[O::ID] === $id ? $object : $current;
-        }
+        $current = $this->objectById($id);
         if (null === $rationale || null === $taken || null === $current) {
             return;
         }
@@ -494,7 +508,7 @@ final class PlanWorkspace
                 $this->rationales->record($this->planId, new Rationale($restored, $rationale->why, $rationale->reasons, $rationale->warnings, $rationale->metrics, $rationale->alternatives, $rationale->by, $rationale->candidate, $rationale->agentCandidate));
                 $this->selected = $restored;
             }
-            $this->notice = [self::NOTICE_TEXT => $this->translator->trans('plan.rationale.no_longer_fits', [], self::DOMAIN), self::NOTICE_OK => false];
+            $this->notice = [self::NOTICE_TEXT => $this->translator->trans('plan.rationale.no_longer_fits'), self::NOTICE_OK => false];
 
             return;
         }
@@ -508,17 +522,11 @@ final class PlanWorkspace
     #[LiveAction]
     public function editObject(#[LiveArg] string $id, #[LiveArg] string $field, #[LiveArg] string $value): void
     {
-        foreach (Site::fromJson($this->plan()->siteJson())->objects as $object) {
-            if ($object[O::ID] !== $id) {
-                continue;
-            }
-            $options = self::EDITABLE[$object[O::TYPE]][$field] ?? [];
-            $chosen = array_values(array_filter($options, static fn (int|string $option): bool => (string) $option === $value))[0] ?? null;
-            if (null !== $chosen) {
-                $this->editor->update($this->planId, $id, [$field => $chosen]);
-            }
-
-            return;
+        $object = $this->objectById($id);
+        $options = null === $object ? [] : self::EDITABLE[$object[O::TYPE]][$field] ?? [];
+        $chosen = array_find($options, static fn (int|string $option): bool => (string) $option === $value);
+        if (null !== $chosen) {
+            $this->editor->update($this->planId, $id, [$field => $chosen]);
         }
     }
 
@@ -531,7 +539,7 @@ final class PlanWorkspace
     #[LiveAction]
     public function selectObject(#[LiveArg] string $id): void
     {
-        [$this->selected, $this->zone, $this->equipment] = [$id, null, null];
+        $this->open(self::PROP_SELECTED, $id);
     }
 
     #[LiveAction]
@@ -560,17 +568,16 @@ final class PlanWorkspace
      */
     public function plotMap(): array
     {
-        $site = Site::fromJson($this->plan()->siteJson());
-        $plots = $site->ofType(O::PLOT);
+        $site = $this->site();
 
         return [
-            self::MAP_PLOT => [] === $plots ? [] : Site::points($plots[0]),
+            self::MAP_PLOT => $site->plotOutline(),
             self::MAP_BUILDINGS => array_values(array_filter(array_map(Site::points(...), $site->ofType(O::BUILDING)), static fn (array $points): bool => count($points) >= 3)),
             self::MAP_TREES => array_map(static fn (array $tree): array => ['x' => (float) $tree[O::X], 'z' => (float) $tree[O::Z], 'r' => self::crownRadius($tree)], $site->ofType(O::TREE)),
             self::MAP_INTERVENTIONS => array_values(array_map(fn (array $object): array => [
                 'id' => (string) $object[O::ID],
                 'type' => $object[O::TYPE],
-                'label' => is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : null,
+                'label' => Site::label($object),
                 ...(O::NEWTREE === $object[O::TYPE]
                     ? ['x' => (float) $object[O::X], 'z' => (float) $object[O::Z], 'r' => self::crownRadius($object)]
                     : ['points' => Site::points($object)]),
@@ -590,7 +597,7 @@ final class PlanWorkspace
         return [
             'id' => (string) $item[O::ID],
             'kind' => (string) $item[O::KIND],
-            'label' => is_string($item[O::LABEL] ?? null) ? $item[O::LABEL] : null,
+            'label' => Site::label($item),
             'x' => (float) $item[O::X],
             'z' => (float) $item[O::Z],
             // the fall zone
@@ -603,7 +610,7 @@ final class PlanWorkspace
     public function onZoneSelected(): void
     {
         if (null !== $this->zone) {
-            [$this->equipment, $this->selected] = [null, null];
+            $this->open(self::PROP_ZONE, $this->zone);
         }
     }
 
@@ -611,7 +618,7 @@ final class PlanWorkspace
     public function onEquipmentSelected(): void
     {
         if (null !== $this->equipment) {
-            [$this->zone, $this->selected] = [null, null];
+            $this->open(self::PROP_EQUIPMENT, $this->equipment);
         }
     }
 
@@ -622,16 +629,9 @@ final class PlanWorkspace
      */
     public function selectedEquipment(): ?array
     {
-        if (null === $this->equipment) {
-            return null;
-        }
-        foreach (Site::fromJson($this->plan()->siteJson())->ofType(O::EQUIPMENT) as $item) {
-            if ($item[O::ID] === $this->equipment) {
-                return [...self::equipmentRow($item), 'width' => (int) $item[O::WIDTH], 'depth' => (int) $item[O::DEPTH]];
-            }
-        }
+        $item = null === $this->equipment ? null : $this->equipmentById($this->equipment);
 
-        return null;
+        return null === $item ? null : [...self::equipmentRow($item), 'width' => (int) $item[O::WIDTH], 'depth' => (int) $item[O::DEPTH]];
     }
 
     /**
@@ -646,8 +646,7 @@ final class PlanWorkspace
     #[LiveAction]
     public function addEquipment(#[LiveArg] int $x, #[LiveArg] int $z): void
     {
-        $this->equipment = $this->editor->add($this->planId, [O::equipment(O::EQUIPMENT_OTHER, $x, $z, look: O::LOOK_USER)])['ids'][0] ?? null;
-        $this->zone = null;
+        $this->open(self::PROP_EQUIPMENT, $this->editor->add($this->planId, [O::equipment(O::EQUIPMENT_OTHER, $x, $z, look: O::LOOK_USER)])['ids'][0] ?? null);
         $this->zones = null;
     }
 
@@ -699,13 +698,7 @@ final class PlanWorkspace
      */
     private function equipmentById(string $id): ?array
     {
-        foreach (Site::fromJson($this->plan()->siteJson())->ofType(O::EQUIPMENT) as $item) {
-            if ($item[O::ID] === $id) {
-                return $item;
-            }
-        }
-
-        return null;
+        return $this->objectById($id, O::EQUIPMENT);
     }
 
     /**
@@ -715,16 +708,9 @@ final class PlanWorkspace
      */
     public function selectedZone(): ?array
     {
-        if (null === $this->zone) {
-            return null;
-        }
-        foreach ($this->zones() as $zone) {
-            if ($zone->id === $this->zone) {
-                return $zone->toArray();
-            }
-        }
+        $selected = $this->zone;
 
-        return null;
+        return array_find($this->zones(), static fn (Zone $zone): bool => $zone->id === $selected)?->toArray();
     }
 
     /**

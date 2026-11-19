@@ -35,7 +35,7 @@ final readonly class BuildingClearance
             if (count($footprint) < 3) {
                 continue;
             }
-            $label = is_string($building[O::LABEL] ?? null) ? $building[O::LABEL] : null;
+            $label = Site::label($building);
             if ([] === $outline) {
                 // a tree: its trunk must stand outside
                 if (Polygon::contains($footprint, (float) ($object[O::X] ?? 0), (float) ($object[O::Z] ?? 0))) {

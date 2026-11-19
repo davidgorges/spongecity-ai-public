@@ -68,7 +68,7 @@ final class RoofFit
      * @param list<Ring>|null                 $detailWalls    the detailed model's wall surfaces
      *
      * @return array{eaves: float, roof?: string, pitch?: float, roofs?: list<list<Point3>>, walls?: list<list<Point3>>}|null
-     *                                                                                                                      the parametric roof (roof, pitch) or the model's surfaces (roofs, walls), both with the eaves height; null without a usable model
+     *                                                                                                                        the parametric roof (roof, pitch) or the model's surfaces (roofs, walls), both with the eaves height; null without a usable model
      */
     public static function choose(array $outline, array $surfaces, array $walls, ?array $detailSurfaces = null, ?array $detailWalls = null): ?array
     {

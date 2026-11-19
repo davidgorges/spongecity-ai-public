@@ -13,10 +13,10 @@ use Core\Configurator\Site\SiteObject as O;
 final readonly class Candidate
 {
     /**
-     * @param array<string, mixed>       $object   the site object to add (type, points, fields)
-     * @param array<string, mixed>       $metrics  what it achieves, in the units its keys name
-     * @param list<string>               $reasons  why here, each with its source
-     * @param list<string>               $warnings what to check or say
+     * @param array<string, mixed> $object   the site object to add (type, points, fields)
+     * @param array<string, mixed> $metrics  what it achieves, in the units its keys name
+     * @param list<string>         $reasons  why here, each with its source
+     * @param list<string>         $warnings what to check or say
      */
     public function __construct(
         public string $id,

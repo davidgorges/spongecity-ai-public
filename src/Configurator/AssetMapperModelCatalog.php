@@ -29,11 +29,11 @@ final readonly class AssetMapperModelCatalog implements ModelCatalog
 
     public function url(string $library): ?string
     {
-        $asset = $this->assetMapper->getAsset(self::DIRECTORY . $library . self::EXTENSION);
+        $asset = $this->assetMapper->getAsset(self::DIRECTORY.$library.self::EXTENSION);
         if (null !== $asset) {
             return $asset->publicPath;
         }
 
-        return in_array($library, self::PROCEDURAL_LIBRARIES, true) ? self::PROCEDURAL_PREFIX . $library : null;
+        return in_array($library, self::PROCEDURAL_LIBRARIES, true) ? self::PROCEDURAL_PREFIX.$library : null;
     }
 }

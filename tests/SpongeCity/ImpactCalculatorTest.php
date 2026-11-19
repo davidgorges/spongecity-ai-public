@@ -126,7 +126,7 @@ final class ImpactCalculatorTest extends KernelTestCase
         $site = (new SiteType())->normalize($import->siteJson);
         $values = [SiteType::PARAMETER => $site];
         $evaluation = $evaluator->evaluate($values);
-        $scene = (new SceneSerializer(new class() implements ModelCatalog {
+        $scene = (new SceneSerializer(new class implements ModelCatalog {
             public function url(string $library): ?string
             {
                 return null;
@@ -137,9 +137,6 @@ final class ImpactCalculatorTest extends KernelTestCase
         self::assertContains('SC-PLOT', array_column($scene['parts'], 'sku'));
     }
 
-    /**
-     * @param list<array<string, mixed>> $interventions
-     */
     #[Test]
     public function aBuildingShadesTheGroundOnItsFarSideFromTheSunAsFarAsItsHeightReaches(): void
     {

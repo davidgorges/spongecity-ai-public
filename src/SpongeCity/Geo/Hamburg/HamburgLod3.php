@@ -8,7 +8,6 @@ use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\RemoteZip;
 use App\SpongeCity\Geo\UtmPlanTransform;
 use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -49,11 +48,9 @@ final readonly class HamburgLod3
     public function __construct(
         HttpClientInterface $httpClient,
         private CacheInterface $cache,
-        #[Autowire(env: 'OSM_USER_AGENT')]
-        string $userAgent,
         private LoggerInterface $logger,
     ) {
-        $this->zips = array_map(static fn (string $url): RemoteZip => new RemoteZip($httpClient, $cache, $userAgent, $url, self::CACHE_SECONDS), self::ZIP_URLS);
+        $this->zips = array_map(static fn (string $url): RemoteZip => new RemoteZip($httpClient, $cache, $url, self::CACHE_SECONDS), self::ZIP_URLS);
     }
 
     /**

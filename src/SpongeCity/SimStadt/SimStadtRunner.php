@@ -66,7 +66,7 @@ final readonly class SimStadtRunner
                 '--save', self::MOUNT.'/'.$result,
             ];
             $start = microtime(true);
-            for ($attempt = 1; ; ++$attempt) {
+            for ($attempt = 1;; ++$attempt) {
                 $process = new Process($command, timeout: $this->timeoutSeconds);
                 $process->run();
                 $csv = is_file($this->repository.'/'.$result) ? (string) file_get_contents($this->repository.'/'.$result) : '';

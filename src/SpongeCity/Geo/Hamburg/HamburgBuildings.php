@@ -236,7 +236,7 @@ final readonly class HamburgBuildings
     /**
      * The model of a cadastre building: by its id, else the one whose middle lies in its outline.
      *
-     * @param list<array{0: float, 1: float}>                                                             $outline plan metres
+     * @param list<array{0: float, 1: float}>                                                                  $outline plan metres
      * @param list<array{id: string, centre: array{0: float, 1: float}, surfaces: list<array<string, mixed>>}> $models
      *
      * @return array{id: string, centre: array{0: float, 1: float}, surfaces: list<array{points: list<array{0: float, 1: float}>, low: float, high: float}>}|null

@@ -15,7 +15,7 @@ interface DescribesForImage
 {
     /**
      * One or two sentences, e.g. "an anthracite aluminium patio roof, 4.00 m wide and 3.00 m deep,
-     * fixed to the house wall, … It is open on all sides: no side walls, no front glazing."
+     * fixed to the house wall, … It is open on all sides: no side walls, no front glazing.".
      */
     public function imageBrief(Configuration $configuration): string;
 

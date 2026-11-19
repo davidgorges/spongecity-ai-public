@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\SpongeCity\Import;
 
 use App\SpongeCity\Geo\GeoPoint;
+use App\SpongeCity\Geo\NominatimGeocoder;
 use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\PlanImport;
+use App\SpongeCity\Plan\PlanStatus;
 use App\SpongeCity\Plan\PlanStore;
 use Symfony\Component\Lock\LockFactory;
 use Symfony\Component\Messenger\MessageBusInterface;
@@ -26,7 +28,23 @@ final readonly class PlanImporter
         private PlanStore $plans,
         private LockFactory $locks,
         private MessageBusInterface $bus,
+        private NominatimGeocoder $geocoder,
     ) {
+    }
+
+    /**
+     * A new plan at the first place found by that name, its import queued; null when none is found.
+     */
+    public function start(string $place): ?Plan
+    {
+        $centre = '' === $place ? null : ($this->geocoder->search($place)[0] ?? null);
+        if (null === $centre) {
+            return null;
+        }
+        $plan = $this->plans->create($centre->label, $centre->latitude, $centre->longitude, PlanStatus::New);
+        $this->request($plan, $centre);
+
+        return $plan;
     }
 
     /**

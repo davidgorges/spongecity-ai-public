@@ -1,5 +1,10 @@
 #!/usr/bin/env sh
 # Renders the 3D plan view to PNGs for quick visual iteration. See tools/render-loop/render.mjs.
 DIR="$(cd "$(dirname "$0")/.." && pwd)"
+# the app's URL as the Symfony CLI serves it (any port); --base=URL still wins
+if [ -z "$SYMFONY_PROJECT_DEFAULT_ROUTE_URL" ] && command -v symfony >/dev/null 2>&1; then
+    SYMFONY_PROJECT_DEFAULT_ROUTE_URL="$(cd "$DIR" && symfony var:export --multiline 2>/dev/null | sed -n 's/^export SYMFONY_PROJECT_DEFAULT_ROUTE_URL=//p')"
+    export SYMFONY_PROJECT_DEFAULT_ROUTE_URL
+fi
 [ -d "$DIR/tools/render-loop/node_modules" ] || (cd "$DIR/tools/render-loop" && npm install --silent --no-audit --no-fund)
 exec node "$DIR/tools/render-loop/render.mjs" "$@"

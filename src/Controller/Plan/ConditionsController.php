@@ -8,6 +8,7 @@ use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Plan\Plan;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpKernel\Attribute\Cache;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
@@ -18,7 +19,6 @@ use Symfony\Component\Routing\Attribute\Route;
 final class ConditionsController extends AbstractController
 {
     public const string ROUTE = 'plan_conditions';
-    private const int MAX_AGE_SECONDS = 300;
 
     public function __construct(
         private readonly SiteConditionsStore $conditions,
@@ -26,12 +26,9 @@ final class ConditionsController extends AbstractController
     }
 
     #[Route('/plan/{id}/conditions', name: self::ROUTE, methods: ['GET'])]
+    #[Cache(maxage: 300, public: false)]
     public function __invoke(Plan $plan): JsonResponse
     {
-        $response = $this->json($this->conditions->get($plan->id)->toArray());
-        $response->setPrivate();
-        $response->setMaxAge(self::MAX_AGE_SECONDS);
-
-        return $response;
+        return $this->json($this->conditions->get($plan->id)->toArray());
     }
 }

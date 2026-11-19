@@ -179,9 +179,10 @@ there is none. The chat binds its message with `#[MapRequestPayload]` to `ChatMe
 
 ## Geodata and the import (async)
 
-1. `HomeController` geocodes the text with `NominatimGeocoder` (synchronous, fast), takes the
-   first hit, creates a `new` plan and has `PlanImporter` dispatch `ImportSite`. It redirects
-   at once.
+1. `HomeController::start()` binds the form to `PlaceSearch` (`#[MapRequestPayload]`) and calls
+   `PlanImporter::start()`: it geocodes the text with `NominatimGeocoder` (synchronous, fast),
+   takes the first hit, creates a `new` plan and dispatches `ImportSite`. The controller
+   redirects at once (back home with a flash message when nothing was found).
 2. `ImportSiteHandler` (Messenger worker) runs every `SiteImportStep` (a tagged interface,
    `#[AutowireIterator]`, ordered by `#[AsTaggedItem(priority)]`), handing a `SiteImportContext`
    from one to the next. `FetchOpenStreetMap` asks `OverpassClient` for the area:
@@ -356,6 +357,8 @@ a silent one after 30 s (under load they take 20 s even for small queries), and 
 key: bump it when a query changes). Public Overpass
 instances are shared and often overloaded, and they reject generic user agents: set
 `OSM_USER_AGENT` to something identifying you (also required by Nominatim's usage policy).
+It is sent with every outgoing request (`framework.http_client.default_options` in
+`config/packages/framework.yaml`), so the clients do not set it themselves.
 
 Messenger: transport `async` on Doctrine (SQLite, `var/data_<env>.db`), no retries (the mirrors are
 the retry), failed messages go to the `failed` transport. **A worker must run**
@@ -374,7 +377,7 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
   set `http.allowed_hosts` to expose it) serves `App\Mcp\SpongeCityTools`, declared with
   `#[McpTool]`. Any MCP client (Claude Desktop, the inspector) can use it.
 - **Client**: `mcp.clients.spongecity.servers.local` points at `MCP_SERVER_URL`
-  (default `http://127.0.0.1:8000/mcp`); the agent's `tools: - mcp_server: 'spongecity.local'`
+  (`${DEFAULT_URI}mcp`, which follows the port the Symfony CLI serves on); the agent's `tools: - mcp_server: 'spongecity.local'`
   exposes the tools to the model with the prefix `local_`.
 
 | Tool | Does |
@@ -657,8 +660,8 @@ and writes screenshots and a report (errors, meshes, frame times, flicker) to
 
 - No inline JavaScript: Stimulus controllers only. Use Stimulus `data-action`, not manual listeners.
 - No magic strings: parameter names, SKUs, object types and statuses are constants.
-- Translations in `translations/spongecity.<locale>.yaml` (domain `spongecity`); inside `<twig:…>`
-  bodies pass the domain to `|trans`.
+- Translations in `translations/messages.<locale>.yaml`, the default domain: `|trans` and
+  `TranslatorInterface::trans()` need no domain argument.
 - Run Composer and the console through the Symfony CLI (`symfony composer …`, `symfony console …`).
 - UI: Tailwind v4 with shadcn token names, the UX Toolkit components in `templates/components/`
   (`ux:install <recipe> --kit=shadcn`). The workspace is built from them: Card (windows, panels),
@@ -670,20 +673,21 @@ and writes screenshots and a report (errors, meshes, frame times, flicker) to
   through `workspace`. A Toggle that another controller presses (dock, mood, overlay, placing
   equipment) is pressed through `assets/configurator/press.js`: the Toggle's controller would
   otherwise reset aria-pressed when it connects.
-  Build CSS with `symfony console tailwind:build`.
+  CSS is built by `composer install` and rebuilt by the `tailwind` worker while the server runs
+  (`symfony console tailwind:build` by hand).
 
 ## Running it
 
+Setup, optional parts (API key, SimStadt, render loop) and checks: see the [README](../README.md).
+
 ```bash
-symfony composer install
-symfony console importmap:install
-symfony console tailwind:build
-# .env.local: ANTHROPIC_API_KEY=…  OSM_USER_AGENT="YourApp contact@example.com"
-symfony server:start --no-tls      # also starts the Messenger workers (import, SimStadt)
-docker pull simstadt/simstadt:cli  # building simulations (about 1.3 GB)
-symfony console app:plan:demo      # offline demo plan (synthetic sealed schoolyard)
+symfony composer install                 # dependencies, importmap, Tailwind build
+symfony server:start -d --no-tls         # web server + workers (import, SimStadt, Tailwind --watch)
+symfony console app:doctor               # checks the setup and says how to fix it
+symfony console app:plan:demo            # offline demo plan (synthetic sealed schoolyard)
 symfony console app:plan:reimport <id>   # re-import site and surroundings, keeping interventions
-bin/render-loop <id> --perf --dpr=2      # renders and frame times (installs puppeteer-core on first run)
+docker pull --platform linux/amd64 simstadt/simstadt:cli   # optional: building simulations (about 1.3 GB)
+bin/render-loop <id> --perf --dpr=2      # optional: renders and frame times (Node.js + Chrome)
 symfony php vendor/bin/phpunit
 ```
 

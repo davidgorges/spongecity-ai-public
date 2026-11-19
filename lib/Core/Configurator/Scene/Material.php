@@ -10,17 +10,17 @@ namespace Core\Configurator\Scene;
 final readonly class Material
 {
     /**
-     * @param string               $color        hex colour, e.g. "#383e42"
-     * @param float                $transmission 0 = opaque, 1 = clear glass (light passes through, refracted by $ior)
-     * @param float                $clearcoat    0..1, a thin lacquer layer on top (powder coating, varnish)
-     * @param ProceduralTexture|null $texture    surface pattern generated in the browser, no image files
-     * @param float                $textureSize  edge length in metres that one repeat of the texture covers
-     * @param float                $emissive     0 = lit by the scene only, >0 = glows in its own colour (lights, LEDs)
-     * @param string|null          $nightGlow    colour the surface glows in the evening mood (lamps, lit windows)
-     * @param float                $nightGlowIntensity strength of that glow
-     * @param bool                 $lightPool    in the evening, parts of this material throw a pool of light on the floor below
-     * @param float|null           $textureHeight on upright walls, the height in metres one repeat covers (null: textureSize):
-     *                                            a façade's window rows follow the building's real storeys
+     * @param string                 $color              hex colour, e.g. "#383e42"
+     * @param float                  $transmission       0 = opaque, 1 = clear glass (light passes through, refracted by $ior)
+     * @param float                  $clearcoat          0..1, a thin lacquer layer on top (powder coating, varnish)
+     * @param ProceduralTexture|null $texture            surface pattern generated in the browser, no image files
+     * @param float                  $textureSize        edge length in metres that one repeat of the texture covers
+     * @param float                  $emissive           0 = lit by the scene only, >0 = glows in its own colour (lights, LEDs)
+     * @param string|null            $nightGlow          colour the surface glows in the evening mood (lamps, lit windows)
+     * @param float                  $nightGlowIntensity strength of that glow
+     * @param bool                   $lightPool          in the evening, parts of this material throw a pool of light on the floor below
+     * @param float|null             $textureHeight      on upright walls, the height in metres one repeat covers (null: textureSize):
+     *                                                   a façade's window rows follow the building's real storeys
      */
     public function __construct(
         public string $color,

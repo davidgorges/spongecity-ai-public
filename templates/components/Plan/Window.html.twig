@@ -35,7 +35,7 @@
     {{ ...attributes }}
 >
     <twig:Card:Header class="flex-row items-center gap-2 space-y-0 border-b px-3 py-2 lg:cursor-grab lg:select-none lg:active:cursor-grabbing" data-window-header data-action="pointerdown->window-manager#grab">
-        {% set move_label = 'plan.windows.move'|trans({'%title%': title}, 'spongecity') %}
+        {% set move_label = 'plan.windows.move'|trans({'%title%': title}) %}
         <twig:Button variant="ghost" size="icon-xs" class="hidden text-muted-foreground lg:inline-flex" title="{{ move_label }}" aria-label="{{ move_label }}" data-action="keydown->window-manager#nudge" data-window-manager-id-param="{{ window_id }}">
             <twig:ux:icon name="lucide:grip-vertical" aria-hidden="true" />
         </twig:Button>
@@ -44,11 +44,11 @@
             <span class="truncate">{{ title }}</span>
         </twig:Card:Title>
         {{ window_actions }}
-        {% set minimise_label = 'plan.windows.minimise'|trans({'%title%': title}, 'spongecity') %}
+        {% set minimise_label = 'plan.windows.minimise'|trans({'%title%': title}) %}
         <twig:Button variant="ghost" size="icon-xs" class="hidden lg:inline-flex" title="{{ minimise_label }}" aria-label="{{ minimise_label }}" aria-expanded="true" aria-controls="window-{{ window_id }}-body" data-window-manager-target="minimise" data-action="window-manager#minimise" data-window-manager-id-param="{{ window_id }}">
             <twig:ux:icon name="lucide:minus" aria-hidden="true" />
         </twig:Button>
-        {% set close_label = 'plan.windows.close'|trans({'%title%': title}, 'spongecity') %}
+        {% set close_label = 'plan.windows.close'|trans({'%title%': title}) %}
         <twig:Button variant="ghost" size="icon-xs" class="hidden lg:inline-flex" title="{{ close_label }}" aria-label="{{ close_label }}" data-action="window-manager#close" data-window-manager-id-param="{{ window_id }}">
             <twig:ux:icon name="lucide:x" aria-hidden="true" />
         </twig:Button>
@@ -56,7 +56,7 @@
     <twig:Card:Content id="window-{{ window_id }}-body" class="flex min-h-0 flex-col gap-3 overflow-y-auto p-4" data-window-body>
         {{ window_content }}
     </twig:Card:Content>
-    {% set resize_label = 'plan.windows.resize'|trans({'%title%': title}, 'spongecity') %}
+    {% set resize_label = 'plan.windows.resize'|trans({'%title%': title}) %}
     <button
         type="button"
         class="absolute right-0 bottom-0 hidden size-5 cursor-se-resize touch-none items-end justify-end p-0.5 text-muted-foreground/60 outline-none hover:text-foreground focus-visible:text-foreground focus-visible:ring-2 focus-visible:ring-ring lg:flex"

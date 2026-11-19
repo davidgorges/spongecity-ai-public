@@ -12,8 +12,8 @@ use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\NominatimGeocoder;
 use App\SpongeCity\Import\PlanImporter;
 use App\SpongeCity\Plan\OverlapsBuilding;
-use App\SpongeCity\Plan\PlanStatus;
 use App\SpongeCity\Plan\PlanAnalyzer;
+use App\SpongeCity\Plan\PlanStatus;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
 use App\SpongeCity\Rationale\Rationale;
@@ -21,7 +21,6 @@ use App\SpongeCity\Rationale\RationaleStore;
 use App\SpongeCity\Terrain\TerrainAnalysis;
 use App\SpongeCity\Terrain\TerrainStore;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
-use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Mcp\Capability\Attribute\McpTool;
@@ -105,8 +104,7 @@ final readonly class SpongeCityTools
     {
         $plan = $this->plans->get($planId);
         $site = Site::fromJson($plan->siteJson());
-        $plots = $site->ofType(O::PLOT);
-        $bounds = [] === $plots ? null : $this->bounds(Site::points($plots[0]));
+        $bounds = null === $site->plot() ? null : $this->bounds($site->plotOutline());
 
         $objects = [];
         foreach ($site->objects as $object) {
@@ -140,8 +138,8 @@ final readonly class SpongeCityTools
         $plan = $this->plans->get($planId);
         $conditions = $this->conditions->get($plan->id);
         $site = Site::fromJson($plan->siteJson());
-        $plots = $site->ofType(O::PLOT);
-        $shares = [] === $plots ? [] : $conditions->infiltrationShares(Site::points($plots[0]));
+        $plot = $site->plotOutline();
+        $shares = [] === $plot ? [] : $conditions->infiltrationShares($plot);
         arsort($shares);
         $classes = [];
         foreach ($shares as $potential => $share) {
@@ -160,7 +158,7 @@ final readonly class SpongeCityTools
         $terrain = $this->terrains->find($plan->id);
 
         return [
-            'terrain' => null === $terrain || [] === $plots ? null : $this->terrainAnalysis->ofPlot($terrain, Site::points($plots[0]), array_map(Site::points(...), $site->ofType(O::BUILDING))),
+            'terrain' => null === $terrain || [] === $plot ? null : $this->terrainAnalysis->ofPlot($terrain, $plot, array_map(Site::points(...), $site->ofType(O::BUILDING))),
             'infiltration' => $classes,
             'unmapped_share_of_plot' => round(max(0.0, 1 - array_sum($shares)), 3),
             'sources' => array_map(static fn (DataSource $s): array => $s->toArray(), $conditions->sources),
@@ -236,8 +234,7 @@ final readonly class SpongeCityTools
         // a PHP array is advertised as a JSON list by default, but the changes are a map of field → value
         #[Schema(type: 'object', description: 'The fields to change and their new values, e.g. {"facade": "plaster", "color": "#f2efe8"}.', additionalProperties: true)]
         array $changes,
-    ): array
-    {
+    ): array {
         try {
             return ['updated' => $this->editor->update($planId, $id, $changes)];
         } catch (OverlapsBuilding $e) {
@@ -269,12 +266,11 @@ final readonly class SpongeCityTools
     #[McpTool(name: self::TOOL_SET_STORM, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false, idempotentHint: true))]
     public function setDesignStorm(string $planId, int $millimetresPerHour): int
     {
-        $storm = max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $millimetresPerHour));
         $plan = $this->plans->get($planId);
-        $plan->setStorm($storm);
+        $plan->setStorm($millimetresPerHour);
         $this->plans->save($plan);
 
-        return $storm;
+        return $plan->storm();
     }
 
     /**
@@ -316,8 +312,7 @@ final readonly class SpongeCityTools
     private function buildingSummary(Site $site): array
     {
         $summary = [];
-        $plots = $site->ofType(O::PLOT);
-        $plot = [] === $plots ? null : Polygon::bounds(Site::points($plots[0]));
+        $plot = null === $site->plot() ? null : Polygon::bounds($site->plotOutline());
         foreach ($site->ofType(O::BUILDING) as $building) {
             $points = Site::points($building);
             [$minX, $maxX, $minZ, $maxZ] = Polygon::bounds($points);
@@ -326,7 +321,7 @@ final readonly class SpongeCityTools
             $summary[] = [
                 // the id lets a building's look (facade, color) be corrected with update_object when the user knows better
                 'id' => $building[O::ID] ?? null,
-                'label' => is_string($building[O::LABEL] ?? null) ? $building[O::LABEL] : null,
+                'label' => Site::label($building),
                 'height_mm' => (int) ($building[O::HEIGHT] ?? 0),
                 'storeys' => (int) ($building[O::STOREYS] ?? 0),
                 O::FACADE => $building[O::FACADE] ?? null,

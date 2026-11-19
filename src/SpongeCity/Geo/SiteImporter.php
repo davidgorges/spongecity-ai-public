@@ -58,7 +58,6 @@ final readonly class SiteImporter
     public const array FOOTWAYS = ['pedestrian', 'footway', 'path', 'cycleway'];
     private const array PLOT_PRIORITY = [self::TAG_LEISURE => 3, self::TAG_AMENITY => 2, self::TAG_LANDUSE => 1];
 
-
     /** ground areas kept on the plot at most, the largest first */
     private const int MAX_AREAS = 20;
     public const string TAG_PLAYGROUND = 'playground';
@@ -314,6 +313,7 @@ final readonly class SiteImporter
         if (count($points) > 1 && $points[0] === end($points)) {
             array_pop($points);
         }
+
         return self::simplified($points, self::MAX_POINTS);
     }
 

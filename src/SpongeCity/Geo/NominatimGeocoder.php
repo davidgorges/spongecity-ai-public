@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\SpongeCity\Geo;
 
 use Psr\Log\LoggerInterface;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
@@ -19,8 +18,6 @@ final readonly class NominatimGeocoder
     public function __construct(
         private HttpClientInterface $httpClient,
         private LoggerInterface $logger,
-        #[Autowire(env: 'OSM_USER_AGENT')]
-        private string $userAgent,
     ) {
     }
 
@@ -31,7 +28,6 @@ final readonly class NominatimGeocoder
     {
         $response = $this->httpClient->request('GET', self::ENDPOINT, [
             'query' => ['q' => $query, 'format' => 'jsonv2', 'limit' => self::LIMIT],
-            'headers' => ['User-Agent' => $this->userAgent],
         ]);
 
         try {

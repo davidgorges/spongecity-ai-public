@@ -5,6 +5,12 @@ framework:
     # Note that the session will be started ONLY if you read or write from it.
     session: true
 
+    # the public geodata services (OpenStreetMap, Hamburg) ask clients to identify themselves
+    http_client:
+        default_options:
+            headers:
+                User-Agent: '%env(OSM_USER_AGENT)%'
+
     #esi: true
     #fragments: true
 

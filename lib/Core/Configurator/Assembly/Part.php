@@ -24,10 +24,10 @@ final readonly class Part
     public Measure $measure;
 
     /**
-     * @param Measure|null $measure how the part counts on the BOM; a piece if omitted
-     * @param bool         $decor   staging the customer can switch off (never on the BOM)
-     * @param bool         $counted false for a further piece of an article that another part already counts
-     * @param bool         $draped  lies on the ground: the view follows the terrain with it
+     * @param Measure|null              $measure    how the part counts on the BOM; a piece if omitted
+     * @param bool                      $decor      staging the customer can switch off (never on the BOM)
+     * @param bool                      $counted    false for a further piece of an article that another part already counts
+     * @param bool                      $draped     lies on the ground: the view follows the terrain with it
      * @param array<string, mixed>|null $appearance how the view draws it, beyond its shape (a rain garden: its depth); metres
      */
     public function __construct(

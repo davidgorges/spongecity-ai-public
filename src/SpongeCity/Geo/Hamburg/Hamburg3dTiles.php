@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\SpongeCity\Geo\Hamburg;
 
 use App\SpongeCity\Geo\GeoBox;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -29,8 +28,6 @@ final readonly class Hamburg3dTiles
     public function __construct(
         private HttpClientInterface $httpClient,
         private CacheInterface $cache,
-        #[Autowire(env: 'OSM_USER_AGENT')]
-        private string $userAgent,
     ) {
     }
 
@@ -51,9 +48,9 @@ final readonly class Hamburg3dTiles
     }
 
     /**
-     * @param array<string, mixed>       $node
-     * @param array{float, float, float, float} $box west, south, east, north in radians
-     * @param list<string>               $leaves
+     * @param array<string, mixed>              $node
+     * @param array{float, float, float, float} $box    west, south, east, north in radians
+     * @param list<string>                      $leaves
      */
     private function walk(string $base, array $node, array $box, array &$leaves, int $depth): void
     {
@@ -183,7 +180,6 @@ final readonly class Hamburg3dTiles
             $item->expiresAfter(self::CACHE_SECONDS);
 
             return $this->httpClient->request('GET', $url, [
-                'headers' => ['User-Agent' => $this->userAgent],
                 'timeout' => self::TIMEOUT_SECONDS,
             ])->getContent();
         });

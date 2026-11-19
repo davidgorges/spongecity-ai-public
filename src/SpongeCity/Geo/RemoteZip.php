@@ -30,7 +30,6 @@ final readonly class RemoteZip
     public function __construct(
         private HttpClientInterface $httpClient,
         private CacheInterface $cache,
-        private string $userAgent,
         private string $url,
         private int $cacheSeconds,
     ) {
@@ -173,6 +172,6 @@ final readonly class RemoteZip
      */
     private function options(): array
     {
-        return ['headers' => ['User-Agent' => $this->userAgent], 'timeout' => self::TIMEOUT_SECONDS, 'max_duration' => self::MAX_DURATION_SECONDS];
+        return ['timeout' => self::TIMEOUT_SECONDS, 'max_duration' => self::MAX_DURATION_SECONDS];
     }
 }

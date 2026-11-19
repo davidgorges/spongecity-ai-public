@@ -8,6 +8,7 @@ use App\SpongeCity\Geo\SurroundingsLoader;
 use App\SpongeCity\Plan\Plan;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpKernel\Attribute\Cache;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
@@ -18,7 +19,6 @@ use Symfony\Component\Routing\Attribute\Route;
 final class SurroundingsController extends AbstractController
 {
     public const string ROUTE = 'plan_surroundings';
-    private const int MAX_AGE_SECONDS = 300;
     private const int TIME_LIMIT_SECONDS = 90;
 
     public function __construct(
@@ -27,14 +27,12 @@ final class SurroundingsController extends AbstractController
     }
 
     #[Route('/plan/{id}/surroundings', name: self::ROUTE, methods: ['GET'])]
+    #[Cache(maxage: 300, public: false)]
     public function __invoke(Plan $plan): JsonResponse
     {
         // the first request of an older plan imports them (the view asks in the background)
         set_time_limit(self::TIME_LIMIT_SECONDS);
-        $response = $this->json($this->surroundings->load($plan)->toArray());
-        $response->setPrivate();
-        $response->setMaxAge(self::MAX_AGE_SECONDS);
 
-        return $response;
+        return $this->json($this->surroundings->load($plan)->toArray());
     }
 }

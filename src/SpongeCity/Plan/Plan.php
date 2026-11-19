@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Plan;
 
+use App\SpongeCity\Geo\GeoPoint;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Site\SiteType;
 
@@ -44,6 +45,12 @@ final class Plan
         return $this->status->isImporting();
     }
 
+    /** where the plan is, labelled with its title */
+    public function centre(): GeoPoint
+    {
+        return new GeoPoint($this->latitude, $this->longitude, $this->title);
+    }
+
     public function relocate(float $latitude, float $longitude): void
     {
         $this->latitude = $latitude;
@@ -69,9 +76,10 @@ final class Plan
         return is_int($storm) ? $storm : SpongeCityParameter::STORM_DEFAULT;
     }
 
+    /** kept within the range the calculation knows */
     public function setStorm(int $millimetresPerHour): void
     {
-        $this->values[SpongeCityParameter::STORM] = $millimetresPerHour;
+        $this->values[SpongeCityParameter::STORM] = max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $millimetresPerHour));
     }
 
     /**

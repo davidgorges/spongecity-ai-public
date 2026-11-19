@@ -11,7 +11,6 @@ use Core\Configurator\Engine\Configuration;
 use Core\Configurator\Parameter\NumberParameter;
 use Core\Configurator\Parameter\ParameterGroup;
 use Core\Configurator\Parameter\ParameterSet;
-use Core\Configurator\Parameter\Unit;
 use Core\Configurator\Pricing\PriceList;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter as P;
 use Core\Configurator\Product\SpongeCity\SpongeCitySku as Sku;

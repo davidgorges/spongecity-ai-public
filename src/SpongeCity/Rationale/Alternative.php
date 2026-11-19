@@ -12,8 +12,8 @@ namespace App\SpongeCity\Rationale;
 final readonly class Alternative
 {
     /**
-     * @param array<string, mixed> $object  the site object it would place
-     * @param array<string, mixed> $metrics as the proposal gave them (area_m2, catchment_m2, …)
+     * @param array<string, mixed> $object   the site object it would place
+     * @param array<string, mixed> $metrics  as the proposal gave them (area_m2, catchment_m2, …)
      * @param list<string>         $reasons
      * @param list<string>         $warnings
      */

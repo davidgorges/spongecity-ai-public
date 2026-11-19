@@ -59,7 +59,7 @@ final class SiteBuilder
     private const float GRAVEL_TEXTURE_SIZE = 4.0;
     /**
      * roads: thin strips above the plot (4 mm), footways above carriageways, 3 mm apart: a
-     * smaller step stops being told apart from far away and the layers z-fight in stripes
+     * smaller step stops being told apart from far away and the layers z-fight in stripes.
      */
     private const int ROAD_THICKNESS = 30;
     private const int CARRIAGEWAY_TOP = 7;
@@ -82,7 +82,7 @@ final class SiteBuilder
     /**
      * millimetres a roof level is drawn inside its outline per level before it (taller, or as tall and
      * listed first): far more than the depth buffer resolves at any distance the view allows (its near
-     * plane follows the camera: about 2 mm at 1.5 km), far less than anyone sees (40 levels: 39 cm)
+     * plane follows the camera: about 2 mm at 1.5 km), far less than anyone sees (40 levels: 39 cm).
      */
     private const float LEVEL_INSET = 10.0;
     /** an inset corner moves at most this many times the inset (a sharp corner would shoot out) */
@@ -95,7 +95,7 @@ final class SiteBuilder
         $this->assembly = new Assembly();
         foreach ($site->objects as $i => $object) {
             $type = is_string($object[O::TYPE] ?? null) ? $object[O::TYPE] : '';
-            $label = is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : self::LABEL_PREFIX.$type;
+            $label = Site::label($object) ?? self::LABEL_PREFIX.$type;
             // upright objects stand on their ground; ground layers are draped over the terrain by the view
             $upright = in_array($type, O::UPRIGHT, true);
             $ground = $upright && is_numeric($object[O::GROUND] ?? null) ? (float) $object[O::GROUND] : 0.0;
@@ -190,7 +190,7 @@ final class SiteBuilder
      * the building has its own model (an L, a half-hip, a mix of roofs), as the model's roof
      * surfaces and its walls above the eaves.
      *
-     * @param list<array{float, float}>                                                          $points
+     * @param list<array{float, float}>                                                                                $points
      * @param array{roofs: list<list<array{float, float, float}>>, walls: list<list<array{float, float, float}>>}|null $model
      *
      * @return list<Part>

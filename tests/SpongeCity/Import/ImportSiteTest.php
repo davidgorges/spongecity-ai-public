@@ -80,7 +80,7 @@ final class ImportSiteTest extends KernelTestCase
     private function openStreetMap(MockResponse $response): void
     {
         // every mirror answers alike; a fresh cache, so nothing is left from an earlier test
-        static::getContainer()->set(OverpassClient::class, new OverpassClient(new MockHttpClient(static fn (): MockResponse => clone $response), new ArrayAdapter(), 'test'));
+        static::getContainer()->set(OverpassClient::class, new OverpassClient(new MockHttpClient(static fn (): MockResponse => clone $response), new ArrayAdapter()));
     }
 
     private function plans(): PlanStore

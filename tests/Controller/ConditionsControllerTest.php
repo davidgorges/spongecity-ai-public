@@ -36,6 +36,7 @@ final class ConditionsControllerTest extends WebTestCase
         $client->request('GET', $container->get('router')->generate(ConditionsController::ROUTE, ['id' => $plan->id]));
 
         self::assertResponseIsSuccessful();
+        self::assertResponseHeaderSame('Cache-Control', 'max-age=300, private');
         $data = json_decode((string) $client->getResponse()->getContent(), true, flags: \JSON_THROW_ON_ERROR);
         self::assertSame('unlikely', $data[SiteConditions::INFILTRATION][0][SiteConditions::POTENTIAL]);
         self::assertSame('Versickerungspotentialkarte Hamburg', $data[SiteConditions::SOURCES][0]['title']);
