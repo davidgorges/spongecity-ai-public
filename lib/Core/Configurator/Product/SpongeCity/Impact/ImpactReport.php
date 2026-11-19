@@ -7,10 +7,10 @@ namespace Core\Configurator\Product\SpongeCity\Impact;
 final readonly class ImpactReport
 {
     /**
-     * @param list<Metric>        $metrics
+     * @param list<Metric>         $metrics
      * @param array<string, float> $areasSquareMetres ground area per GroundClass value (design)
-     * @param list<string>        $assumptions
-     * @param list<string>        $warnings
+     * @param list<string>         $assumptions
+     * @param list<string>         $warnings
      */
     public function __construct(
         public float $plotSquareMetres,

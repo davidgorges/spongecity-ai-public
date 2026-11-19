@@ -74,7 +74,7 @@ final readonly class SurfaceZones
                 $use,
                 (string) ($area[O::SURFACE] ?? $plotSurface),
                 O::LOOK_USER === ($area[O::LOOK] ?? null) ? Zone::FROM_USER : Zone::FROM_MAP,
-                is_string($area[O::LABEL] ?? null) ? $area[O::LABEL] : null,
+                Site::label($area),
                 $cells,
                 $ground,
                 $buildings,

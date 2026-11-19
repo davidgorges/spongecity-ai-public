@@ -75,7 +75,7 @@ final readonly class BuildingTags
     /**
      * Use, façade and roof of a building from its tags, completed from its type.
      *
-     * @param array<string, mixed>         $tags
+     * @param array<string, mixed>        $tags
      * @param list<array{0: int, 1: int}> $points
      *
      * @return array<string, string>

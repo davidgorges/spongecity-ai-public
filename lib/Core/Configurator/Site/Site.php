@@ -36,7 +36,7 @@ final readonly class Site
         $objects = [];
         foreach (SiteType::rawObjects($json) as $object) {
             if (is_array($object) && is_string($object[O::TYPE] ?? null)) {
-                /** @var array<string, mixed> $object */
+                /* @var array<string, mixed> $object */
                 $objects[] = $object;
             }
         }
@@ -60,6 +60,24 @@ final readonly class Site
     public function ofType(string $type): array
     {
         return array_values(array_filter($this->objects, static fn (array $object): bool => $type === $object[O::TYPE]));
+    }
+
+    /**
+     * @return array<string, mixed>|null the plot the site is planned on, if it has one
+     */
+    public function plot(): ?array
+    {
+        return $this->ofType(O::PLOT)[0] ?? null;
+    }
+
+    /**
+     * @return list<array{0: int|float, 1: int|float}> the plot's outline; empty without a plot
+     */
+    public function plotOutline(): array
+    {
+        $plot = $this->plot();
+
+        return null === $plot ? [] : self::points($plot);
     }
 
     /**
@@ -150,6 +168,14 @@ final readonly class Site
         }
 
         return $parts;
+    }
+
+    /**
+     * @param array<string, mixed> $object
+     */
+    public static function label(array $object): ?string
+    {
+        return is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : null;
     }
 
     /**

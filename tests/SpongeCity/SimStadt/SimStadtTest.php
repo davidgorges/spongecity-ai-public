@@ -12,13 +12,13 @@ use App\SpongeCity\SimStadt\RunSimulation;
 use App\SpongeCity\SimStadt\RunSimulationHandler;
 use App\SpongeCity\SimStadt\SimStadtResults;
 use App\SpongeCity\SimStadt\SimStadtRunner;
-use App\SpongeCity\SimStadt\SimStadtWorkflow;
 use App\SpongeCity\SimStadt\SimStadtTemplates;
+use App\SpongeCity\SimStadt\SimStadtWorkflow;
 use App\SpongeCity\SimStadt\Simulation;
 use App\SpongeCity\SimStadt\SimulationStatus;
+use App\SpongeCity\SimStadt\SimulationStore;
 use App\SpongeCity\SimStadt\Template\HeatDemand;
 use App\SpongeCity\SimStadt\Template\PvPotential;
-use App\SpongeCity\SimStadt\SimulationStore;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Cache\Adapter\ArrayAdapter;
@@ -79,7 +79,7 @@ final class SimStadtTest extends KernelTestCase
         $simulations = $container->get(SimulationStore::class);
         $repository = sys_get_temp_dir().'/simstadt_test_'.bin2hex(random_bytes(4));
         // the model's tile from a fixture, SimStadt from a script that writes its results
-        $container->set(HamburgCityGml::class, new HamburgCityGml(self::zipServer(self::tile()), new ArrayAdapter(), 'test'));
+        $container->set(HamburgCityGml::class, new HamburgCityGml(self::zipServer(self::tile()), new ArrayAdapter()));
         $container->set(SimStadtRunner::class, new SimStadtRunner('simstadt/simstadt:cli', '', self::FIXTURES.'/fake-docker.sh', 60, $repository));
         $handler = $container->get(RunSimulationHandler::class);
 
@@ -111,7 +111,7 @@ final class SimStadtTest extends KernelTestCase
     #[Test]
     public function cutsTheSiteOutOfTheBuildingModel(): void
     {
-        $extract = (new HamburgCityGml(self::zipServer(self::tile()), new ArrayAdapter(), 'test'))->extract(new GeoPoint(self::LATITUDE, self::LONGITUDE), 100, 1960);
+        $extract = (new HamburgCityGml(self::zipServer(self::tile()), new ArrayAdapter()))->extract(new GeoPoint(self::LATITUDE, self::LONGITUDE), 100, 1960);
 
         self::assertSame(['DEHHNEAR'], $extract['buildings']);
         self::assertStringContainsString('srsName="urn:adv:crs:ETRS89_UTM32*DE_DHHN2016_NH"', $extract['gml'], 'SimStadt locates the model by its envelope');

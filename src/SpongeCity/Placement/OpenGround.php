@@ -197,8 +197,8 @@ final readonly class OpenGround
     /**
      * @template T
      *
-     * @param list<T>             $items
-     * @param callable(T): bool   $test
+     * @param list<T>           $items
+     * @param callable(T): bool $test
      */
     private static function inAny(array $items, callable $test): bool
     {

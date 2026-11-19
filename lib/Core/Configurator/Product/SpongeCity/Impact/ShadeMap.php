@@ -30,10 +30,10 @@ final class ShadeMap
     }
 
     /**
-     * @param array{0: float, 1: float, 2: float, 3: float}                                                  $bounds    the plot's minX, maxX, minZ, maxZ (mm)
-     * @param list<array{polygon: list<array{0: float, 1: float}>, height: float}>                          $buildings
-     * @param list<array{x: float, z: float, radius: float, base: float, top: float}>                       $trees
-     * @param array{0: float, 1: float}                                                                      $towardsSun unit vector (x, z)
+     * @param array{0: float, 1: float, 2: float, 3: float}                           $bounds     the plot's minX, maxX, minZ, maxZ (mm)
+     * @param list<array{polygon: list<array{0: float, 1: float}>, height: float}>    $buildings
+     * @param list<array{x: float, z: float, radius: float, base: float, top: float}> $trees
+     * @param array{0: float, 1: float}                                               $towardsSun unit vector (x, z)
      */
     public static function of(array $bounds, array $buildings, array $trees, array $towardsSun, float $reach): self
     {

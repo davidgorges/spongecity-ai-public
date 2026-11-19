@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\SpongeCity\Geo\Hamburg;
 
 use App\SpongeCity\Geo\RemoteZip;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
@@ -28,10 +27,8 @@ final readonly class HamburgElevation
     public function __construct(
         HttpClientInterface $httpClient,
         CacheInterface $cache,
-        #[Autowire(env: 'OSM_USER_AGENT')]
-        string $userAgent,
     ) {
-        $this->zip = new RemoteZip($httpClient, $cache, $userAgent, self::ZIP_URL, self::CACHE_SECONDS);
+        $this->zip = new RemoteZip($httpClient, $cache, self::ZIP_URL, self::CACHE_SECONDS);
     }
 
     /**

@@ -179,9 +179,10 @@ there is none. The chat binds its message with `#[MapRequestPayload]` to `ChatMe
 
 ## Geodata and the import (async)
 
-1. `HomeController` geocodes the text with `NominatimGeocoder` (synchronous, fast), takes the
-   first hit, creates a `new` plan and has `PlanImporter` dispatch `ImportSite`. It redirects
-   at once.
+1. `HomeController::start()` binds the form to `PlaceSearch` (`#[MapRequestPayload]`) and calls
+   `PlanImporter::start()`: it geocodes the text with `NominatimGeocoder` (synchronous, fast),
+   takes the first hit, creates a `new` plan and dispatches `ImportSite`. The controller
+   redirects at once (back home with a flash message when nothing was found).
 2. `ImportSiteHandler` (Messenger worker) runs every `SiteImportStep` (a tagged interface,
    `#[AutowireIterator]`, ordered by `#[AsTaggedItem(priority)]`), handing a `SiteImportContext`
    from one to the next. `FetchOpenStreetMap` asks `OverpassClient` for the area:
@@ -356,6 +357,8 @@ a silent one after 30 s (under load they take 20 s even for small queries), and 
 key: bump it when a query changes). Public Overpass
 instances are shared and often overloaded, and they reject generic user agents: set
 `OSM_USER_AGENT` to something identifying you (also required by Nominatim's usage policy).
+It is sent with every outgoing request (`framework.http_client.default_options` in
+`config/packages/framework.yaml`), so the clients do not set it themselves.
 
 Messenger: transport `async` on Doctrine (SQLite, `var/data_<env>.db`), no retries (the mirrors are
 the retry), failed messages go to the `failed` transport. **A worker must run**
@@ -657,8 +660,8 @@ and writes screenshots and a report (errors, meshes, frame times, flicker) to
 
 - No inline JavaScript: Stimulus controllers only. Use Stimulus `data-action`, not manual listeners.
 - No magic strings: parameter names, SKUs, object types and statuses are constants.
-- Translations in `translations/spongecity.<locale>.yaml` (domain `spongecity`); inside `<twig:…>`
-  bodies pass the domain to `|trans`.
+- Translations in `translations/messages.<locale>.yaml`, the default domain: `|trans` and
+  `TranslatorInterface::trans()` need no domain argument.
 - Run Composer and the console through the Symfony CLI (`symfony composer …`, `symfony console …`).
 - UI: Tailwind v4 with shadcn token names, the UX Toolkit components in `templates/components/`
   (`ux:install <recipe> --kit=shadcn`). The workspace is built from them: Card (windows, panels),

@@ -105,7 +105,7 @@ final readonly class SiteType implements StructuredValue
             $rows[] = [
                 'id' => is_string($object[O::ID] ?? null) ? $object[O::ID] : '',
                 'type' => $type,
-                'label' => is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : null,
+                'label' => Site::label($object),
                 'measures' => match ($type) {
                     O::HOUSE, O::OUTBUILDING, O::POOL => [$number(O::WIDTH), $number(O::DEPTH)],
                     O::BOX => [$number(O::WIDTH), $number(O::DEPTH), $number(O::HEIGHT)],

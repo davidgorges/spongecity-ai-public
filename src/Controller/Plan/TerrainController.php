@@ -8,6 +8,7 @@ use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Terrain\TerrainStore;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpKernel\Attribute\Cache;
 use Symfony\Component\Routing\Attribute\Route;
 
 /**
@@ -18,7 +19,6 @@ use Symfony\Component\Routing\Attribute\Route;
 final class TerrainController extends AbstractController
 {
     public const string ROUTE = 'plan_terrain';
-    private const int MAX_AGE_SECONDS = 300;
 
     public function __construct(
         private readonly TerrainStore $terrains,
@@ -26,13 +26,11 @@ final class TerrainController extends AbstractController
     }
 
     #[Route('/plan/{id}/terrain', name: self::ROUTE, methods: ['GET'])]
+    #[Cache(maxage: 300, public: false)]
     public function __invoke(Plan $plan): JsonResponse
     {
         $terrain = $this->terrains->find($plan->id);
-        $response = null === $terrain ? new JsonResponse(null, JsonResponse::HTTP_NO_CONTENT) : $this->json($terrain->toArray());
-        $response->setPrivate();
-        $response->setMaxAge(self::MAX_AGE_SECONDS);
 
-        return $response;
+        return null === $terrain ? new JsonResponse(null, JsonResponse::HTTP_NO_CONTENT) : $this->json($terrain->toArray());
     }
 }

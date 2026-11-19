@@ -15,8 +15,8 @@ use Core\Configurator\Scene\GardenModels;
 use Core\Configurator\Scene\Material;
 use Core\Configurator\Scene\ProceduralTexture;
 use Core\Configurator\Scenery\Slab;
-use Core\Configurator\Site\Site;
 use Core\Configurator\Site\BuildingType;
+use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 
 /**
@@ -117,7 +117,7 @@ final class InterventionBuilder
             if (!in_array($type, O::INTERVENTIONS, true)) {
                 continue;
             }
-            $label = is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : self::LABEL_PREFIX.$type;
+            $label = Site::label($object) ?? self::LABEL_PREFIX.$type;
             // trees and sails stand on their ground; the surfaces are draped over the terrain by the view
             $upright = in_array($type, O::UPRIGHT, true);
             $ground = $upright && is_numeric($object[O::GROUND] ?? null) ? (float) $object[O::GROUND] : 0.0;

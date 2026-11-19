@@ -63,9 +63,6 @@ final class SiteBuilderTest extends TestCase
         self::assertSame(ProceduralTexture::RoofTiles, $assembly->materials()[$assembly->parts()[1]->material]->texture);
     }
 
-    /**
-     * @param array<string, mixed> $fields
-     */
     #[Test]
     public function drawsOneRowOfWindowsPerStorey(): void
     {

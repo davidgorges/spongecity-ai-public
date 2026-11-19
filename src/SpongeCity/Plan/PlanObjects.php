@@ -27,7 +27,6 @@ final readonly class PlanObjects
     /** a zone is no site object of its own: its type in the list */
     public const string ZONE = 'zone';
 
-    private const string DOMAIN = 'spongecity';
     private const float MILLIMETRES_PER_METRE = 1000.0;
     private const float SQUARE_MILLIMETRES_PER_SQUARE_METRE = 1_000_000.0;
 
@@ -40,7 +39,7 @@ final readonly class PlanObjects
      * @param list<Zone> $zones
      *
      * Shapes: an outline (points), or a tree's position and crown (x, z, r); what stands above the
-     * ground also its base and top over it (a building's roof, a crown, a sail), millimetres.
+     * ground also its base and top over it (a building's roof, a crown, a sail), millimetres
      *
      * @return list<array{id: string, type: string, name: string, stands: string, points?: list<array{0: float, 1: float}>, x?: float, z?: float, r?: float, base?: float, top?: float, can: list<string>, facts: list<array{0: string, 1: string, 2: string|null}>}>
      */
@@ -52,9 +51,9 @@ final readonly class PlanObjects
             $row = match (true) {
                 in_array($type, O::INTERVENTIONS, true) => $this->intervention($object, $type),
                 O::EQUIPMENT === $type => $this->row($object, $type, ['points' => $this->rounded(Site::outlinesOf($object)[0])], self::ON_GROUND, [self::CAN_EDIT, self::CAN_DELETE], [
-                    $this->fact('kind', $this->trans('plan.equipment.kind.'.$object[O::KIND])),
+                    $this->fact('kind', $this->translator->trans('plan.equipment.kind.'.$object[O::KIND])),
                     $this->fact('fall_zone', sprintf('%s × %s m', $this->metres($object[O::WIDTH]), $this->metres($object[O::DEPTH]))),
-                    $this->fact('source', $this->trans('plan.equipment.source.'.($object[O::LOOK] ?? O::LOOK_DATA))),
+                    $this->fact('source', $this->translator->trans('plan.equipment.source.'.($object[O::LOOK] ?? O::LOOK_DATA))),
                 ]),
                 O::TREE === $type => $this->row($object, $type, $this->crown($object), self::UPRIGHT, [], [
                     $this->fact('height', $this->metres($object[O::HEIGHT]).' m'),
@@ -80,10 +79,10 @@ final readonly class PlanObjects
                 'points' => array_map(static fn (array $p): array => [(float) $p[0], (float) $p[1]], $zone->points()),
                 'can' => [self::CAN_EDIT],
                 'facts' => [
-                    $this->fact('use', $this->trans('plan.zones.use.'.$zone->use)),
-                    $this->fact('surface', $this->trans('plan.zones.surface.'.$zone->surface)),
+                    $this->fact('use', $this->translator->trans('plan.zones.use.'.$zone->use)),
+                    $this->fact('surface', $this->translator->trans('plan.zones.surface.'.$zone->surface)),
                     $this->fact('area', $this->squareMetres($zone->areaM2 * self::SQUARE_MILLIMETRES_PER_SQUARE_METRE)),
-                    $this->fact('source', $this->trans('plan.zones.source.'.$zone->source)),
+                    $this->fact('source', $this->translator->trans('plan.zones.source.'.$zone->source)),
                 ],
             ];
         }
@@ -105,7 +104,7 @@ final readonly class PlanObjects
                 $this->fact('ponding', sprintf('%d mm', (int) $object[O::STORAGE]), O::STORAGE),
                 $this->fact('storage', sprintf('%s m³', $this->number($area / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE * ((int) $object[O::STORAGE] / self::MILLIMETRES_PER_METRE + ImpactCalculator::RAIN_GARDEN_MEDIA_STORAGE)))),
             ],
-            O::PERMEABLE => [$this->fact('kind', $this->trans('plan.object.kind.'.$object[O::KIND]), O::KIND), $this->fact('area', $this->squareMetres($area))],
+            O::PERMEABLE => [$this->fact('kind', $this->translator->trans('plan.object.kind.'.$object[O::KIND]), O::KIND), $this->fact('area', $this->squareMetres($area))],
             O::NEWTREE => [$this->fact('height', $this->metres($object[O::HEIGHT]).' m', O::HEIGHT), $this->fact('crown', $this->metres(2 * $this->crownRadius($object)).' m')],
             O::SHADESAIL => [$this->fact('area', $this->squareMetres($area)), $this->fact('height_above', $this->metres($object[O::Y]).' m', O::Y)],
             default => [$this->fact('area', $this->squareMetres($area))],
@@ -121,17 +120,17 @@ final readonly class PlanObjects
     }
 
     /**
-     * @param array<string, mixed>            $object
-     * @param array<string, mixed>            $shape
-     * @param list<string>                    $can
+     * @param array<string, mixed>                              $object
+     * @param array<string, mixed>                              $shape
+     * @param list<string>                                      $can
      * @param list<array{0: string, 1: string, 2: string|null}> $facts
      *
      * @return array<string, mixed>
      */
     private function row(array $object, string $type, array $shape, string $stands, array $can, array $facts): array
     {
-        $kind = $this->trans('plan.object.type.'.$type);
-        $label = is_string($object[O::LABEL] ?? null) ? $object[O::LABEL] : null;
+        $kind = $this->translator->trans('plan.object.type.'.$type);
+        $label = Site::label($object);
 
         return [
             'id' => (string) $object[O::ID],
@@ -188,12 +187,7 @@ final readonly class PlanObjects
      */
     private function fact(string $key, string $value, ?string $field = null): array
     {
-        return [$this->trans('plan.object.fact.'.$key), $value, $field];
-    }
-
-    private function trans(string $key): string
-    {
-        return $this->translator->trans($key, [], self::DOMAIN);
+        return [$this->translator->trans('plan.object.fact.'.$key), $value, $field];
     }
 
     private function metres(mixed $millimetres): string

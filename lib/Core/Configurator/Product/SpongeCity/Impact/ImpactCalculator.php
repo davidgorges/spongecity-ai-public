@@ -50,12 +50,12 @@ final readonly class ImpactCalculator
 
     public function calculate(Site $site, int $stormMillimetres): ImpactReport
     {
-        $plots = $site->ofType(O::PLOT);
-        if ([] === $plots) {
+        $plot = $site->plot();
+        if (null === $plot) {
             return new ImpactReport(0.0, $stormMillimetres, [], [], [], ['No plot loaded: load a site first.']);
         }
-        $outline = Site::points($plots[0]);
-        $plotSurface = GroundClass::fromSurface(is_string($plots[0][O::SURFACE] ?? null) ? $plots[0][O::SURFACE] : O::SURFACE_ASPHALT);
+        $outline = Site::points($plot);
+        $plotSurface = GroundClass::fromSurface(is_string($plot[O::SURFACE] ?? null) ? $plot[O::SURFACE] : O::SURFACE_ASPHALT);
 
         $baselineSite = new Site(array_values(array_filter($site->objects, static fn (array $o): bool => !in_array($o[O::TYPE], O::INTERVENTIONS, true))));
         $grid = $this->grid($outline);
@@ -111,7 +111,7 @@ final readonly class ImpactCalculator
     }
 
     /**
-     * @param list<array{0: float, 1: float}>                       $outline
+     * @param list<array{0: float, 1: float}>                            $outline
      * @param array{cell: float, cells: list<array{0: float, 1: float}>} $grid
      *
      * @return array{area: float, permeable: float, runoff: float, retained: float, psi: float, shade: float, temperature: float, classes: array<string, float>, warnings: list<string>}

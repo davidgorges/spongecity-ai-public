@@ -27,6 +27,7 @@ final class Turn
         if (0.0 === $rotation->x && 0.0 === $rotation->z) {
             return new Vector3(0.0, $rotation->y + $angle, 0.0);
         }
+
         return self::anglesOf(self::multiply(self::y($angle), self::euler($rotation)));
     }
 

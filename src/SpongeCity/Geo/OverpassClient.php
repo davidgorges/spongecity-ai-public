@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Geo;
 
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
@@ -25,7 +24,7 @@ final readonly class OverpassClient
     private const int QUERY_TIMEOUT_SECONDS = 25;
     /**
      * a mirror that does not start answering within this is skipped. Generous: under load the public
-     * mirrors take 20 s even for small queries, and the import runs in a worker, so waiting costs nothing
+     * mirrors take 20 s even for small queries, and the import runs in a worker, so waiting costs nothing.
      */
     private const int REQUEST_TIMEOUT_SECONDS = 30;
 
@@ -39,8 +38,6 @@ final readonly class OverpassClient
     public function __construct(
         private HttpClientInterface $httpClient,
         private CacheInterface $cache,
-        #[Autowire(env: 'OSM_USER_AGENT')]
-        private string $userAgent,
     ) {
     }
 
@@ -131,7 +128,6 @@ final readonly class OverpassClient
             try {
                 $response = $this->httpClient->request('POST', $endpoint, [
                     'body' => ['data' => $query],
-                    'headers' => ['User-Agent' => $this->userAgent],
                     'timeout' => self::REQUEST_TIMEOUT_SECONDS,
                     'max_duration' => self::QUERY_TIMEOUT_SECONDS + self::REQUEST_TIMEOUT_SECONDS,
                 ]);

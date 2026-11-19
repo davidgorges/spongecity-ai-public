@@ -9,8 +9,8 @@ use App\SpongeCity\Conditions\SiteConditions;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\Hamburg\Hamburg3dTiles;
 use App\SpongeCity\Geo\Hamburg\HamburgApi;
-use App\SpongeCity\Geo\Hamburg\HamburgBuildings;
 use App\SpongeCity\Geo\Hamburg\HamburgBuildingLayer;
+use App\SpongeCity\Geo\Hamburg\HamburgBuildings;
 use App\SpongeCity\Geo\Hamburg\HamburgInfiltration;
 use App\SpongeCity\Geo\Hamburg\HamburgTreeLayer;
 use App\SpongeCity\Geo\Hamburg\HamburgTrees;
@@ -151,14 +151,14 @@ final class HamburgLayersTest extends TestCase
     private function layers(?string $failing = null): MapLayers
     {
         $api = $this->api($failing);
-        $tiles = new Hamburg3dTiles($this->client($failing), new ArrayAdapter(), 'test');
+        $tiles = new Hamburg3dTiles($this->client($failing), new ArrayAdapter());
 
         return new MapLayers([new HamburgBuildingLayer(new HamburgBuildings($api)), new HamburgTreeLayer(new HamburgTrees($api, $tiles))], new NullLogger());
     }
 
     private function api(?string $failing = null): HamburgApi
     {
-        return new HamburgApi($this->client($failing), new ArrayAdapter(), 'test');
+        return new HamburgApi($this->client($failing), new ArrayAdapter());
     }
 
     private function client(?string $failing): MockHttpClient

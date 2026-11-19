@@ -132,7 +132,7 @@ final class Polygon
     }
 
     /**
-     * @param list<array{0: float, 1: float}>                                                     $ring
+     * @param list<array{0: float, 1: float}>                                                                 $ring
      * @param array{0: array{0: float, 1: float}, 1: array{0: float, 1: float}, 2: array{0: float, 1: float}} $triangle
      */
     private static function anyInside(array $ring, array $triangle): bool

@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Command;
 
 use App\Controller\Plan\ShowPlanController;
-use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Import\ImportSite;
 use App\SpongeCity\Import\PlanImporter;
 use App\SpongeCity\Plan\PlanStore;
@@ -41,7 +40,7 @@ final class ReimportPlanCommand
     ): int {
         $plan = $this->plans->get($id);
         $kept = $this->carryOver->capture($plan->id);
-        if (!$this->importer->request($plan, new GeoPoint($plan->latitude, $plan->longitude, $plan->title), $radius, now: true)) {
+        if (!$this->importer->request($plan, $plan->centre(), $radius, now: true)) {
             $io->error(sprintf('Plan %s is being imported right now (%s).', $plan->id, $plan->status->value));
 
             return Command::FAILURE;

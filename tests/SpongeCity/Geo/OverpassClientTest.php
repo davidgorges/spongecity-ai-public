@@ -25,7 +25,7 @@ final class OverpassClientTest extends TestCase
             return new MockResponse('{"elements": [{"type": "way", "id": 1}]}');
         });
 
-        $elements = (new OverpassClient($client, new ArrayAdapter(), 'test'))->around(new GeoPoint(53.5513, 10.0188, 'Test'), 80);
+        $elements = (new OverpassClient($client, new ArrayAdapter()))->around(new GeoPoint(53.5513, 10.0188, 'Test'), 80);
 
         self::assertSame([['type' => 'way', 'id' => 1]], $elements);
         // "around:1" would only find areas whose outline passes within a metre of the point

@@ -35,8 +35,8 @@ final readonly class SiteCarryOver
 
     /**
      * @return array{looks: int, conflicts: list<array<string, mixed>>} how many corrected looks found their building
-     *                                                                   again, and the interventions left out because
-     *                                                                   the new data has a building where they were
+     *                                                                  again, and the interventions left out because
+     *                                                                  the new data has a building where they were
      */
     public function restore(string $planId, CarriedOver $kept): array
     {

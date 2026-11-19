@@ -38,7 +38,7 @@ final readonly class SurroundingsLoader
             return null;
         }
         try {
-            $centre = new GeoPoint($plan->latitude, $plan->longitude, $plan->title);
+            $centre = $plan->centre();
             // a city's own buildings in place of OpenStreetMap's, where it has them
             $map = $this->layers->apply($this->overpass->surroundings($centre, ImportSite::SURROUNDINGS_RADIUS_METRES), MapArea::surroundings($centre, ImportSite::SURROUNDINGS_RADIUS_METRES));
             $surroundings = $this->importer->import($centre, $map->elements, Site::fromJson($plan->siteJson()), ImportSite::SURROUNDINGS_RADIUS_METRES);

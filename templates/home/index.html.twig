@@ -7,20 +7,20 @@
                 <twig:ux:icon name="lucide:sprout" class="size-4" aria-hidden="true" />
                 SpongeCity AI
             </p>
-            <h1 class="font-heading text-4xl font-semibold leading-tight text-balance">{{ 'home.title'|trans({}, 'spongecity') }}</h1>
-            <p class="text-lg text-muted-foreground text-pretty">{{ 'home.lead'|trans({}, 'spongecity') }}</p>
+            <h1 class="font-heading text-4xl font-semibold leading-tight text-balance">{{ 'home.title'|trans }}</h1>
+            <p class="text-lg text-muted-foreground text-pretty">{{ 'home.lead'|trans }}</p>
         </header>
 
         {% for message in app.flashes('error') %}
             <twig:Alert variant="destructive" role="alert">
-                <twig:Alert:Description>{{ message|trans({}, 'spongecity') }}</twig:Alert:Description>
+                <twig:Alert:Description>{{ message|trans }}</twig:Alert:Description>
             </twig:Alert>
         {% endfor %}
 
-        {% set placeholder = 'home.placeholder'|trans({}, 'spongecity') %}
-        {% set submit_label = 'home.submit'|trans({}, 'spongecity') %}
-        <form method="post" action="{{ path('home') }}" class="flex flex-col gap-3 sm:flex-row" {{ stimulus_controller('form-submit-disable') }} data-action="submit->form-submit-disable#busy">
-            <twig:Label for="place" class="sr-only">{{ 'home.label'|trans({}, 'spongecity') }}</twig:Label>
+        {% set placeholder = 'home.placeholder'|trans %}
+        {% set submit_label = 'home.submit'|trans %}
+        <form method="post" action="{{ path('home_start') }}" class="flex flex-col gap-3 sm:flex-row" {{ stimulus_controller('form-submit-disable') }} data-action="submit->form-submit-disable#busy">
+            <twig:Label for="place" class="sr-only">{{ 'home.label'|trans }}</twig:Label>
             <twig:InputGroup class="h-11 flex-1">
                 <twig:InputGroup:Addon>
                     <twig:ux:icon name="lucide:map-pin" aria-hidden="true" />
@@ -34,10 +34,10 @@
         </form>
 
         <section aria-labelledby="examples-title" class="flex flex-col gap-2">
-            <h2 id="examples-title" class="text-sm font-medium text-muted-foreground">{{ 'home.examples'|trans({}, 'spongecity') }}</h2>
+            <h2 id="examples-title" class="text-sm font-medium text-muted-foreground">{{ 'home.examples'|trans }}</h2>
             <ul class="flex flex-wrap gap-2">
                 {% for example in examples %}
-                    {% set text = example|trans({}, 'spongecity') %}
+                    {% set text = example|trans %}
                     <li>
                         <twig:Button type="button" variant="outline" size="sm" data-controller="fill-input" data-action="fill-input#fill" data-fill-input-target-value="place" data-fill-input-text-value="{{ text }}">{{ text }}</twig:Button>
                     </li>
@@ -51,7 +51,7 @@
             {{ stimulus_controller('recent-plans', {storageKey: constant('App\\Controller\\HomeController::RECENT_PLANS_STORAGE_KEY')}) }}
             data-recent-plans-target="section"
         >
-            <h2 id="recent-title" class="text-sm font-medium text-muted-foreground">{{ 'home.recent'|trans({}, 'spongecity') }}</h2>
+            <h2 id="recent-title" class="text-sm font-medium text-muted-foreground">{{ 'home.recent'|trans }}</h2>
             <twig:Item:Group class="gap-2" data-recent-plans-target="list" />
             <template data-recent-plans-target="template">
                 <twig:Item variant="outline" size="sm" as="a" role="listitem" data-link>
@@ -62,6 +62,6 @@
             </template>
         </section>
 
-        <p class="text-xs text-muted-foreground">{{ 'home.sources'|trans({}, 'spongecity') }}</p>
+        <p class="text-xs text-muted-foreground">{{ 'home.sources'|trans }}</p>
     </main>
 {% endblock %}

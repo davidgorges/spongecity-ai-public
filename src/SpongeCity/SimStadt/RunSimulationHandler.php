@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\SimStadt;
 
-use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\Hamburg\HamburgCityGml;
 use App\SpongeCity\Plan\PlanStore;
 use Core\Configurator\Site\SiteObject;
@@ -49,7 +48,7 @@ final readonly class RunSimulationHandler
         }
 
         try {
-            $centre = new GeoPoint($plan->latitude, $plan->longitude, $plan->title);
+            $centre = $plan->centre();
             // the buildings within the site's reach, as the 3D view and the impact calculation see them
             $extract = $this->cityGml->extract($centre, SiteObject::REACH / self::MILLIMETRES_PER_METRE, $message->yearOfConstruction);
             if ([] === $extract['buildings']) {

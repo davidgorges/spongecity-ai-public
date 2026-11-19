@@ -124,7 +124,7 @@ final class SiteObject
     public const string EQUIPMENT_OTHER = 'other';
     /**
      * kind → [fall zone width, fall zone depth, height of the equipment], millimetres: rough fall zones
-     * after DIN EN 1176 (a two-seat swing swings along its depth), for planning, not a safety check
+     * after DIN EN 1176 (a two-seat swing swings along its depth), for planning, not a safety check.
      */
     public const array EQUIPMENT_SIZES = [
         self::EQUIPMENT_SWING => [4000, 7500, 2500],
