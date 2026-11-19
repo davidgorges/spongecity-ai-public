@@ -22,7 +22,7 @@
  *   --headed         show the browser window
  *   --watch          re-render on file changes
  *   --out=DIR        output directory (default var/render-loop/latest)
- *   --base=URL       app base URL (default http://127.0.0.1:8000)
+ *   --base=URL       app base URL (default: the Symfony CLI's server, else http://127.0.0.1:8000)
  */
 import { existsSync, mkdirSync, rmSync, watch, writeFileSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
@@ -62,7 +62,7 @@ if (!args.target || args.help) {
 }
 
 const options = {
-    url: planUrl(args.target, args.base ?? 'http://127.0.0.1:8000', args.tier ?? '3'),
+    url: planUrl(args.target, args.base ?? (process.env.SYMFONY_PROJECT_DEFAULT_ROUTE_URL || 'http://127.0.0.1:8000'), args.tier ?? '3'),
     views: (args.views ?? ALL_VIEWS.join(',')).split(',').map((v) => v.trim()).filter(Boolean),
     orbit: Number(args.orbit ?? 0),
     perf: Number(args.perf === true ? 6 : (args.perf ?? 0)),

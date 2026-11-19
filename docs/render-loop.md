@@ -13,7 +13,7 @@ bin/render-loop 01M7J3FYGWEPKTAH2SJ16A1TY4 --perf --dpr=2  # frame times as on a
 
 ## Requirements
 
-- The app running (`symfony server:start`, default `http://127.0.0.1:8000`) and the plan **ready**
+- The app running (`symfony server:start`; the render loop finds its port) and the plan **ready**
   (imported). The render waits for the 3D view and fails after 30 s if there is none.
 - Google Chrome or Chromium installed. Found at the usual macOS and Linux paths, or set
   `CHROME_PATH`.
@@ -56,7 +56,7 @@ The output directory is **emptied** at the start of every run.
 | `--eval=JS` | none | JavaScript run in the page after loading, before anything else (experiments, camera set-ups). With `--views=` and no orbit, the result is saved as `eval.png`. |
 | `--watch` | off | Keeps the browser open and renders again 400 ms after a change under `assets/`, `lib/`, `src/` or `templates/`. Changes during a run queue one more run. |
 | `--out=DIR` | `var/render-loop/latest` | Output directory, relative to the project. |
-| `--base=URL` | `http://127.0.0.1:8000` | The app's address, for plan ids. |
+| `--base=URL` | the Symfony CLI's server, else `http://127.0.0.1:8000` | The app's address, for plan ids. |
 | `--headed` | off | Shows the browser window. |
 | `--help` | | Prints the usage. |
 

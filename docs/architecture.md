@@ -374,7 +374,7 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
   set `http.allowed_hosts` to expose it) serves `App\Mcp\SpongeCityTools`, declared with
   `#[McpTool]`. Any MCP client (Claude Desktop, the inspector) can use it.
 - **Client**: `mcp.clients.spongecity.servers.local` points at `MCP_SERVER_URL`
-  (default `http://127.0.0.1:8000/mcp`); the agent's `tools: - mcp_server: 'spongecity.local'`
+  (`${DEFAULT_URI}mcp`, which follows the port the Symfony CLI serves on); the agent's `tools: - mcp_server: 'spongecity.local'`
   exposes the tools to the model with the prefix `local_`.
 
 | Tool | Does |
@@ -670,20 +670,21 @@ and writes screenshots and a report (errors, meshes, frame times, flicker) to
   through `workspace`. A Toggle that another controller presses (dock, mood, overlay, placing
   equipment) is pressed through `assets/configurator/press.js`: the Toggle's controller would
   otherwise reset aria-pressed when it connects.
-  Build CSS with `symfony console tailwind:build`.
+  CSS is built by `composer install` and rebuilt by the `tailwind` worker while the server runs
+  (`symfony console tailwind:build` by hand).
 
 ## Running it
 
+Setup, optional parts (API key, SimStadt, render loop) and checks: see the [README](../README.md).
+
 ```bash
-symfony composer install
-symfony console importmap:install
-symfony console tailwind:build
-# .env.local: ANTHROPIC_API_KEY=…  OSM_USER_AGENT="YourApp contact@example.com"
-symfony server:start --no-tls      # also starts the Messenger workers (import, SimStadt)
-docker pull simstadt/simstadt:cli  # building simulations (about 1.3 GB)
-symfony console app:plan:demo      # offline demo plan (synthetic sealed schoolyard)
+symfony composer install                 # dependencies, importmap, Tailwind build
+symfony server:start -d --no-tls         # web server + workers (import, SimStadt, Tailwind --watch)
+symfony console app:doctor               # checks the setup and says how to fix it
+symfony console app:plan:demo            # offline demo plan (synthetic sealed schoolyard)
 symfony console app:plan:reimport <id>   # re-import site and surroundings, keeping interventions
-bin/render-loop <id> --perf --dpr=2      # renders and frame times (installs puppeteer-core on first run)
+docker pull --platform linux/amd64 simstadt/simstadt:cli   # optional: building simulations (about 1.3 GB)
+bin/render-loop <id> --perf --dpr=2      # optional: renders and frame times (Node.js + Chrome)
 symfony php vendor/bin/phpunit
 ```
 

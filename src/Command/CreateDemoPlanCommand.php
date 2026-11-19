@@ -4,12 +4,14 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\Controller\Plan\ShowPlanController;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\SiteImporter;
 use App\SpongeCity\Plan\PlanStore;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
  * A synthetic schoolyard (a sealed yard between a school building and a gym), made from
@@ -25,6 +27,7 @@ final class CreateDemoPlanCommand
     public function __construct(
         private readonly SiteImporter $importer,
         private readonly PlanStore $plans,
+        private readonly UrlGeneratorInterface $urls,
     ) {
     }
 
@@ -44,7 +47,7 @@ final class CreateDemoPlanCommand
         $plan = $this->plans->create($centre->label, $centre->latitude, $centre->longitude);
         $plan->replaceSite($import->siteJson);
         $this->plans->save($plan);
-        $io->success(sprintf('Plan %s: /plan/%s', $plan->id, $plan->id));
+        $io->success(sprintf('Plan %s: %s', $plan->id, $this->urls->generate(ShowPlanController::ROUTE, ['id' => $plan->id], UrlGeneratorInterface::ABSOLUTE_URL)));
 
         return Command::SUCCESS;
     }

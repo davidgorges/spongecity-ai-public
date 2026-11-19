@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Command;
 
+use App\Controller\Plan\ShowPlanController;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Import\ImportSite;
 use App\SpongeCity\Import\PlanImporter;
@@ -14,6 +15,7 @@ use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Attribute\Option;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Style\SymfonyStyle;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 
 /**
  * Rebuilds a plan's site and surroundings from OpenStreetMap right away (no worker),
@@ -26,6 +28,7 @@ final class ReimportPlanCommand
         private readonly PlanStore $plans,
         private readonly PlanImporter $importer,
         private readonly SiteCarryOver $carryOver,
+        private readonly UrlGeneratorInterface $urls,
     ) {
     }
 
@@ -47,7 +50,7 @@ final class ReimportPlanCommand
         foreach ($restored['conflicts'] as $conflict) {
             $io->warning(sprintf('Left out %s "%s": %s', $conflict['type'], $conflict['label'] ?? '', $conflict['reason']));
         }
-        $io->success(sprintf('Re-imported /plan/%s, kept %d interventions and %d corrected building looks', $plan->id, count($kept->interventions) - count($restored['conflicts']), $restored['looks']));
+        $io->success(sprintf('Re-imported %s, kept %d interventions and %d corrected building looks', $this->urls->generate(ShowPlanController::ROUTE, ['id' => $plan->id], UrlGeneratorInterface::ABSOLUTE_URL), count($kept->interventions) - count($restored['conflicts']), $restored['looks']));
 
         return Command::SUCCESS;
     }
