@@ -9,33 +9,55 @@ Stimulus, Tailwind v4, three.js. The 3D engine and UI kit come from the `sf_conf
 
 ## Big picture
 
-```
- Browser                              Symfony app                                External
- ───────                              ───────────                                ────────
- home form ── POST / ───────────────► HomeController ── geocode ───────────────► Nominatim
-                                         │  create Plan(new), PlanImporter → dispatch
-                                         ▼
-                                      Messenger (async, Doctrine/SQLite)
-                                         │  worker: messenger:consume async
-                                         ▼
-                                      ImportSiteHandler: PlanImport start → steps → complete
-                                         │  FetchOpenStreetMap ───────────────────► Overpass mirrors
-                                         │  ApplyOfficialLayers (MapLayer, in Hamburg) ► api.hamburg.de (OGC API)
-                                         │  BuildSite, ImportTerrain, CollectSiteConditions, GroundSite
-                                         ▼
- plan page ◄── Live Component ──────  PlanStore (cache.app)  ◄───────────┐
-  (3D view, impact, list)             Plan: values + status               │ reads/writes
-  3D view ◄── GET /plan/{id}/surroundings ── SurroundingsLoader ─────────►│ (real city around the site)
-  3D view ◄── GET /plan/{id}/conditions ──── SiteConditionsStore ────────►│ (infiltration overlay, sources)
-  3D view ◄── GET /plan/{id}/terrain ─────── TerrainStore ───────────────►│ (the ground: height grids)
-        │                                                                 │
-        │ chat POST /plan/{id}/chat                                       │
-        ▼                                                                 │
-   ChatController → PlanAssistant → Agent "spongecity" (Claude)           │
-                                         │ MCP client (HTTP)              │
-                                         ▼                                │
-                                      /mcp  ── SpongeCityTools ───────────┘
-                                         (geodata, scene edit, impact)
+> A visual tour with nine diagrams is in [overview.md](overview.md). This page is the reference.
+
+```mermaid
+flowchart LR
+    subgraph browser["Browser"]
+        direction TB
+        home["Home form"]
+        page["Plan page<br/><small>PlanWorkspace · 3D view · chat</small>"]
+    end
+
+    subgraph app["Symfony app"]
+        direction TB
+        hc["HomeController → PlanImporter"]
+        json["JSON endpoints<br/><small>surroundings · conditions · terrain</small>"]
+        chat["ChatController → PlanAssistant"]
+        tools["/mcp · SpongeCityTools<br/><small>PlacementTools · SimStadtTools</small>"]
+        handler["ImportSiteHandler<br/><small>worker: messenger:consume async</small>"]
+        store[("PlanStore and siblings<br/><small>cache.app</small>")]
+    end
+
+    subgraph ext["External"]
+        direction TB
+        nom["Nominatim"]
+        ovp["Overpass mirrors"]
+        hh["api.hamburg.de · LGV downloads"]
+        cl["Claude"]
+    end
+
+    home -- "POST /" --> hc -- "geocode" --> nom
+    hc -- "ImportSite via Messenger" --> handler
+    handler -- "FetchOpenStreetMap" --> ovp
+    handler -- "official layers, terrain" --> hh
+    handler --> store
+    page <-- "Live Component" --> store
+    page -- "GET /plan/{id}/…" --> json --> store
+    page -- "POST /plan/{id}/chat" --> chat -- "agent turn" --> cl
+    cl -. "tool calls (HTTP)" .-> tools --> store
+
+    classDef ui fill:#ccfbf1,stroke:#0f766e,color:#042f2e
+    classDef svc fill:#e0f2fe,stroke:#0369a1,color:#082f49
+    classDef data fill:#fef3c7,stroke:#b45309,color:#451a03
+    classDef external fill:#ffffff,stroke:#64748b,color:#0f172a
+    class home,page ui
+    class hc,json,chat,tools,handler svc
+    class store data
+    class nom,ovp,hh,cl external
+    style browser fill:#f0fdfa,stroke:#0f766e,color:#042f2e
+    style app fill:#f0f9ff,stroke:#0369a1,color:#082f49
+    style ext fill:#f8fafc,stroke:#94a3b8,stroke-dasharray:4 3,color:#334155
 ```
 
 Everything is addressed by a **plan id**. The browser and the agent's MCP tools run in separate
@@ -63,13 +85,20 @@ requests and share state only through `PlanStore`.
 
 Data flow (see `sf_configurator/docs/configurator.md` for the full framework):
 
-```
-values (storm, site JSON)
-  └─ ConfigurationResolver ─► Configuration
-       └─ SpongeCityDefinition::build()  ─► Assembly of Parts      (the product: plot + interventions)
-            ├─ BillOfMaterials ─► Quote (prices per SKU)           (bill of quantities, cost estimate)
-            └─ Evaluation::scene() = product + SiteBuilder(site)   (the surrounding city)
-                 └─ SceneSerializer ─► scene JSON ─► SceneRenderer (three.js)
+```mermaid
+flowchart LR
+    values[/"values<br/><small>storm · site JSON</small>"/] --> resolver["ConfigurationResolver"] --> conf["Configuration"]
+    conf --> build["SpongeCityDefinition::build()<br/><small>Assembly of Parts: plot + interventions</small>"]
+    build --> bom["BillOfMaterials → Quote<br/><small>bill of quantities, cost estimate</small>"]
+    build --> scene["Evaluation::scene()<br/><small>product + SiteBuilder(site): the city</small>"]
+    scene --> ser["SceneSerializer"] -- "scene JSON" --> renderer["SceneRenderer<br/><small>three.js</small>"]
+
+    classDef io fill:#fef3c7,stroke:#b45309,color:#451a03
+    classDef eng fill:#ede9fe,stroke:#6d28d9,color:#2e1065
+    classDef ui fill:#ccfbf1,stroke:#0f766e,color:#042f2e
+    class values io
+    class resolver,conf,build,bom,scene,ser eng
+    class renderer ui
 ```
 
 Units: **millimetres** on the server, metres in the browser. Plan coordinates: **x east, z south**,
@@ -143,12 +172,17 @@ always goes through `SiteType::normalize()`.
 A Symfony Workflow state machine, defined in its class (`#[AsWorkflow]`, a `#[Transition]` per
 constant, the places from the `PlanStatus` enum; `symfony console workflow:dump plan_import`):
 
-```
-new ──request──► pending ──start──► importing ──complete──► ready
-                    │                   │                     │
-                    └──────fail─────────┴──► failed           │
-                    ▲                          │              │
-                    └──────── request ◄────────┴──────────────┘
+```mermaid
+stateDiagram-v2
+    direction LR
+    [*] --> new
+    new --> pending: request
+    pending --> importing: start
+    importing --> ready: complete
+    pending --> failed: fail
+    importing --> failed: fail
+    ready --> pending: request
+    failed --> pending: request
 ```
 
 - `PlanImporter::request()` is the one way in (home page, `load_site`, `app:plan:reimport`): a new,
@@ -392,6 +426,7 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | `simulate_buildings` / `get_building_simulation` | Hamburg only: a SimStadt run (heat demand, heat demand with shadow, PV potential) for the buildings within 100 m, started and polled (see "Building simulations"). |
 | `get_site_conditions` | Hamburg only: terrain of the plot (elevation, slope, where water runs and collects), infiltration potential as shares of the plot with their meaning, and the sources (publisher, date, licence, limitations) of the site's official layers. |
 | `propose_placements` / `place_candidate` | Where an intervention works, worked out by the server (rain gardens so far, see "Placing interventions"): candidates with metrics and reasons, then one placed by its id. |
+| `get_zones` / `describe_zone` | The plot's zones (use, surface, source), and what a zone is used for or its ground is today when the user says so. |
 
 `add_objects` and `update_object` leave out any intervention that covers a building (more than
 0.5 m², `BuildingClearance`) or a tree planted inside one, and return it under `conflicts`;
@@ -485,14 +520,29 @@ shading. It covers the buildings, not the open ground, so it complements the imp
 rather than replacing it. Its tools are part of this application's MCP server
 (`App\Mcp\SimStadtTools`, Symfony MCP bundle), next to `SpongeCityTools`.
 
-```
-simulate_buildings ─► Simulation (queued) + RunSimulation ─► Messenger transport "simstadt"
-                                                                  │ worker
-                     HamburgCityGml: LoD2 tiles (RemoteZip) ─► CityGML of the site's buildings
-                     SimStadtTemplates → the workflow's SimStadtTemplate
-                     SimStadtRunner: docker run simstadt/simstadt:cli simstadt <Template> …
-                     SimStadtResults: summary + one row per building (plan x/z)
-get_building_simulation ◄─ SimulationStore (cache pool, per plan and workflow)
+```mermaid
+sequenceDiagram
+    autonumber
+    participant A as Agent
+    participant T as SimStadtTools
+    participant Q as Transport "simstadt"
+    participant H as RunSimulationHandler
+    participant G as HamburgCityGml
+    participant D as SimStadtRunner (Docker)
+    participant S as SimulationStore
+
+    A->>T: simulate_buildings(plan, workflow, year)
+    T->>S: Simulation (queued)
+    T->>Q: RunSimulation
+    Q->>H: consume (worker)
+    H->>S: start → running
+    H->>G: LoD2 tiles via RemoteZip → CityGML of the site's buildings
+    H->>D: docker run simstadt/simstadt:cli simstadt <Template> …
+    D-->>H: printed totals + result table
+    H->>S: SimStadtResults: summary + one row per building → done
+    A->>T: get_building_simulation (poll)
+    T->>S: read
+    T-->>A: results with assumptions
 ```
 
 - **Workflows and templates**: `SimStadtWorkflow` names what the agent can run (and describes it
