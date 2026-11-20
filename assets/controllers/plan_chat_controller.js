@@ -2,14 +2,19 @@ import { Controller } from '@hotwired/stimulus';
 
 /** the error key of a message the server did not accept */
 const INVALID = 'plan.chat.invalid';
+/** the error key of a turn that failed, or never came back */
+const FAILED = 'failed';
 
 /**
- * Chat with the planning agent. A message is posted to the plan's chat endpoint; while the
- * agent works it changes the plan through MCP tools, so the plan is refreshed when it
- * answers (the `plan:changed` event on window re-renders the PlanWorkspace live component),
- * and after a while during the wait, so the user watches the design appear.
+ * Chat with the planning agent. A message is posted to the plan's chat endpoint, which hands it to
+ * a worker and answers at once (202); the agent's reply, or that it failed, arrives on the plan's
+ * Mercure topic (App\SpongeCity\Chat\ChatStream: {reply} or {error}). While the agent works it
+ * changes the plan through MCP tools, so the plan is refreshed meanwhile and when it answers (the
+ * `plan:changed` event on window re-renders the PlanWorkspace live component), and the user
+ * watches the design appear.
  *
- *   <section data-controller="plan-chat" data-plan-chat-url-value="/plan/…/chat" data-live-ignore>
+ *   <section data-controller="plan-chat" data-plan-chat-url-value="/plan/…/chat"
+ *            data-plan-chat-stream-value="https://…/.well-known/mercure?topic=…" data-live-ignore>
  *
  * A new message is a copy of the template for its role (user, assistant, error: a Bubble each),
  * its text put into the element marked data-text.
@@ -18,18 +23,28 @@ export default class extends Controller {
     static targets = ['messages', 'input', 'submit', 'status', 'template'];
     static values = {
         url: String,
+        stream: String,
         errors: Object,
         refreshMs: { type: Number, default: 2500 },
+        /** a turn that has not answered by then is given up on (the agent's turn limit is lower) */
+        timeoutMs: { type: Number, default: 300000 },
     };
 
+    #source = null;
     #timer = null;
+    #timeout = null;
 
     connect() {
         this.#scrollDown();
+        // listening from the start: a reply is not missed however fast it comes
+        this.#source = new EventSource(this.streamValue);
+        this.#source.onmessage = (event) => this.#answered(JSON.parse(event.data));
     }
 
     disconnect() {
-        this.#stopRefreshing();
+        this.#source?.close();
+        this.#source = null;
+        this.#done();
     }
 
     async send(event) {
@@ -41,7 +56,8 @@ export default class extends Controller {
         this.#append('user', message);
         this.inputTarget.value = '';
         this.#busy(true);
-        this.#startRefreshing();
+        this.#timer = setInterval(() => this.#planChanged(), this.refreshMsValue);
+        this.#timeout = setTimeout(() => this.#answered({ error: FAILED }), this.timeoutMsValue);
 
         try {
             const response = await fetch(this.urlValue, {
@@ -49,20 +65,12 @@ export default class extends Controller {
                 headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
                 body: JSON.stringify({ message }),
             });
-            const data = await response.json();
-            if (response.ok && data.reply) {
-                this.#append('assistant', data.reply);
-            } else {
+            if (!response.ok) {
                 // 422: the message did not pass validation (empty, or too long)
-                const error = data.error ?? (422 === response.status ? INVALID : null);
-                this.#append('error', this.errorsValue[error] ?? this.errorsValue.failed ?? '');
+                this.#answered({ error: 422 === response.status ? INVALID : FAILED });
             }
         } catch {
-            this.#append('error', this.errorsValue.failed ?? '');
-        } finally {
-            this.#stopRefreshing();
-            this.#busy(false);
-            this.#planChanged();
+            this.#answered({ error: FAILED });
         }
     }
 
@@ -78,6 +86,24 @@ export default class extends Controller {
         this.inputTarget.focus();
     }
 
+    /** the agent's reply, or an error key: ends the wait */
+    #answered(data) {
+        if (data.reply) {
+            this.#append('assistant', data.reply);
+        } else {
+            this.#append('error', this.errorsValue[data.error] ?? this.errorsValue[FAILED] ?? '');
+        }
+        this.#done();
+        this.#planChanged();
+    }
+
+    #done() {
+        clearInterval(this.#timer);
+        clearTimeout(this.#timeout);
+        this.#timer = this.#timeout = null;
+        this.#busy(false);
+    }
+
     #append(role, text) {
         const template = this.templateTargets.find((candidate) => candidate.dataset.role === role) ?? this.templateTarget;
         const node = template.content.firstElementChild.cloneNode(true);
@@ -90,15 +116,6 @@ export default class extends Controller {
         this.submitTarget.disabled = busy;
         this.statusTarget.hidden = !busy;
         this.element.setAttribute('aria-busy', String(busy));
-    }
-
-    #startRefreshing() {
-        this.#timer = setInterval(() => this.#planChanged(), this.refreshMsValue);
-    }
-
-    #stopRefreshing() {
-        clearInterval(this.#timer);
-        this.#timer = null;
     }
 
     #planChanged() {

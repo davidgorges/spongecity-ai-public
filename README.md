@@ -44,10 +44,13 @@ Or keep the key in the secrets vault instead: `symfony console secrets:set ANTHR
 ### 3. Run and check
 
 ```bash
-symfony server:start -d --no-tls   # web server + workers (site import, SimStadt, Tailwind --watch)
+symfony server:start -d --no-tls   # web server + workers (site import, SimStadt, agent, Tailwind --watch) + Mercure hub (Docker)
 symfony console app:doctor         # checks the setup and prints how to fix what is missing
 symfony open:local
 ```
+
+The planning chat's replies arrive through a Mercure hub (`compose.yaml`, started by the Symfony
+CLI through Docker): without Docker the chat queues messages but no reply reaches the page.
 
 `app:doctor` checks the web server, the agent's tools (`bin/console mcp:server`), the import worker, the API key, the OSM
 user agent and SimStadt. A ✘ means the app won't work; a `!` only affects an optional feature.

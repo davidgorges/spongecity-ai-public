@@ -7,12 +7,15 @@ namespace App\Tests\Controller;
 use App\Controller\Plan\ChatController;
 use App\Controller\Plan\ChatMessage;
 use App\Controller\Plan\ConditionsController;
+use App\SpongeCity\Chat\AskPlanningAgent;
 use App\SpongeCity\Plan\PlanStore;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 
 /**
- * The plan's endpoints receive the plan of their {id}, or answer 404; the chat checks its message first.
+ * The plan's endpoints receive the plan of their {id}, or answer 404; the chat checks its message first,
+ * then hands it to a worker and answers at once.
  */
 final class PlanControllersTest extends WebTestCase
 {
@@ -38,5 +41,22 @@ final class PlanControllersTest extends WebTestCase
 
             self::assertResponseStatusCodeSame(422);
         }
+    }
+
+    #[Test]
+    public function theChatHandsTheMessageToAWorkerAndAnswersAtOnce(): void
+    {
+        $client = static::createClient();
+        $plan = static::getContainer()->get(PlanStore::class)->create('Berlin', 52.52, 13.40);
+        $url = $client->getContainer()->get('router')->generate(ChatController::ROUTE, ['id' => $plan->id]);
+
+        $client->jsonRequest('POST', $url, ['message' => '  Add shade  ']);
+
+        self::assertResponseStatusCodeSame(202);
+        $transport = static::getContainer()->get('messenger.transport.agent');
+        self::assertInstanceOf(InMemoryTransport::class, $transport);
+        $sent = $transport->getSent();
+        self::assertCount(1, $sent);
+        self::assertEquals(new AskPlanningAgent($plan->id, 'Add shade', 'en'), $sent[0]->getMessage());
     }
 }

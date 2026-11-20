@@ -14,6 +14,11 @@ framework:
                 dsn: 'doctrine://default?queue_name=simstadt'
                 retry_strategy:
                     max_retries: 0
+            # the planning agent's turns: a minute or more each, so they do not hold up site imports
+            agent:
+                dsn: 'doctrine://default?queue_name=agent'
+                retry_strategy:
+                    max_retries: 0
             failed: 'doctrine://default?queue_name=failed'
             # handles a message in the process that dispatches it (the console's re-import)
             sync: 'sync://'
@@ -21,6 +26,7 @@ framework:
         routing:
             App\SpongeCity\Import\ImportSite: async
             App\SpongeCity\SimStadt\RunSimulation: simstadt
+            App\SpongeCity\Chat\AskPlanningAgent: agent
 
 when@test:
     framework:
@@ -28,3 +34,4 @@ when@test:
             transports:
                 async: 'in-memory://'
                 simstadt: 'in-memory://'
+                agent: 'in-memory://'
