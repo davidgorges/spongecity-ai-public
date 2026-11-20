@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Geo\Hamburg;
 
+use App\SpongeCity\Geo\GeodataCache;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use App\SpongeCity\Geo\GeoBox;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
@@ -35,6 +37,7 @@ final readonly class HamburgApi
 
     public function __construct(
         private HttpClientInterface $httpClient,
+        #[Autowire(service: GeodataCache::POOL)]
         private CacheInterface $cache,
     ) {
     }

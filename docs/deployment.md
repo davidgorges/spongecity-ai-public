@@ -4,6 +4,12 @@ The app runs on a plain PHP server with Redis: no Node, no database server. Plan
 and rationales live in Redis (the `spongecity.storage` pool, `STORAGE_REDIS_URL`); the Messenger
 queues in SQLite under the kernel's share dir (`var/share/<env>`, set by `APP_SHARE_DIR`).
 
+What the geodata services answered about a place (Nominatim, OpenStreetMap, Hamburg's buildings,
+infiltration areas, LOD3 roofs) is cached in Redis too (the `spongecity.geodata` pool,
+`App\SpongeCity\Geo\GeodataCache`), so the same address imports again without asking them. Each
+entry expires after its service's `CACHE_SECONDS`. The large raw downloads (zip archives, 3D tiles, a few hundred MB) stay in `cache.app`
+on disk under `var/share`: Redis keeps everything in memory.
+
 ## Site settings
 
 | Setting | Value |
@@ -80,6 +86,8 @@ php bin/console messenger:consume simstadt --time-limit=3600 --limit=1
 
 - Redis must keep the plans: persistence on (RDB or AOF, Forge's default) and no eviction
   (`redis-cli config get maxmemory-policy` should say `noeviction`).
+  The geodata cache shares that Redis; its entries expire, so it stays bounded by how many
+  different places were imported in the last days.
 - The agent starts its tools as `php bin/console mcp:server` (stdio): the `php` on the `forge`
   user's `PATH` must be the site's PHP version (`php -v`), and `proc_open` must be allowed.
 

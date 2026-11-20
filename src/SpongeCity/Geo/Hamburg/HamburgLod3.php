@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Geo\Hamburg;
 
+use App\SpongeCity\Geo\GeodataCache;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\RemoteZip;
 use App\SpongeCity\Geo\UtmPlanTransform;
@@ -47,10 +49,13 @@ final readonly class HamburgLod3
 
     public function __construct(
         HttpClientInterface $httpClient,
+        #[Autowire(service: GeodataCache::POOL)]
         private CacheInterface $cache,
         private LoggerInterface $logger,
+        /** the application cache on disk: the zip archives are too large for Redis */
+        CacheInterface $downloads,
     ) {
-        $this->zips = array_map(static fn (string $url): RemoteZip => new RemoteZip($httpClient, $cache, $url, self::CACHE_SECONDS), self::ZIP_URLS);
+        $this->zips = array_map(static fn (string $url): RemoteZip => new RemoteZip($httpClient, $downloads, $url, self::CACHE_SECONDS), self::ZIP_URLS);
     }
 
     /**

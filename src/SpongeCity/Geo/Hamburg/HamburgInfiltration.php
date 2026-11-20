@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Geo\Hamburg;
 
+use App\SpongeCity\Geo\GeodataCache;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use App\SpongeCity\Conditions\InfiltrationPotential;
 use App\SpongeCity\Conditions\SiteConditions;
 use App\SpongeCity\Geo\DataSource;
@@ -31,6 +33,7 @@ final readonly class HamburgInfiltration
     public function __construct(
         private HamburgApi $api,
         private LoggerInterface $logger,
+        #[Autowire(service: GeodataCache::POOL)]
         private CacheInterface $cache,
     ) {
     }

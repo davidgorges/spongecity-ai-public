@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Geo;
 
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
@@ -37,6 +38,7 @@ final readonly class OverpassClient
 
     public function __construct(
         private HttpClientInterface $httpClient,
+        #[Autowire(service: GeodataCache::POOL)]
         private CacheInterface $cache,
     ) {
     }

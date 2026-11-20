@@ -392,7 +392,9 @@ preview any alternative and swap it in. The same rules serve the 3D view's "add 
 There are no database entities. Everything about a plan lives in the storage pool
 (`spongecity.storage`: Redis in production, the application cache under `var/share` locally),
 each kind of object under its own key prefix and the plan's id. The SQLite database holds only
-the Messenger queues.
+the Messenger queues. What the geodata services answered about a place is cached apart from the plans, in
+`spongecity.geodata` (`GeodataCache`, also Redis in production), so importing the same address
+again asks nobody.
 
 ```mermaid
 flowchart LR
