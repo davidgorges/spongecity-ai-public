@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { mergeGeometries } from 'three/examples/jsm/utils/BufferGeometryUtils.js';
+import { applyGroundLayer, SKU_PLOT } from './ground_layers.js';
 import { KeyboardNavigation } from './keyboard_navigation.js';
 import { ModelLibrary } from './model_library.js';
 import { PartPicker } from './part_picker.js';
@@ -122,7 +123,7 @@ export class SceneRenderer {
     /** the run highlight stands this much higher and longer than the fence, metres */
     static HIGHLIGHT_MARGIN = 0.15;
     /** the SKU of the sponge city's plot (SpongeCitySku::PLOT): the part the plot map reshapes */
-    static SKU_PLOT = 'SC-PLOT';
+    static SKU_PLOT = SKU_PLOT;
     static HIGHLIGHT_DEPTH = 0.3;
     static FADE_IN_MS = 600;
     /** pointAt: the ground is searched along the ray in steps of this many metres, as far as this, then refined */
@@ -1115,7 +1116,8 @@ export class SceneRenderer {
 
         const byMaterial = new Map();
         for (const part of parts) {
-            const material = this.#materials.get(part.material) ?? this.#fallbackMaterial();
+            // a ground layer is pushed back in the depth test by its layer (ground_layers.js): no flicker
+            const material = applyGroundLayer(this.#materials.get(part.material) ?? this.#fallbackMaterial(), part);
             let geometry = this.#partGeometry(part, material);
             if (!geometry) {
                 continue;

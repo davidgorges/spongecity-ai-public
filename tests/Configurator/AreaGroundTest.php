@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Tests\Configurator;
 
+use Core\Configurator\Assembly\Extrusion;
 use Core\Configurator\Assembly\Part;
 use Core\Configurator\Product\SpongeCity\InterventionBuilder;
 use Core\Configurator\Product\SpongeCity\SpongeCitySku;
@@ -49,6 +50,41 @@ final class AreaGroundTest extends TestCase
 
         self::assertSame([], $this->ofSku($assembly->parts(), SpongeCitySku::AREA));
         self::assertCount(1, $this->ofSku($assembly->parts(), SpongeCitySku::PLOT), 'the plot stays one part, the one the plot map reshapes');
+    }
+
+    #[Test]
+    public function aLawnLiesBetweenThePlotAndWhatIsPlannedOnIt(): void
+    {
+        // the depth test keeps them apart in this order (ground_layers.js): it must be their order in height too
+        $parts = (new InterventionBuilder())->build($this->site([
+            [O::TYPE => O::AREA, O::USE => O::AREA_GREEN, O::SURFACE => O::SURFACE_LAWN, O::POINTS => self::LAWN],
+            [O::TYPE => O::PLANTING, O::POINTS => [[-8000, -8000], [-4000, -8000], [-4000, -4000], [-8000, -4000]]],
+            [O::TYPE => O::COOLSURFACE, O::POINTS => self::YARD],
+        ]))->parts();
+
+        $plot = self::top($this->ofSku($parts, SpongeCitySku::PLOT)[0]);
+        $area = self::top($this->ofSku($parts, SpongeCitySku::AREA)[0]);
+        self::assertGreaterThan($plot, $area);
+        foreach ([SpongeCitySku::PLANTING, SpongeCitySku::COOL_SURFACE] as $sku) {
+            self::assertGreaterThan($area, self::top($this->ofSku($parts, $sku)[0]), $sku.' lies on the lawn');
+        }
+    }
+
+    #[Test]
+    public function theViewKnowsTheGroundLayersByTheirSkus(): void
+    {
+        $layers = (string) file_get_contents(\dirname(__DIR__, 2).'/assets/configurator/ground_layers.js');
+
+        self::assertStringContainsString(sprintf("SKU_PLOT = '%s'", SpongeCitySku::PLOT), $layers);
+        self::assertStringContainsString(sprintf("SKU_AREA = '%s'", SpongeCitySku::AREA), $layers);
+    }
+
+    /** millimetres: the top of a slab lying on the ground */
+    private static function top(Part $part): float
+    {
+        \assert($part->shape instanceof Extrusion);
+
+        return $part->position->y + $part->shape->depth / 2;
     }
 
     /**
