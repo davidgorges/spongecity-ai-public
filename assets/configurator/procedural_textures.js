@@ -27,6 +27,8 @@ export const FACADE_RIBBON = 'facade_ribbon';
 export const FACADE_CLADDING = 'facade_cladding';
 export const ROOF_GRAVEL = 'roof_gravel';
 export const ASPHALT = 'asphalt';
+/** an extensive green roof's sedum carpet: patches of rosettes in greens, bronze and red, some in flower */
+export const SEDUM = 'sedum';
 /**
  * Permeable surfaces at their real size: one repeat of each texture is this many metres
  * (PERMEABLE_REPEAT), the views map their UVs to it.
@@ -750,6 +752,78 @@ const PATTERNS = {
             speckle(bump, random, 50000, 0.5);
         },
     },
+    // a sedum carpet seen from above (one repeat ≈ 2 m): species in drifts of tiny rosettes, the dark
+    // substrate between them, yellow and white flowers in some drifts, a few bare spots
+    [SEDUM]: {
+        bumpScale: 2,
+        draw(colour, bump, random) {
+            fill(colour, '#4f5233');
+            fill(bump, '#202020');
+            blotches(colour, random, 25, 0.25, [70, 60, 40]);
+            // drifts: [colour of the rosettes, how many of the drifts]
+            const species = [
+                // mostly green in summer; the rusty reds of sedum album/spurium only in a few drifts
+                ['#7f9a45', 7], ['#9bb54e', 5], ['#8a9c72', 3], ['#6f7d38', 5],
+                ['#8c4a32', 1], ['#a3653c', 1], ['#7a5a3a', 1],
+            ];
+            const drifts = species.flatMap(([rgb, count]) => Array.from({ length: count }, () => ({
+                rgb: hexRgb(rgb), x: random() * SIZE, y: random() * SIZE, r: 45 + random() * 110,
+            })));
+            const wrapped = (draw) => [[0, 0], [SIZE, 0], [-SIZE, 0], [0, SIZE], [0, -SIZE], [SIZE, SIZE], [-SIZE, -SIZE], [SIZE, -SIZE], [-SIZE, SIZE]].forEach(([dx, dy]) => draw(dx, dy));
+            for (let i = 0; i < 26000; i++) {
+                const x = random() * SIZE;
+                const y = random() * SIZE;
+                // the rosette takes the colour of the nearest drift (wrapped), with its own lightness
+                let nearest = drifts[0];
+                let best = Infinity;
+                for (const drift of drifts) {
+                    const dx = Math.min(Math.abs(drift.x - x), SIZE - Math.abs(drift.x - x));
+                    const dy = Math.min(Math.abs(drift.y - y), SIZE - Math.abs(drift.y - y));
+                    const d = Math.hypot(dx, dy) / drift.r;
+                    if (d < best) {
+                        [best, nearest] = [d, drift];
+                    }
+                }
+                // a few bare spots of substrate where no drift reaches
+                if (best > 1.6 && random() < 0.7) {
+                    continue;
+                }
+                const light = 0.72 + random() * 0.5;
+                const size = 2 + random() * 3.5;
+                const [r, g, b] = nearest.rgb.map((c) => Math.min(255, Math.round(c * light)));
+                wrapped((dx, dy) => {
+                    if (x + dx < -size || x + dx > SIZE + size || y + dy < -size || y + dy > SIZE + size) {
+                        return;
+                    }
+                    colour.fillStyle = `rgb(${r},${g},${b})`;
+                    colour.beginPath();
+                    colour.arc(x + dx, y + dy, size, 0, Math.PI * 2);
+                    colour.fill();
+                    const shade = Math.round(150 + 100 * (light - 0.72));
+                    bump.fillStyle = `rgb(${shade},${shade},${shade})`;
+                    bump.beginPath();
+                    bump.arc(x + dx, y + dy, size * 0.9, 0, Math.PI * 2);
+                    bump.fill();
+                });
+            }
+            // flowering drifts: dense yellow (sedum acre), looser white and pink stars
+            for (const [rgb, patches, dots] of [['#e6c935', 4, 900], ['#f0eee4', 3, 500], ['#d690a8', 2, 300]]) {
+                for (let p = 0; p < patches; p++) {
+                    const [cx, cy, r] = [random() * SIZE, random() * SIZE, 25 + random() * 55];
+                    for (let i = 0; i < dots; i++) {
+                        const angle = random() * Math.PI * 2;
+                        const d = r * Math.sqrt(random());
+                        const [x, y] = [cx + Math.cos(angle) * d, cy + Math.sin(angle) * d];
+                        wrapped((dx, dy) => {
+                            colour.fillStyle = rgb;
+                            colour.fillRect(x + dx, y + dy, 1.5 + random() * 1.5, 1.5 + random() * 1.5);
+                        });
+                    }
+                }
+            }
+            speckle(colour, random, 20000, 0.08);
+        },
+    },
     // gravel on a flat roof: dense pebbles, faint seams of the membrane strips below
     [ROOF_GRAVEL]: {
         bumpScale: 1.5,
@@ -926,6 +1000,11 @@ function blotches(ctx, random, count, strength, rgb = [0, 0, 0]) {
             ctx.fillRect(x + dx - r, y + dy - r, 2 * r, 2 * r);
         }
     }
+}
+
+/** '#rrggbb' → [r, g, b] */
+function hexRgb(hex) {
+    return [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
 }
 
 /** mulberry32: the same pattern on every load */

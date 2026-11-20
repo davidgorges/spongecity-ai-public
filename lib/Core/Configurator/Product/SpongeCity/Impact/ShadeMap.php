@@ -76,22 +76,28 @@ final class ShadeMap
     /** Whether something stands over plan x/z (mm) at least as high as $height (mm). */
     public function blocks(float $x, float $z, float $height): bool
     {
+        return null !== $this->blocker($x, $z, $height);
+    }
+
+    /** What stands over plan x/z (mm) at least as high as $height (mm): a building, a tree crown or nothing (null). */
+    public function blocker(float $x, float $z, float $height): ?ShadeKind
+    {
         $c = (int) floor(($x - $this->originX) / self::CELL);
         $r = (int) floor(($z - $this->originZ) / self::CELL);
         if ($c < 0 || $r < 0 || $c >= $this->columns || $r >= $this->rows) {
-            return false;
+            return null;
         }
         $cell = $r * $this->columns + $c;
         if ($height <= ($this->buildings[$cell] ?? -1.0)) {
-            return true;
+            return ShadeKind::Building;
         }
         foreach ($this->crowns[$cell] ?? [] as [$base, $top]) {
             if ($height >= $base && $height <= $top) {
-                return true;
+                return ShadeKind::Tree;
             }
         }
 
-        return false;
+        return null;
     }
 
     /**

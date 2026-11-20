@@ -49,11 +49,11 @@ symfony console app:doctor         # checks the setup and prints how to fix what
 symfony open:local
 ```
 
-`app:doctor` checks the web server, the agent's MCP endpoint, the import worker, the API key, the OSM
+`app:doctor` checks the web server, the agent's tools (`bin/console mcp:server`), the import worker, the API key, the OSM
 user agent and SimStadt. A ✘ means the app won't work; a `!` only affects an optional feature.
 
 Any free port works. When 8000 is taken, the Symfony CLI picks another one and exports its URL,
-and `DEFAULT_URI` and `MCP_SERVER_URL` follow it (see `.env`). Run console commands through
+and `DEFAULT_URI` follows it (see `.env`). Run console commands through
 `symfony console`, not `php bin/console`, so they get the right URL too.
 
 ### 4. Try it

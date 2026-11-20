@@ -31,6 +31,8 @@ export const PLANTING = 'planting';
 export const PERMEABLE = 'permeable';
 export const SHADESAIL = 'shadesail';
 export const NEWTREE = 'newtree';
+/** a green roof (SiteObject::GREENROOF): its points are the building's footprint, drawn over the building */
+export const GREENROOF = 'greenroof';
 export const EXISTING_TREE = 'tree';
 /** play equipment (SiteObject::EQUIPMENT): its fall zone, which nothing planned may take */
 export const EQUIPMENT = 'equipment';
@@ -54,7 +56,7 @@ const ZONE_SELECTED_FILL_OPACITY = 0.5;
 
 /** the ground first, then what stands above it */
 const SURFACES = [PERMEABLE, PLANTING, RAINGARDEN];
-const ABOVE = [SHADESAIL, NEWTREE];
+const ABOVE = [GREENROOF, SHADESAIL, NEWTREE];
 
 /**
  * How each kind of object looks on the map and in its legend: map colours, the same in the
@@ -65,6 +67,7 @@ export const STYLES = {
     [PLANTING]: { fill: '#6c9b46', fillOpacity: 0.55, stroke: '#46702a' },
     [PERMEABLE]: { fill: '#c2b49a', fillOpacity: 0.7, stroke: '#8d7d60', hatch: true },
     [SHADESAIL]: { fill: '#e8c872', fillOpacity: 0.35, stroke: '#b98a1e', dashed: true },
+    [GREENROOF]: { fill: '#7d9a4a', fillOpacity: 0.55, stroke: '#4d6a26', dashed: true },
     [NEWTREE]: { fill: '#3f8a3a', fillOpacity: 0.5, stroke: '#24611f' },
     [EXISTING_TREE]: { fill: '#6f9a5a', fillOpacity: 0.18, stroke: '#6f9a5a', strokeOpacity: 0.5 },
     [EQUIPMENT]: { fill: '#ebc94d', fillOpacity: 0.3, stroke: '#a88713', dashed: true },
@@ -206,7 +209,7 @@ export class PlotMapView {
             'data-plot-map-target': 'outline',
         }));
 
-        // sails and new trees stand above the ground: over the plot's outline, under its handles
+        // green roofs, sails and new trees stand above the ground: over the plot's outline, under its handles
         this.#interventions
             .filter((item) => ABOVE.includes(item.type))
             .forEach((item) => this.#svg.append(item.type === NEWTREE ? this.#tree(item, STYLES[NEWTREE], trunk, this.name(item)) : this.#surface(item, hatch)));

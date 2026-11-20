@@ -9,6 +9,7 @@ use Core\Configurator\Assembly\Measure;
 use Core\Configurator\Assembly\Model;
 use Core\Configurator\Assembly\Part;
 use Core\Configurator\Assembly\Vector3;
+use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Scene\Environment;
 use Core\Configurator\Scene\GardenModels;
@@ -17,6 +18,7 @@ use Core\Configurator\Scene\ProceduralTexture;
 use Core\Configurator\Scenery\Slab;
 use Core\Configurator\Site\BuildingType;
 use Core\Configurator\Site\Site;
+use Core\Configurator\Site\SiteBuilder;
 use Core\Configurator\Site\SiteObject as O;
 
 /**
@@ -35,10 +37,19 @@ final class InterventionBuilder
     public const string MATERIAL_PAVERS = 'permeable_pavers';
     public const string MATERIAL_GRAVEL = 'permeable_gravel';
     public const string MATERIAL_GRASS_PAVERS = 'permeable_grass';
+    public const string MATERIAL_GREENROOF_PREFIX = 'greenroof_';
     /** what the view needs beyond a part's shape: its kind and, for a rain garden, its depth in metres */
     public const string APPEARANCE_KIND = 'kind';
     public const string APPEARANCE_DEPTH = 'depth';
     public const string APPEARANCE_PAVING = 'paving';
+    /** a green roof: extensive or intensive, the gravel strip's width and the build-up's thickness, metres */
+    public const string APPEARANCE_VEGETATION = 'vegetation';
+    public const string APPEARANCE_STRIP = 'strip';
+    public const string APPEARANCE_THICKNESS = 'thickness';
+    /** millimetres of a green roof's build-up, drawn on the roof slab */
+    private const array GREENROOF_THICKNESS = [O::KIND_EXTENSIVE => 120, O::KIND_INTENSIVE => 350];
+    private const array GREENROOF_SKU = [O::KIND_EXTENSIVE => SpongeCitySku::GREENROOF_EXTENSIVE, O::KIND_INTENSIVE => SpongeCitySku::GREENROOF_INTENSIVE];
+    private const array GREENROOF_COLOURS = [O::KIND_EXTENSIVE => '#7d8f4e', O::KIND_INTENSIVE => '#5f8a3c'];
     private const float MILLIMETRES_PER_METRE = 1000.0;
 
     /** layers of the ground, millimetres: the plot lies lowest, interventions on top of existing paving */
@@ -75,6 +86,12 @@ final class InterventionBuilder
         O::KIND_GRAVEL => self::MATERIAL_GRAVEL,
         O::KIND_GRASS_PAVERS => self::MATERIAL_GRASS_PAVERS,
     ];
+
+    /** millimetres of a green roof's build-up above its roof */
+    public static function greenRoofThickness(string $kind): int
+    {
+        return self::GREENROOF_THICKNESS[$kind] ?? self::GREENROOF_THICKNESS[O::KIND_EXTENSIVE];
+    }
 
     /**
      * Whether the site lies among low houses (its own buildings, imported from the map):
@@ -118,6 +135,13 @@ final class InterventionBuilder
                 continue;
             }
             $label = Site::label($object) ?? self::LABEL_PREFIX.$type;
+            if (O::GREENROOF === $type) {
+                // on its building's roof levels, raised with the building: not draped, not on the ground
+                foreach ($this->greenRoof($site, $object, $label) as $part) {
+                    $assembly->add($part);
+                }
+                continue;
+            }
             // trees and sails stand on their ground; the surfaces are draped over the terrain by the view
             $upright = in_array($type, O::UPRIGHT, true);
             $ground = $upright && is_numeric($object[O::GROUND] ?? null) ? (float) $object[O::GROUND] : 0.0;
@@ -176,6 +200,47 @@ final class InterventionBuilder
     }
 
     /**
+     * A green roof: a planted build-up on each roof level it covers (priced per m² of roof, the gravel
+     * strip included), and its building's set-up (survey, crane, scaffolding) once, not drawn.
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return list<Part>
+     */
+    private function greenRoof(Site $site, array $object, string $label): array
+    {
+        $levels = GreenRoofs::levelsOf($site, $object);
+        $building = GreenRoofs::buildingOf($site, $object);
+        if ([] === $levels || null === $building) {
+            return [];
+        }
+        $kind = in_array($object[O::KIND] ?? null, O::GREENROOF_KINDS, true) ? (string) $object[O::KIND] : O::KIND_EXTENSIVE;
+        $thickness = self::GREENROOF_THICKNESS[$kind];
+        $ground = is_numeric($building[O::GROUND] ?? null) ? (float) $building[O::GROUND] : 0.0;
+        $parts = [new Part(SpongeCitySku::GREENROOF_SETUP, $label, measure: Measure::piece())];
+        foreach ($levels as $level) {
+            $slab = Slab::onGround($label, self::MATERIAL_GREENROOF_PREFIX.$kind, $level->points, $thickness, $level->height + SiteBuilder::FOOTPRINT_ROOF);
+            $parts[] = (new Part(
+                self::GREENROOF_SKU[$kind],
+                $label,
+                $slab->shape,
+                $slab->material,
+                $slab->position,
+                $slab->rotation,
+                Measure::area($level->grossSquareMetres * 1_000_000, self::SQUARE_MILLIMETRES_PER_SQUARE_METRE),
+                appearance: [
+                    self::APPEARANCE_KIND => O::GREENROOF,
+                    self::APPEARANCE_VEGETATION => $kind,
+                    self::APPEARANCE_STRIP => GreenRoofs::GRAVEL_STRIP_MM / self::MILLIMETRES_PER_METRE,
+                    self::APPEARANCE_THICKNESS => $thickness / self::MILLIMETRES_PER_METRE,
+                ],
+            ))->raisedBy($ground);
+        }
+
+        return $parts;
+    }
+
+    /**
      * @param list<array{0: float, 1: float}> $points
      *
      * @return list<Part>
@@ -194,6 +259,9 @@ final class InterventionBuilder
         $assembly->material(self::MATERIAL_SAIL, new Material('#e8c872', roughness: 0.9, opacity: 0.82));
         $assembly->material(self::MATERIAL_PAVERS, new Material('#c9bfae', roughness: 0.85, texture: ProceduralTexture::Paving, textureSize: 0.6));
         $assembly->material(self::MATERIAL_GRAVEL, new Material('#cdbf9f', roughness: 1.0, texture: ProceduralTexture::Stones, textureSize: 0.4));
+        foreach (self::GREENROOF_COLOURS as $kind => $colour) {
+            $assembly->material(self::MATERIAL_GREENROOF_PREFIX.$kind, new Material($colour, roughness: 1.0));
+        }
         $assembly->material(self::MATERIAL_GRASS_PAVERS, new Material('#85a65e', roughness: 1.0, texture: ProceduralTexture::Paving, textureSize: 0.5));
     }
 }

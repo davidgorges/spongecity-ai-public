@@ -40,9 +40,19 @@ final readonly class SiteCarryOver
      */
     public function restore(string $planId, CarriedOver $kept): array
     {
-        $conflicts = [] === $kept->interventions ? [] : $this->editor->add($planId, $kept->interventions)['conflicts'];
+        $buildings = $this->editor->site($planId)->ofType(O::BUILDING);
+        // a green roof finds its building again by where it stands (the new data gives new ids)
+        $interventions = array_map(static function (array $o) use ($buildings): array {
+            if (O::GREENROOF !== $o[O::TYPE]) {
+                return $o;
+            }
+            $building = array_find($buildings, static fn (array $b): bool => self::sameBuilding($b, $o));
+
+            return null === $building ? $o : [...$o, O::BUILDING_ID => $building[O::ID]];
+        }, $kept->interventions);
+        $conflicts = [] === $interventions ? [] : $this->editor->add($planId, $interventions)['conflicts'];
         $looks = 0;
-        foreach ($this->editor->site($planId)->ofType(O::BUILDING) as $building) {
+        foreach ($buildings as $building) {
             foreach ($kept->looks as $look) {
                 if (self::sameBuilding($building, $look)) {
                     $this->editor->update($planId, (string) $building[O::ID], [O::FACADE => $look[O::FACADE], O::COLOR => $look[O::COLOR]]);

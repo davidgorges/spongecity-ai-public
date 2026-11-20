@@ -5,7 +5,11 @@ declare(strict_types=1);
 namespace App\Tests\Command;
 
 use App\Command\DoctorCommand;
+use App\SpongeCity\Chat\PlanAssistant;
 use PHPUnit\Framework\Attributes\Test;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
+use Symfony\AI\Agent\Toolbox\ToolResult;
+use Symfony\AI\Platform\Result\ToolCall;
 use Symfony\Bundle\FrameworkBundle\Console\Application;
 use Symfony\Bundle\FrameworkBundle\Test\KernelTestCase;
 use Symfony\Component\Console\Command\Command;
@@ -19,7 +23,6 @@ use Symfony\Component\Messenger\Transport\InMemory\InMemoryTransport;
 final class DoctorCommandTest extends KernelTestCase
 {
     private const string APP_URL = 'http://127.0.0.1:8123/';
-    private const string MCP_URL = 'http://127.0.0.1:8123/mcp';
 
     private string $directory;
 
@@ -43,7 +46,7 @@ final class DoctorCommandTest extends KernelTestCase
         self::assertSame(Command::SUCCESS, $tester->getStatusCode());
         $display = $tester->getDisplay();
         self::assertStringContainsString('Serving at '.self::APP_URL, $display);
-        self::assertStringContainsString('The agent reaches its tools at '.self::MCP_URL, $display);
+        self::assertMatchesRegularExpression('/The agent gets \d+ tools from bin\/console mcp:server/', $display, 'the real child process, as the agent starts it');
         self::assertStringContainsString('Everything is set up.', $display);
         self::assertStringNotContainsString('To fix', $display);
     }
@@ -58,6 +61,27 @@ final class DoctorCommandTest extends KernelTestCase
         self::assertSame(Command::FAILURE, $tester->getStatusCode());
         self::assertStringContainsString('Nothing answers at '.self::APP_URL, $tester->getDisplay());
         self::assertStringContainsString('symfony server:start -d --no-tls', $tester->getDisplay());
+    }
+
+    #[Test]
+    public function anAgentWithoutToolsFails(): void
+    {
+        $noTools = new class implements ToolboxInterface {
+            public function getTools(): array
+            {
+                return [];
+            }
+
+            public function execute(ToolCall $toolCall): ToolResult
+            {
+                throw new \LogicException('not called');
+            }
+        };
+
+        $tester = $this->doctor($this->servingApp(), docker: $this->fakeDocker(imagePulled: true), tools: $noTools);
+
+        self::assertSame(Command::FAILURE, $tester->getStatusCode());
+        self::assertStringContainsString('php bin/console mcp:server', $tester->getDisplay());
     }
 
     #[Test]
@@ -94,14 +118,14 @@ final class DoctorCommandTest extends KernelTestCase
         self::assertStringContainsString('Docker is not running', $tester->getDisplay());
     }
 
-    private function doctor(MockHttpClient $http, string $docker, ?InMemoryTransport $queue = null, string $apiKey = 'sk-ant-test', string $userAgent = 'Tests (tests@example.com)'): CommandTester
+    private function doctor(MockHttpClient $http, string $docker, ?InMemoryTransport $queue = null, string $apiKey = 'sk-ant-test', string $userAgent = 'Tests (tests@example.com)', ?ToolboxInterface $tools = null): CommandTester
     {
         self::bootKernel();
         static::getContainer()->set(DoctorCommand::class, new DoctorCommand(
             $http,
             $queue ?? new InMemoryTransport(),
             self::APP_URL,
-            self::MCP_URL,
+            $tools ?? static::getContainer()->get(PlanAssistant::PLANNING_TOOLBOX),
             $apiKey,
             $userAgent,
             $docker,
@@ -119,7 +143,6 @@ final class DoctorCommandTest extends KernelTestCase
     {
         return new MockHttpClient(static fn (string $method, string $url): MockResponse => match ([$method, $url]) {
             ['GET', self::APP_URL] => new MockResponse('<html></html>'),
-            ['POST', self::MCP_URL] => new MockResponse('{"jsonrpc":"2.0","id":1,"result":{}}'),
             default => new MockResponse('', ['http_code' => 404]),
         });
     }

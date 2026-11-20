@@ -68,6 +68,27 @@ final readonly class AddHere
     }
 
     /**
+     * Plants a building's roof, as the context menu offers on a building that can take one: an
+     * extensive green roof, placed by the same rules the agent uses (GreenRoofSiting).
+     *
+     * @return array{outcome: string, id?: string, params: array<string, string|int|float>}
+     */
+    public function greenRoof(Plan $plan, string $buildingId): array
+    {
+        $proposal = $this->placements->propose($plan, new PlacementRequest(O::GREENROOF, count: PlacementRequest::MAX_COUNT));
+        $candidate = array_find($proposal->candidates, static fn (Candidate $c): bool => $buildingId === ($c->object[O::BUILDING_ID] ?? null));
+        if (null === $candidate) {
+            return ['outcome' => self::BLOCKED, 'params' => ['%reason%' => 'this roof cannot take a green roof']];
+        }
+        $placed = $this->placements->place($plan, $candidate->id, by: Rationale::BY_USER);
+
+        return $this->added($placed['id'] ?? null, O::GREENROOF, [
+            '%area%' => (int) round($candidate->metrics[GreenRoofSiting::METRIC_PLANTED]),
+            '%cost%' => number_format((float) $candidate->metrics[GreenRoofSiting::METRIC_COST], 0, '.', ','),
+        ]);
+    }
+
+    /**
      * @return array{outcome: string, id?: string, params: array<string, string|int|float>}
      */
     private function rainGarden(Plan $plan, int $x, int $z): array

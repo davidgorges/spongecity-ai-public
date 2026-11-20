@@ -103,8 +103,12 @@ final class SiteObject
     public const string PERMEABLE = 'permeable';
     public const string PLANTING = 'planting';
     public const string SHADESAIL = 'shadesail';
+    /** a green roof on one of the plot's buildings: its flat roof levels planted (GreenRoofs decides which) */
+    public const string GREENROOF = 'greenroof';
+    /** the building a green roof lies on, by its id */
+    public const string BUILDING_ID = 'building';
 
-    public const array INTERVENTIONS = [self::NEWTREE, self::RAINGARDEN, self::PERMEABLE, self::PLANTING, self::SHADESAIL];
+    public const array INTERVENTIONS = [self::NEWTREE, self::RAINGARDEN, self::PERMEABLE, self::PLANTING, self::SHADESAIL, self::GREENROOF];
     /** what stands on the ground and is raised to it as a whole; everything else lies on the ground and is draped over the terrain */
     public const array UPRIGHT = [
         self::HOUSE, self::OUTBUILDING, self::HEDGE, self::WALL, self::TREE, self::POOL, self::BOX, self::CYLINDER, self::PRISM,
@@ -167,6 +171,11 @@ final class SiteObject
     public const string KIND_GRASS_PAVERS = 'grass_pavers';
     public const array PERMEABLE_KINDS = [self::KIND_PAVERS, self::KIND_GRAVEL, self::KIND_GRASS_PAVERS];
 
+    /** green roofs: a light sedum carpet (8 to 12 cm), or a roof garden (25 cm and more) that needs a strong roof */
+    public const string KIND_EXTENSIVE = 'extensive';
+    public const string KIND_INTENSIVE = 'intensive';
+    public const array GREENROOF_KINDS = [self::KIND_EXTENSIVE, self::KIND_INTENSIVE];
+
     /** roads: asphalt for traffic, paving stones for people */
     public const string ROAD_CARRIAGEWAY = 'carriageway';
     public const string ROAD_FOOTWAY = 'footway';
@@ -181,6 +190,8 @@ final class SiteObject
     public const string HEX = 'color';
     public const string OUTLINE = 'points';
     public const string BLOCKS = 'blocks';
+    /** another object's id */
+    public const string REF = 'ref';
 
     /** plan coordinates stay within this distance of the product (an 80 m import radius, with what reaches beyond it) */
     public const int REACH = 100000;
@@ -211,6 +222,7 @@ final class SiteObject
         self::PERMEABLE => 'INTERVENTION: a permeable surface (closed outline) replacing sealed ground: pavers with joints, gravel, or grass pavers.',
         self::PLANTING => 'INTERVENTION: unsealed planting or lawn (closed outline) replacing sealed ground.',
         self::SHADESAIL => 'INTERVENTION: a shade sail or pergola roof (closed outline) y millimetres above ground. Shade only; rain falls through to the ground below.',
+        self::GREENROOF => 'INTERVENTION: a green roof on a building of the plot (building: its id). Its flat roof levels are planted, with a 0.5 m gravel strip along the edges; points are taken from the building. kind "extensive" (sedum, light) or "intensive" (roof garden, heavy). Place it with propose_placements type "greenroof": not every roof can carry one.',
     ];
 
     private const array POSITION = [
@@ -351,6 +363,7 @@ final class SiteObject
             self::PERMEABLE => [self::POINTS => [self::OUTLINE, 3], self::KIND => [self::ENUM, self::PERMEABLE_KINDS, self::KIND_PAVERS]],
             self::PLANTING => [self::POINTS => [self::OUTLINE, 3]],
             self::SHADESAIL => [self::POINTS => [self::OUTLINE, 3], self::Y => [self::INT, 2200, 6000, 3200], ...$color('#e8c872')],
+            self::GREENROOF => [self::POINTS => [self::OUTLINE, 3], self::BUILDING_ID => [self::REF], self::KIND => [self::ENUM, self::GREENROOF_KINDS, self::KIND_EXTENSIVE]],
             default => [],
         };
     }

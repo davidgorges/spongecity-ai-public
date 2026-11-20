@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Core\Configurator\Product\SpongeCity\Impact;
 
+use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 
@@ -41,11 +42,23 @@ final readonly class ImpactCalculator
     public const float RAIN_GARDEN_MEDIA_STORAGE = 0.12;
     /** a rain garden should not drain more than this many times its own area */
     public const float MAX_CATCHMENT_RATIO = 10.0;
-    private const float SHADE_TEMPERATURE_REDUCTION = 12.0;
+    public const float SHADE_TEMPERATURE_REDUCTION = 12.0;
     private const float MILLIMETRES_PER_METRE = 1000.0;
     private const float SHADE_RAY_STEP_METRES = 1.5;
     private const float SHADE_RAY_REACH_METRES = 60.0;
     private const int MAX_CELLS = 40000;
+    /**
+     * Orientation values for planning, not limits of a standard: where a value counts as good and
+     * where as poor. Volumes get none, they scale with the plot.
+     */
+    private const float TARGET_PERMEABLE_GOOD = 50.0;
+    private const float TARGET_PERMEABLE_POOR = 25.0;
+    private const float TARGET_COEFFICIENT_GOOD = 0.3;
+    private const float TARGET_COEFFICIENT_POOR = 0.6;
+    private const float TARGET_SHADE_GOOD = 40.0;
+    private const float TARGET_SHADE_POOR = 20.0;
+    private const float TARGET_TEMPERATURE_GOOD = 35.0;
+    private const float TARGET_TEMPERATURE_POOR = 45.0;
     private const float MIN_CELL_METRES = 0.5;
 
     public function calculate(Site $site, int $stormMillimetres): ImpactReport
@@ -57,24 +70,27 @@ final readonly class ImpactCalculator
         $outline = Site::points($plot);
         $plotSurface = GroundClass::fromSurface(is_string($plot[O::SURFACE] ?? null) ? $plot[O::SURFACE] : O::SURFACE_ASPHALT);
 
-        $baselineSite = new Site(array_values(array_filter($site->objects, static fn (array $o): bool => !in_array($o[O::TYPE], O::INTERVENTIONS, true))));
         $grid = $this->grid($outline);
-        $baseline = $this->evaluate($baselineSite, $outline, $plotSurface, $stormMillimetres, $grid);
-        $design = $this->evaluate($site, $outline, $plotSurface, $stormMillimetres, $grid);
+        $baseline = $this->evaluate($this->surveyOn(self::without($site, O::INTERVENTIONS), $outline, $plotSurface, $grid), $stormMillimetres);
+        $design = $this->evaluate($this->surveyOn($site, $outline, $plotSurface, $grid), $stormMillimetres);
 
         $metrics = [
             new Metric(self::METRIC_PERMEABLE_SHARE, 'spongecity.metric.permeable_share', self::UNIT_PERCENT, $baseline['permeable'] * 100, $design['permeable'] * 100,
-                'Share of the plot ground (without roofs) whose runoff coefficient is below 0.7 (DWA-A 138 / DIN 1986-100 classes).'),
+                'Share of the plot ground (without roofs) whose runoff coefficient is below 0.7 (DWA-A 138 / DIN 1986-100 classes).',
+                target: new MetricTarget(self::TARGET_PERMEABLE_GOOD, self::TARGET_PERMEABLE_POOR, 'At least half of the open ground unsealed is a common sponge-city orientation; below a quarter the plot behaves like sealed ground.')),
             new Metric(self::METRIC_RUNOFF, 'spongecity.metric.runoff', self::UNIT_CUBIC_METRES, $baseline['runoff'], $design['runoff'],
                 sprintf('Surface runoff in a %d mm/h design storm: sum of area x runoff coefficient x rain depth, minus what rain gardens and canopies hold back.', $stormMillimetres), false),
             new Metric(self::METRIC_RETENTION, 'spongecity.metric.retention', self::UNIT_CUBIC_METRES, $baseline['retained'], $design['retained'],
                 'Rain kept on the plot: infiltrated, stored in rain gardens or intercepted by tree crowns.'),
             new Metric(self::METRIC_PEAK_COEFFICIENT, 'spongecity.metric.runoff_coefficient', self::UNIT_NONE, $baseline['psi'], $design['psi'],
-                'Mean runoff coefficient of the plot: 1.0 = all rain runs off, 0.0 = all rain stays.', false),
+                'Mean runoff coefficient of the plot: 1.0 = all rain runs off, 0.0 = all rain stays.', false,
+                new MetricTarget(self::TARGET_COEFFICIENT_GOOD, self::TARGET_COEFFICIENT_POOR, 'Up to 0.3 is close to the natural water balance of green ground; from 0.6 the plot drains like a sealed urban site.')),
             new Metric(self::METRIC_SHADE, 'spongecity.metric.shade', self::UNIT_PERCENT, $baseline['shade'] * 100, $design['shade'] * 100,
-                sprintf('Share of the open ground in shade at 14:00 on a summer day (sun %d° high, from the south-west): shadows of buildings, tree crowns and shade sails.', (int) self::SUN_ELEVATION)),
+                sprintf('Share of the open ground in shade at 14:00 on a summer day (sun %d° high, from the south-west): shadows of buildings, tree crowns and shade sails.', (int) self::SUN_ELEVATION),
+                target: new MetricTarget(self::TARGET_SHADE_GOOD, self::TARGET_SHADE_POOR, 'Guidance for schoolyards and playgrounds asks for a third to half of the area in shade at midday; below a fifth there is little refuge from the sun.')),
             new Metric(self::METRIC_SURFACE_TEMPERATURE, 'spongecity.metric.surface_temperature', self::UNIT_CELSIUS, $baseline['temperature'], $design['temperature'],
-                sprintf('Mean midday surface temperature of the open ground, indicative literature values per surface, shaded ground %d K cooler.', (int) self::SHADE_TEMPERATURE_REDUCTION), false),
+                sprintf('Mean midday surface temperature of the open ground, indicative literature values per surface, shaded ground %d K cooler.', (int) self::SHADE_TEMPERATURE_REDUCTION), false,
+                new MetricTarget(self::TARGET_TEMPERATURE_GOOD, self::TARGET_TEMPERATURE_POOR, 'Up to 35 °C is what lawn, planting and shaded ground reach; from 45 °C the ground is mostly sunlit paving or asphalt.')),
         ];
 
         return new ImpactReport(
@@ -111,12 +127,35 @@ final readonly class ImpactCalculator
     }
 
     /**
+     * The plot's ground as it lies with all objects of the site: classes, shade, crowns. Null without a plot.
+     */
+    public function survey(Site $site): ?GroundSurvey
+    {
+        $plot = $site->plot();
+        if (null === $plot) {
+            return null;
+        }
+        $outline = Site::points($plot);
+        $plotSurface = GroundClass::fromSurface(is_string($plot[O::SURFACE] ?? null) ? $plot[O::SURFACE] : O::SURFACE_ASPHALT);
+
+        return $this->surveyOn($site, $outline, $plotSurface, $this->grid($outline));
+    }
+
+    /**
+     * The site without the objects of these types (all interventions: the site as it is today).
+     *
+     * @param list<string> $types
+     */
+    public static function without(Site $site, array $types): Site
+    {
+        return new Site(array_values(array_filter($site->objects, static fn (array $o): bool => !in_array($o[O::TYPE], $types, true))));
+    }
+
+    /**
      * @param list<array{0: float, 1: float}>                            $outline
      * @param array{cell: float, cells: list<array{0: float, 1: float}>} $grid
-     *
-     * @return array{area: float, permeable: float, runoff: float, retained: float, psi: float, shade: float, temperature: float, classes: array<string, float>, warnings: list<string>}
      */
-    private function evaluate(Site $site, array $outline, GroundClass $plotSurface, int $storm, array $grid): array
+    private function surveyOn(Site $site, array $outline, GroundClass $plotSurface, array $grid): GroundSurvey
     {
         $layers = $this->layers($site);
         $occluders = $this->occluders($site);
@@ -128,54 +167,61 @@ final readonly class ImpactCalculator
             self::SHADE_RAY_REACH_METRES * self::MILLIMETRES_PER_METRE,
         );
         $cellM2 = ($grid['cell'] / 1000) ** 2;
+
+        $areas = [];
+        $ponding = 0.0;
+        foreach ($grid['cells'] as [$x, $z]) {
+            $class = $this->classAt($layers, $plotSurface, $x, $z);
+            if (GroundClass::RainGarden === $class) {
+                $ponding += $cellM2 * $this->storageAt($layers, $x, $z) / self::MILLIMETRES_PER_METRE;
+            }
+            // a roof's own shade does not matter: only the open ground is looked at
+            $shade = $class->isRoof() ? ShadeKind::Sun : $this->shadeAt($shadeMap, $occluders['sails'], $x, $z);
+            $areas[$class->value][$shade->value] = ($areas[$class->value][$shade->value] ?? 0.0) + $cellM2;
+        }
+        $crowns = array_map(static fn (array $t): array => [
+            'm2' => M_PI * ($t['radius'] / 1000) ** 2,
+            'on_plot' => Polygon::contains($outline, $t['x'], $t['z']),
+        ], $occluders['trees']);
+
+        return new GroundSurvey(count($grid['cells']) * $cellM2, $areas, $crowns, $ponding);
+    }
+
+    /**
+     * @return array{area: float, permeable: float, runoff: float, retained: float, psi: float, shade: float, temperature: float, classes: array<string, float>, warnings: list<string>}
+     */
+    private function evaluate(GroundSurvey $survey, int $storm): array
+    {
         $rain = $storm / self::MILLIMETRES_PER_METRE;
+        $total = $survey->plotSquareMetres;
+        $rainTotal = $total * $rain;
+        $warnings = [];
 
         $classes = [];
         $runoff = 0.0;
-        $rainTotal = 0.0;
-        $sealedGround = 0.0;
-        $groundCells = 0;
-        $permeableGround = 0;
-        $shadedGround = 0;
-        $temperatureSum = 0.0;
-        $rainGardenArea = 0.0;
-        $rainGardenStorage = 0.0;
-        $sealedCatchment = 0.0;
-        $warnings = [];
-
-        foreach ($grid['cells'] as [$x, $z]) {
-            $class = $this->classAt($layers, $plotSurface, $x, $z);
-            $classes[$class->value] = ($classes[$class->value] ?? 0.0) + $cellM2;
-            $rainTotal += $cellM2 * $rain;
-            $generated = $cellM2 * $class->runoffCoefficient() * $rain;
-            $runoff += $generated;
-            if ($class->isSealed()) {
-                $sealedCatchment += $cellM2;
+        foreach (GroundClass::cases() as $class) {
+            $area = $survey->area($class);
+            if ($area > 0.0) {
+                $classes[$class->value] = $area;
+                $runoff += $area * $class->runoffCoefficient() * $rain;
             }
-            if (GroundClass::RainGarden === $class) {
-                $rainGardenArea += $cellM2;
-                $rainGardenStorage += $cellM2 * ($this->storageAt($layers, $x, $z) / self::MILLIMETRES_PER_METRE + self::RAIN_GARDEN_MEDIA_STORAGE);
-            }
-            if (GroundClass::Roof === $class) {
-                continue;
-            }
-            ++$groundCells;
-            if (!$class->isSealed()) {
-                ++$permeableGround;
-            } else {
-                $sealedGround += $cellM2;
-            }
-            $shaded = $this->isShaded($shadeMap, $occluders['sails'], $x, $z);
-            $shadedGround += $shaded ? 1 : 0;
-            $temperatureSum += $class->surfaceTemperature() - ($shaded ? self::SHADE_TEMPERATURE_REDUCTION : 0.0);
         }
+        $ground = $survey->groundArea();
+        $permeableGround = 0.0;
+        $temperatureSum = 0.0;
+        $survey->eachGroundPatch(static function (GroundClass $class, ShadeKind $shade, float $m2) use (&$permeableGround, &$temperatureSum): void {
+            $permeableGround += $class->isSealed() ? 0.0 : $m2;
+            $temperatureSum += $m2 * ($class->surfaceTemperature() - ($shade->isShaded() ? self::SHADE_TEMPERATURE_REDUCTION : 0.0));
+        });
 
         // rain gardens take the runoff of the sealed area around them, up to their storage and the catchment limit
         $captured = 0.0;
+        $rainGardenArea = $survey->area(GroundClass::RainGarden);
+        $sealedCatchment = $survey->sealedArea();
         if ($rainGardenArea > 0.0) {
+            $storage = $survey->rainGardenPondingCubicMetres + $rainGardenArea * self::RAIN_GARDEN_MEDIA_STORAGE;
             $reachable = min($sealedCatchment, $rainGardenArea * self::MAX_CATCHMENT_RATIO);
-            $catchmentRunoff = $reachable * GroundClass::Asphalt->runoffCoefficient() * $rain;
-            $captured = min($rainGardenStorage, $catchmentRunoff);
+            $captured = min($storage, $reachable * GroundClass::Asphalt->runoffCoefficient() * $rain);
             if ($sealedCatchment > $rainGardenArea * self::MAX_CATCHMENT_RATIO) {
                 $warnings[] = sprintf('The rain gardens (%.0f m²) are small for the %.0f m² of sealed surface around them (max. 10 times their area drains into one).', $rainGardenArea, $sealedCatchment);
             }
@@ -183,22 +229,20 @@ final readonly class ImpactCalculator
 
         // tree crowns hold back a little rain over the ground below them
         $interception = 0.0;
-        foreach ($occluders['trees'] as $tree) {
-            $interception += M_PI * ($tree['radius'] / 1000) ** 2 * self::CANOPY_INTERCEPTION_MM / self::MILLIMETRES_PER_METRE;
+        foreach ($survey->crowns as $crown) {
+            $interception += $crown['m2'] * self::CANOPY_INTERCEPTION_MM / self::MILLIMETRES_PER_METRE;
         }
         $interception = min($interception, max(0.0, $runoff - $captured));
-
         $runoffAfter = max(0.0, $runoff - $captured - $interception);
-        $total = count($grid['cells']) * $cellM2;
 
         return [
             'area' => $total,
-            'permeable' => $groundCells > 0 ? $permeableGround / $groundCells : 0.0,
+            'permeable' => $ground > 0 ? $permeableGround / $ground : 0.0,
             'runoff' => $runoffAfter,
             'retained' => max(0.0, $rainTotal - $runoffAfter),
             'psi' => $rainTotal > 0 ? $runoffAfter / $rainTotal : 0.0,
-            'shade' => $groundCells > 0 ? $shadedGround / $groundCells : 0.0,
-            'temperature' => $groundCells > 0 ? $temperatureSum / $groundCells : 0.0,
+            'shade' => $ground > 0 ? $survey->shadedGroundArea() / $ground : 0.0,
+            'temperature' => $ground > 0 ? $temperatureSum / $ground : 0.0,
             'classes' => $classes,
             'warnings' => $warnings,
         ];
@@ -220,6 +264,9 @@ final readonly class ImpactCalculator
             }
         };
         // order of the groups = priority, the first match at a point wins
+        foreach ($site->ofType(O::GREENROOF) as $greenRoof) {
+            $this->greenRoofLayers($site, $greenRoof, $layers);
+        }
         foreach ($site->objects as $object) {
             match ($object[O::TYPE]) {
                 O::BUILDING, O::HOUSE, O::OUTBUILDING => $add(GroundClass::Roof, $object),
@@ -253,6 +300,36 @@ final readonly class ImpactCalculator
         }
 
         return $layers;
+    }
+
+    /**
+     * A green roof's planted levels, highest first, each followed by its whole outline as plain roof:
+     * the gravel strip, and a stair head standing on a lower level, stay roof.
+     *
+     * @param array<string, mixed>                                                                                                                         $greenRoof
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float}> $layers
+     */
+    private function greenRoofLayers(Site $site, array $greenRoof, array &$layers): void
+    {
+        $building = GreenRoofs::buildingOf($site, $greenRoof);
+        if (null === $building) {
+            return;
+        }
+        $planted = GreenRoofs::levelsOf($site, $greenRoof);
+        $parts = Site::parts($building);
+        if ([] === $parts) {
+            $parts = [[O::POINTS => Site::points($building), O::HEIGHT => (float) ($building[O::HEIGHT] ?? 0)]];
+        }
+        usort($parts, static fn (array $a, array $b): int => $b[O::HEIGHT] <=> $a[O::HEIGHT]);
+        $class = GroundClass::greenRoof(is_string($greenRoof[O::KIND] ?? null) ? $greenRoof[O::KIND] : O::KIND_EXTENSIVE);
+        foreach ($parts as $part) {
+            foreach ($planted as $level) {
+                if ($level->points === $part[O::POINTS]) {
+                    $layers[] = ['class' => $class, 'polygon' => $level->plantedPoints, 'bounds' => Polygon::bounds($level->plantedPoints), 'storage' => 0.0];
+                }
+            }
+            $layers[] = ['class' => GroundClass::Roof, 'polygon' => $part[O::POINTS], 'bounds' => Polygon::bounds($part[O::POINTS]), 'storage' => 0.0];
+        }
     }
 
     /**
@@ -329,11 +406,11 @@ final readonly class ImpactCalculator
     }
 
     /**
-     * A cell is shaded when the ray towards the sun meets a building, a tree crown or a sail.
+     * What shades a cell: the first a ray towards the sun meets of a sail, a building or a tree crown.
      *
      * @param list<array{polygon: list<array{0: float, 1: float}>, height: float}> $sails
      */
-    private function isShaded(ShadeMap $map, array $sails, float $x, float $z): bool
+    private function shadeAt(ShadeMap $map, array $sails, float $x, float $z): ShadeKind
     {
         [$dx, $dz] = self::towardsSun();
         $tan = tan(deg2rad(self::SUN_ELEVATION));
@@ -341,7 +418,7 @@ final readonly class ImpactCalculator
         foreach ($sails as $sail) {
             $d = $sail['height'] / $tan;
             if (Polygon::contains($sail['polygon'], $x + $dx * $d, $z + $dz * $d)) {
-                return true;
+                return ShadeKind::Sail;
             }
         }
         for ($d = self::SHADE_RAY_STEP_METRES; $d <= self::SHADE_RAY_REACH_METRES; $d += self::SHADE_RAY_STEP_METRES) {
@@ -349,14 +426,15 @@ final readonly class ImpactCalculator
             $rayHeight = $meters * $tan;
             // above everything there is: nothing further along shades it
             if ($rayHeight > $map->tallest()) {
-                return false;
+                return ShadeKind::Sun;
             }
-            if ($map->blocks($x + $dx * $meters, $z + $dz * $meters, $rayHeight)) {
-                return true;
+            $blocker = $map->blocker($x + $dx * $meters, $z + $dz * $meters, $rayHeight);
+            if (null !== $blocker) {
+                return $blocker;
             }
         }
 
-        return false;
+        return ShadeKind::Sun;
     }
 
     /**
@@ -380,6 +458,7 @@ final readonly class ImpactCalculator
             'Tree crowns are modelled at their recorded diameter (tree register) or, without one, at mature size (radius 28 % of the height); they intercept 2 mm of rain.',
             'Shade is evaluated at one moment (14:00, mid-summer); shade sails let rain through.',
             'Surface temperatures are indicative values of a sunny summer midday, not a thermal simulation.',
+            'Green roofs: runoff coefficient 0.5 (extensive) or 0.2 (intensive) per DIN 1986-100, planted inside a 0.5 m gravel strip; their runoff does not drain into rain gardens.',
             'Ground that is not covered by another object has the surface of its area (OpenStreetMap, or as the user set it), else that of the plot.',
         ];
     }

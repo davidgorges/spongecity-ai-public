@@ -23,6 +23,7 @@ import { SelectionHighlight } from './selection_highlight.js';
 import { RationaleMarkers } from './rationale_markers.js';
 import { RAIN_GARDEN, RainGardens } from './rain_garden.js';
 import { PERMEABLE, PermeableSurfaces } from './permeable_surface.js';
+import { GREEN_ROOF, GreenRoofs } from './green_roof.js';
 
 /**
  * A ground layer with holes where outlines lie wholly on it (the rain gardens' basins): the part,
@@ -223,6 +224,8 @@ export class SceneRenderer {
     #rainGardens = new RainGardens();
     /** permeable surfaces are laid in their real material and size, with an edging */
     #permeable = new PermeableSurfaces();
+    /** green roofs are built as they are on a flat roof: gravel strip, edging, planting */
+    #greenRoofs = new GreenRoofs();
     #plotPreview = null;
     #plotPreviewFrame = 0;
     #reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
@@ -254,7 +257,7 @@ export class SceneRenderer {
                 models: environmentModels,
                 onChange: () => this.#requestRender(),
             });
-        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#hover.group, this.#markers.group, this.#rainGardens.group, this.#permeable.group);
+        this.#scene.add(this.#content, this.#scenery, this.#backdrop, this.#decor, this.#lamps, this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#hover.group, this.#markers.group, this.#rainGardens.group, this.#permeable.group, this.#greenRoofs.group);
         // see-through: the ambient occlusion pass would draw it as a solid wall (post_processing.js)
         this.#scene.userData.withoutAmbientOcclusion = [this.#plotHighlight.group, this.#selection.group, this.#alternative.group, this.#hover.group, this.#markers.group];
 
@@ -406,7 +409,7 @@ export class SceneRenderer {
         this.#raycaster.setFromCamera(this.#pointer, this.#camera);
         // a badge floats in front of everything: it names its object
         const marker = this.#markers.objectAt(this.#raycaster, this.#camera);
-        const targets = [this.#content, this.#scenery, this.#rainGardens.group, this.#permeable.group];
+        const targets = [this.#content, this.#scenery, this.#rainGardens.group, this.#permeable.group, this.#greenRoofs.group];
         const hit = this.#raycaster.intersectObjects(targets, true).find((intersection) => intersection.object.visible);
         const point = hit?.point ?? this.#groundAlong(this.#raycaster.ray);
         if (!point) {
@@ -930,6 +933,7 @@ export class SceneRenderer {
         this.#environment.setShadowMapSize(tier.shadowMapSize);
         this.#environment.setDetail(tier.detail);
         this.#rainGardens.setDetail(tier.detail);
+        this.#greenRoofs.setDetail(tier.detail);
         if (this.#lastSceneData) {
             this.#syncMaterials(); // glass mode depends on the tier
             this.#rebuildContent(this.#lastSceneData.parts ?? []);
@@ -1066,8 +1070,10 @@ export class SceneRenderer {
         // the ground the basins are dug into is open where they lie
         const outlines = gardens.map((part) => part.profile);
         this.#permeable.setSurfaces(product.filter((part) => part.appearance?.kind === PERMEABLE), this.#terrain);
+        this.#greenRoofs.setRoofs(product.filter((part) => part.appearance?.kind === GREEN_ROOF));
+        const drawnApart = [RAIN_GARDEN, PERMEABLE, GREEN_ROOF];
         const rest = product
-            .filter((part) => part.appearance?.kind !== RAIN_GARDEN && part.appearance?.kind !== PERMEABLE)
+            .filter((part) => !drawnApart.includes(part.appearance?.kind))
             .map((part) => (part.draped && part.shape === 'extrusion' ? withHoles(part, outlines) : part));
         this.#mergeInto(this.#content, rest);
     }
@@ -1255,6 +1261,7 @@ export class SceneRenderer {
         this.#conditions?.dispose();
         this.#rainGardens.dispose();
         this.#permeable.dispose();
+        this.#greenRoofs.dispose();
         clearTimeout(this.#flickerTimer);
         this.#visibilityObserver.disconnect();
         this.#photo?.dispose();

@@ -6,6 +6,8 @@ namespace App\Command;
 
 use App\Command\Doctor\Check;
 use App\Command\Doctor\CheckStatus;
+use App\SpongeCity\Chat\PlanAssistant;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\Component\Console\Attribute\AsCommand;
 use Symfony\Component\Console\Command\Command;
 use Symfony\Component\Console\Style\SymfonyStyle;
@@ -17,8 +19,8 @@ use Symfony\Contracts\HttpClient\Exception\ExceptionInterface as HttpException;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
 
 /**
- * Checks a developer machine: is the app served and reachable at the URL the agent uses, do the
- * workers take messages, are the API key and the OSM user agent set, can SimStadt run.
+ * Checks a developer machine: is the app served, does the agent get its tools, do the workers
+ * take messages, are the API key and the OSM user agent set, can SimStadt run.
  * Each problem comes with the command that fixes it.
  */
 #[AsCommand(name: 'app:doctor', description: 'Checks that this machine can run SpongeCity AI and says how to fix what is missing')]
@@ -35,8 +37,8 @@ final readonly class DoctorCommand
         private MessageCountAwareInterface $importQueue,
         #[Autowire(env: 'DEFAULT_URI')]
         private string $appUrl,
-        #[Autowire(env: 'MCP_SERVER_URL')]
-        private string $mcpUrl,
+        #[Autowire(service: PlanAssistant::PLANNING_TOOLBOX)]
+        private ToolboxInterface $planningTools,
         #[Autowire(env: 'ANTHROPIC_API_KEY')]
         private string $anthropicApiKey,
         #[Autowire(env: 'OSM_USER_AGENT')]
@@ -56,6 +58,7 @@ final readonly class DoctorCommand
 
         $checks = [
             ...$this->server(),
+            $this->agentTools(),
             $this->importWorker(),
             $this->apiKey(),
             $this->userAgent(),
@@ -97,33 +100,21 @@ final readonly class DoctorCommand
             return [Check::failure('Web server', sprintf('%s answers with HTTP %d.', $this->appUrl, $status), 'open it in a browser and read var/log/dev.log.')];
         }
 
-        return [Check::ok('Web server', sprintf('Serving at %s', $this->appUrl)), $this->mcpServer()];
+        return [Check::ok('Web server', sprintf('Serving at %s', $this->appUrl))];
     }
 
     /**
-     * The agent calls this application's own MCP server over HTTP while handling a chat request.
+     * The agent starts this application's own MCP server as a child process (bin/console mcp:server,
+     * stdio) and lists its tools: what a chat turn does first.
      */
-    private function mcpServer(): Check
+    private function agentTools(): Check
     {
-        try {
-            $status = $this->http->request('POST', $this->mcpUrl, [
-                'timeout' => self::TIMEOUT_SECONDS,
-                'headers' => ['Accept' => 'application/json, text/event-stream'],
-                'json' => [
-                    'jsonrpc' => '2.0',
-                    'id' => 1,
-                    'method' => 'initialize',
-                    'params' => ['protocolVersion' => '2025-06-18', 'capabilities' => new \stdClass(), 'clientInfo' => ['name' => 'app:doctor', 'version' => '1']],
-                ],
-            ])->getStatusCode();
-        } catch (HttpException) {
-            $status = null;
-        }
-        if (200 === $status) {
-            return Check::ok('MCP server', sprintf('The agent reaches its tools at %s', $this->mcpUrl));
+        $count = count($this->planningTools->getTools());
+        if ($count > 0) {
+            return Check::ok('Agent tools', sprintf('The agent gets %d tools from bin/console mcp:server', $count));
         }
 
-        return Check::failure('MCP server', sprintf('%s does not answer as an MCP server%s, so the chat cannot use its tools.', $this->mcpUrl, null === $status ? '' : sprintf(' (HTTP %d)', $status)), 'MCP_SERVER_URL must point at /mcp of the running server; remove any override of it from .env.local so it follows the Symfony CLI\'s port.');
+        return Check::failure('Agent tools', 'The agent gets no tools from its MCP server (bin/console mcp:server, over stdio), so the chat cannot plan.', 'run `php bin/console mcp:server` and read what it prints; the reason is also logged as "Failed to list the tools of MCP server".');
     }
 
     private function importWorker(): Check
