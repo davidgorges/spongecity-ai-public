@@ -37,12 +37,12 @@ flowchart LR
 
 ## What is in the overview
 
-1. **System context:** the app, its two workers, and the services it talks to
+1. **System context:** the app, its three workers, the Mercure hub, and the services it talks to
 2. **Inside the application:** entry points, services, engine and stores as layers
 3. **Starting a plan:** from the home form to a site that is ready
 4. **The import pipeline:** six tagged steps, each replaceable
 5. **Lifecycles:** the `PlanImport` and `SimulationRun` state machines
-6. **One chat turn:** how the agent designs through this app's own MCP server
+6. **One chat turn:** queued to a worker, designed through this app's own MCP server, the reply back through Mercure
 7. **Placing an intervention:** the agent chooses, the server does geometry and rules
 8. **Where state lives:** every store, its key and who reads it
 9. **From values to pixels:** the configurator engine
