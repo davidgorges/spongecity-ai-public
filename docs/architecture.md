@@ -173,6 +173,13 @@ running costs are a second price list (`SpongeCityDefinition::maintenancePrices(
 and year) priced against the same bill of quantities, so investment and care always cover the same
 measures; the lifecycle total adds `LIFECYCLE_YEARS` of them, undiscounted.
 
+Funding (`Funding\FundingEstimate`) applies the programmes of the plan's place (`HamburgFunding` for
+plans in Hamburg, none elsewhere) to the same quote: each programme pays its share of its SKUs' lines
+for the plan's `Applicant` (a plan value, set in the cost panel or with `set_funding_applicant`),
+capped (per building for green roofs) and only above its minimum size. An unknown applicant gets each
+programme's highest share, labelled "up to"; public owners get nothing from these programmes. The
+programmes carry their guideline's URL and date: the terms change, the estimate says so.
+
 ### The import as a state machine (`PlanImport`)
 
 A Symfony Workflow state machine, defined in its class (`#[AsWorkflow]`, a `#[Transition]` per
@@ -455,7 +462,8 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | `list_object_types` | Types, fields, ranges, defaults. |
 | `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |
 | `set_design_storm` | Rain depth for the calculation (10 to 120 mm/h). |
-| `calculate_impact` | Metrics with bases, assumptions, warnings, cost: investment, yearly running costs and the lifecycle total. |
+| `calculate_impact` | Metrics with bases, assumptions, warnings, cost: investment, yearly running costs, the lifecycle total, funding and the net total. |
+| `set_funding_applicant` | Who would apply for funding (private, medium, large, public, unknown): the share the programmes pay. |
 | `propose_placements` type `greenroof` | Eligible flat roofs of the plot's buildings (GreenRoofs), with planted area, retention, roof cooling and cost; the rest named with the reason. |
 | `calculate_cooling` | Hot-day evapotranspiration and evaporative cooling, surface/air/perceived temperature, heat stress shares, yearly water balance; today vs. plan and per kind of measure. |
 | `simulate_buildings` / `get_building_simulation` | Hamburg only: a SimStadt run (heat demand, heat demand with shadow, PV potential) for the buildings within 100 m, started and polled (see "Building simulations"). |

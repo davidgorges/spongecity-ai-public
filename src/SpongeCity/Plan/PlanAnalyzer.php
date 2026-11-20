@@ -4,9 +4,14 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Plan;
 
+use App\SpongeCity\Geo\Hamburg\Hamburg;
 use App\SpongeCity\PlanEvaluator;
 use Core\Configurator\Pricing\Quote;
 use Core\Configurator\Pricing\QuoteLine;
+use Core\Configurator\Product\SpongeCity\Funding\Applicant;
+use Core\Configurator\Product\SpongeCity\Funding\FundingEstimate;
+use Core\Configurator\Product\SpongeCity\Funding\FundingProgramme;
+use Core\Configurator\Product\SpongeCity\Funding\HamburgFunding;
 use Core\Configurator\Product\SpongeCity\Impact\CoolingCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\CoolingReport;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
@@ -97,7 +102,7 @@ final readonly class PlanAnalyzer
      * The investment, line by line, and what keeping the measures working costs a year: both priced
      * against the same bill of quantities, so they cover the same measures.
      *
-     * @return array{currency: string, total: float, complete: bool, maintenance_per_year: float, lifecycle_years: int, lifecycle_total: float, maintenance_basis: string, lines: list<array{sku: string, label: string, amount: float, unit: string, unit_price: float|null, total: float|null, maintenance_per_year: float|null}>}
+     * @return array{currency: string, total: float, complete: bool, maintenance_per_year: float, lifecycle_years: int, lifecycle_total: float, maintenance_basis: string, funding: array<string, mixed>, net_total: float, lines: list<array{sku: string, label: string, amount: float, unit: string, unit_price: float|null, total: float|null, maintenance_per_year: float|null}>}
      */
     public function cost(Plan $plan): array
     {
@@ -106,6 +111,7 @@ final readonly class PlanAnalyzer
         $maintenance = Quote::price($evaluation->bom, SpongeCityDefinition::maintenancePrices());
         $yearly = $maintenance->total() / self::CENTS_PER_EURO;
         $years = SpongeCityDefinition::LIFECYCLE_YEARS;
+        $funding = FundingEstimate::of($quote, $plan->applicant(), $this->programmesFor($plan));
 
         return [
             'currency' => $quote->currency,
@@ -115,6 +121,8 @@ final readonly class PlanAnalyzer
             'lifecycle_years' => $years,
             'lifecycle_total' => ($quote->total() + $years * $maintenance->total()) / self::CENTS_PER_EURO,
             'maintenance_basis' => sprintf(self::MAINTENANCE_BASIS, $years),
+            'funding' => $this->fundingSummary($funding),
+            'net_total' => ($quote->total() - $funding->total()) / self::CENTS_PER_EURO,
             'lines' => array_map(static fn (QuoteLine $line, QuoteLine $care): array => [
                 'sku' => $line->bomLine->sku,
                 'label' => $line->bomLine->label,
@@ -125,6 +133,50 @@ final readonly class PlanAnalyzer
                 'total' => null === $line->total ? null : $line->total / self::CENTS_PER_EURO,
                 'maintenance_per_year' => null === $care->total ? null : $care->total / self::CENTS_PER_EURO,
             ], $quote->lines, $maintenance->lines),
+        ];
+    }
+
+    /**
+     * The programmes of the place the plan lies in: Hamburg's, or none.
+     *
+     * @return list<FundingProgramme>
+     */
+    public function programmesFor(Plan $plan): array
+    {
+        return Hamburg::covers($plan->centre()) ? HamburgFunding::programmes() : [];
+    }
+
+    /**
+     * @return array{applicant: string, total: float, up_to: bool, programmes: list<array<string, mixed>>, note: string}
+     */
+    private function fundingSummary(FundingEstimate $funding): array
+    {
+        $unknown = Applicant::Unknown === $funding->applicant;
+
+        return [
+            'applicant' => $funding->applicant->value,
+            'total' => $funding->total() / self::CENTS_PER_EURO,
+            // nobody said who applies: every programme at its highest share
+            'up_to' => $unknown,
+            'programmes' => array_map(static fn (array $line): array => [
+                'key' => $line['programme']->key,
+                'name' => $line['programme']->name,
+                'publisher' => $line['programme']->publisher,
+                'source' => $line['programme']->url,
+                'as_of' => $line['programme']->asOf,
+                'valid_until' => $line['programme']->validUntil,
+                'eligible_cost' => $line['eligible'] / self::CENTS_PER_EURO,
+                'share' => $line['share'],
+                'amount' => $line['amount'] / self::CENTS_PER_EURO,
+                'capped' => $line['capped'],
+                'below_minimum' => $line['below_minimum'],
+                'conditions' => $line['programme']->conditions,
+            ], $funding->lines),
+            'note' => [] === $funding->lines
+                ? 'No funding programme known for this place and these measures.'
+                : ($unknown
+                    ? 'Who applies is not known (set_funding_applicant): each programme at its highest share, as "up to". Public owners usually get nothing from these programmes.'
+                    : 'An estimate to apply with, not a promise: apply before ordering anything, and check the current guideline (source).'),
         ];
     }
 }

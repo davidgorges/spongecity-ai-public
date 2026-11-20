@@ -1,6 +1,13 @@
 spongecity:
     label: SpongeCity plan
     storm: Design storm
+    applicant:
+        label: Who applies for funding
+        unknown: Not known yet
+        private: Private owner or small company
+        medium: Medium-sized company
+        large: Large company
+        public: Public owner (city, district)
     metric:
         permeable_share: Permeable ground
         runoff: Surface runoff
@@ -307,6 +314,11 @@ plan:
         maintenance: Running costs
         per_year: '%amount% € / year'
         lifecycle: 'Over %years% years, with running costs'
+        funding: Possible funding
+        funding_up_to: Possible funding (up to)
+        net: After funding
+        funding_none: No funding programme known for this place.
+        funding_note: 'An estimate to apply with, not a promise: apply before ordering anything, and check the current guideline.'
     sku:
         SC-PLOT: Analysed area
         SC-TREE: Shade trees

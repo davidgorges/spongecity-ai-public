@@ -21,6 +21,7 @@ use App\SpongeCity\Rationale\Rationale;
 use App\SpongeCity\Rationale\RationaleStore;
 use App\SpongeCity\Terrain\TerrainAnalysis;
 use App\SpongeCity\Terrain\TerrainStore;
+use Core\Configurator\Product\SpongeCity\Funding\Applicant;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
@@ -46,6 +47,7 @@ final readonly class SpongeCityTools
     public const string TOOL_SET_STORM = 'set_design_storm';
     public const string TOOL_IMPACT = 'calculate_impact';
     public const string TOOL_CONDITIONS = 'get_site_conditions';
+    public const string TOOL_SET_APPLICANT = 'set_funding_applicant';
 
     private const int MIN_RADIUS_METRES = 30;
     private const int MAX_RADIUS_METRES = 150;
@@ -281,7 +283,23 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * The measurable balance of the plan today versus with the interventions: permeable share, runoff and retained rainwater in the design storm, shade share, surface temperature, plus the bill of quantities with a cost estimate: the investment, the yearly running costs (maintenance_per_year, per line and in total) and the lifecycle total (investment plus lifecycle_years of running costs). Weigh measures by the lifecycle total, not only the investment: a cheap measure that needs a lot of care can cost more over the years. Every metric states its basis, the report lists assumptions and warnings: quote them when you explain the impact.
+     * Records who would apply for funding: "private" (a private owner, an association or a small company), "medium" or "large" (company), "public" (the city, a district, a public school's owner) or "unknown". The funding programmes pay different shares to each, often nothing to public owners. Ask the user before you set it. Returns the applicant as stored.
+     */
+    #[McpTool(name: self::TOOL_SET_APPLICANT, annotations: new ToolAnnotations(readOnlyHint: false, destructiveHint: false, idempotentHint: true))]
+    public function setFundingApplicant(
+        string $planId,
+        #[Schema(enum: ['unknown', 'private', 'medium', 'large', 'public'])]
+        string $applicant,
+    ): string {
+        $plan = $this->plans->get($planId);
+        $plan->setApplicant(Applicant::tryFrom($applicant) ?? Applicant::Unknown);
+        $this->plans->save($plan);
+
+        return $plan->applicant()->value;
+    }
+
+    /**
+     * The measurable balance of the plan today versus with the interventions: permeable share, runoff and retained rainwater in the design storm, shade share, surface temperature, plus the bill of quantities with a cost estimate: the investment, the yearly running costs (maintenance_per_year, per line and in total) and the lifecycle total (investment plus lifecycle_years of running costs). Weigh measures by the lifecycle total, not only the investment: a cheap measure that needs a lot of care can cost more over the years. funding estimates what public programmes of the place (Hamburg) could pay, programme by programme with its share, cap, conditions and source, and net_total the investment after it; it depends on who applies (set_funding_applicant): until that is known it is an "up to". Always quote the conditions (apply before ordering) and that it is an estimate. Every metric states its basis, the report lists assumptions and warnings: quote them when you explain the impact.
      *
      * @return array<string, mixed>
      */

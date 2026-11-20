@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\SpongeCity\Plan;
 
 use App\SpongeCity\Geo\GeoPoint;
+use Core\Configurator\Product\SpongeCity\Funding\Applicant;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
 use Core\Configurator\Site\SiteType;
 
@@ -80,6 +81,19 @@ final class Plan
     public function setStorm(int $millimetresPerHour): void
     {
         $this->values[SpongeCityParameter::STORM] = max(SpongeCityParameter::STORM_MIN, min(SpongeCityParameter::STORM_MAX, $millimetresPerHour));
+    }
+
+    /** who would apply for funding; unknown until someone says */
+    public function applicant(): Applicant
+    {
+        $applicant = $this->values[SpongeCityParameter::APPLICANT] ?? null;
+
+        return (is_string($applicant) ? Applicant::tryFrom($applicant) : null) ?? Applicant::Unknown;
+    }
+
+    public function setApplicant(Applicant $applicant): void
+    {
+        $this->values[SpongeCityParameter::APPLICANT] = $applicant->value;
     }
 
     /**

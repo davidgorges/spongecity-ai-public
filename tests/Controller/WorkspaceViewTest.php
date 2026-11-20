@@ -12,6 +12,7 @@ use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\PlanUpdates;
 use App\SpongeCity\Plan\SiteEditor;
 use App\Twig\Components\PlanWorkspace;
+use Core\Configurator\Product\SpongeCity\Funding\Applicant;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
 use PHPUnit\Framework\Attributes\Test;
@@ -113,6 +114,27 @@ final class WorkspaceViewTest extends WebTestCase
         $crawler = $component->render()->crawler();
         self::assertSame('Deselect', trim($crawler->filter('#object-title')->ancestors()->filter('[data-slot="card-header"], div')->first()->filter('button')->last()->text()));
         self::assertSame('true', $crawler->filter('[data-live-action-param="'.PlanWorkspace::ACTION_SELECT_OBJECT.'"][data-live-id-param="'.$tree['id'].'"]')->attr('aria-current'));
+    }
+
+    #[Test]
+    public function whoAppliesForFundingIsChosenNextToTheCosts(): void
+    {
+        $plan = $this->plan();
+        static::getContainer()->get(SiteEditor::class)->add($plan->id, [
+            [O::TYPE => O::PLANTING, O::POINTS => [[-8000, -8000], [2000, -8000], [2000, -3000], [-8000, -3000]]],
+        ]);
+        $component = $this->createLiveComponent(PlanWorkspace::class, ['planId' => $plan->id]);
+
+        $crawler = $component->render()->crawler();
+        self::assertSame(Applicant::Unknown->value, $crawler->filter('select#applicant option[selected]')->attr('value'));
+        self::assertStringContainsString('Possible funding (up to)', $crawler->text());
+
+        $component->set('applicant', Applicant::Public->value);
+
+        self::assertSame(Applicant::Public, static::getContainer()->get(PlanStore::class)->get($plan->id)->applicant(), 'the choice is the plan\'s');
+        $crawler = $component->render()->crawler();
+        self::assertSame(Applicant::Public->value, $crawler->filter('select#applicant option[selected]')->attr('value'));
+        self::assertStringNotContainsString('(up to)', $crawler->text());
     }
 
     #[Test]

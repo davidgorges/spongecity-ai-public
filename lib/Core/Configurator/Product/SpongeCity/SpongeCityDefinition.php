@@ -8,10 +8,13 @@ use Core\Configurator\Assembly\Assembly;
 use Core\Configurator\Definition\ProductDefinition;
 use Core\Configurator\Definition\StagesScenery;
 use Core\Configurator\Engine\Configuration;
+use Core\Configurator\Parameter\Choice;
+use Core\Configurator\Parameter\ChoiceParameter;
 use Core\Configurator\Parameter\NumberParameter;
 use Core\Configurator\Parameter\ParameterGroup;
 use Core\Configurator\Parameter\ParameterSet;
 use Core\Configurator\Pricing\PriceList;
+use Core\Configurator\Product\SpongeCity\Funding\Applicant;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter as P;
 use Core\Configurator\Product\SpongeCity\SpongeCitySku as Sku;
 use Core\Configurator\Scene\MaterialLibrary;
@@ -88,6 +91,12 @@ final readonly class SpongeCityDefinition implements ProductDefinition, StagesSc
     {
         return new ParameterSet(
             new NumberParameter(P::STORM, P::LABEL_STORM, P::STORM_MIN, P::STORM_MAX, 5, P::STORM_DEFAULT, 'mm/h', ParameterGroup::OPTIONS),
+            new ChoiceParameter(
+                P::APPLICANT,
+                P::LABEL_APPLICANT,
+                array_map(static fn (Applicant $a): Choice => new Choice($a->value, P::LABEL_APPLICANT_CHOICE.$a->value), Applicant::cases()),
+                Applicant::Unknown->value,
+            ),
             SiteType::parameter(),
         );
     }
