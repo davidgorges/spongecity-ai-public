@@ -6,17 +6,18 @@ framework:
         # workers still running the previous one, a separate namespace in the shared pool.
         prefix_seed: spongecity-ai/app
 
-        # The "app" cache stores to the filesystem by default.
-        # The data in this cache should persist between deploys.
-        # Other options include:
+when@prod:
+    framework:
+        cache:
+            # Unique name of the app: the cache namespaces derive from it. Without it they follow the
+            # project directory, which changes with every release directory: what is stored would be
+            # out of reach after a deploy.
+            prefix_seed: spongecity/app
 
-        # Redis
-        #app: cache.adapter.redis
-        #default_redis_provider: redis://localhost
-
-        # APCu (not recommended with heavy random-write workloads as memory fragmentation can cause perf issues)
-        #app: cache.adapter.apcu
-
-        # Namespaced pools use the above "app" backend by default
-        #pools:
-            #my.dedicated.cache: null
+            pools:
+                # What the users made: plans, conversations, rationales, terrain, conditions
+                # (App\SpongeCity\CacheStore). It must outlive deploys and be shared by the web server,
+                # the workers and the agent's tools (bin/console mcp:server).
+                spongecity.storage:
+                    adapter: cache.adapter.redis
+                    provider: '%env(STORAGE_REDIS_URL)%'

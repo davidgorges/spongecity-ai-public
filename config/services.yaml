@@ -26,3 +26,11 @@ services:
 
     # add more service definitions when explicit configuration is needed
     # please note that last definitions always *replace* previous ones
+
+# What the users made lives in Redis in production (config/packages/cache.yaml); on a developer
+# machine and in tests it stays in the application cache under var/share, where it always was.
+when@dev: &local_storage
+    services:
+        spongecity.storage: '@cache.app'
+
+when@test: *local_storage

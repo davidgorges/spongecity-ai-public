@@ -108,7 +108,7 @@ building-type scheme. That code doesn't call SimStadt and doesn't need it.)
 
 ## Good to know
 
-- Plans (a cache pool) and the SQLite database with the Messenger queues live under `var/share/<env>/`: `cache:clear` keeps them, deleting `var/share` resets them. Deploying: [docs/deployment.md](docs/deployment.md).
+- Plans and the SQLite database with the Messenger queues live under `var/share/<env>/` locally (in production, plans live in Redis: `STORAGE_REDIS_URL`): `cache:clear` keeps them, deleting `var/share` resets them. Deploying: [docs/deployment.md](docs/deployment.md).
 - Logs: `symfony server:log`, or `var/log/dev.log`. The Messenger workers restart on changes to
   `config/`, `src/`, `lib/` and `vendor/`; the Tailwind worker rebuilds the CSS whenever a template
   or stylesheet changes.
