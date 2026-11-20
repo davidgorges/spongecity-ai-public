@@ -664,7 +664,8 @@ sequenceDiagram
   or nudging the group's anchor (its topmost window, the leftmost of those level) moves them all,
   kept inside the view as one; dragging any other window takes the windows hanging under its
   bottom edge along (and those under them), splitting off from the rest. Shift-drag moves a
-  window alone, out of its group; closing it does too; a press without a move groups nothing. Inside the Card's content `id` names the Card's
+  window alone, out of its group; closing it does too. Minimising a window (or restoring it)
+  moves the windows hanging under it up to its title bar (or back down); a press without a move groups nothing. Inside the Card's content `id` names the Card's
   own (`window-…`), so `Plan:Window` keeps the window's in `window_id`. The live re-render rewrites the windows' markup, so the
   manager applies its layout again on `render:finished`. Object details opens by itself when
   its `data-window-auto` (the selected intervention, equipment or zone) changes. Below 1024 px the

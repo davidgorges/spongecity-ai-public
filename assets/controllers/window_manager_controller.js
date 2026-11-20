@@ -50,7 +50,7 @@ const BOTTOM_EDGE = 'bottom';
  * keys, the group's anchor (its topmost window, the leftmost of those level) moves them all;
  * any other one takes the windows hanging under its bottom edge along (and those under them),
  * splitting off from the rest. Shift-drag moves a window alone, out of its group; closing it
- * takes it out too. Groups are kept with the places.
+ * takes it out too. Minimised (or back), a window's hanging windows follow its bottom edge. Groups are kept with the places.
  *
  * Below FLOATING the windows are not floating: one of them is shown under the view, the dock
  * switches between them like tabs.
@@ -135,12 +135,26 @@ export default class extends Controller {
         }
     }
 
+    /** minimised to its title bar, or back: the windows of its group hanging under it follow its bottom edge */
     minimise({ params: { id } }) {
-        if (this.#state[id]) {
-            this.#state[id].minimised = !this.#state[id].minimised;
-            this.#save();
-            this.#apply();
+        if (!this.#state[id]) {
+            return;
         }
+        const hanging = this.#floating.matches ? this.#hangingUnder(id) : [];
+        const before = this.#window(id)?.offsetHeight ?? 0;
+        this.#state[id].minimised = !this.#state[id].minimised;
+        this.#apply();
+        const shift = (this.#window(id)?.offsetHeight ?? 0) - before;
+        if (hanging.length > 0 && shift !== 0) {
+            const starts = Object.fromEntries(hanging.map((member) => [member, this.#rect(member)]));
+            this.#moveAll(starts, ...this.#clampDelta(starts, 0, shift));
+        }
+        this.#save();
+    }
+
+    /** the windows of its group hanging under its bottom edge, and under those in turn (not itself) */
+    #hangingUnder(id) {
+        return chainBelow(id, this.#moving(id), (above, below) => hangsUnder(this.#rect(above), this.#rect(below), GAP, TOUCH_TOLERANCE)).slice(1);
     }
 
     /** a press or the focus in a window brings it to the front */
@@ -582,8 +596,7 @@ export default class extends Controller {
         if (alone) {
             this.#setGroups(leave(this.#groups(), id));
         } else if (!this.#isAnchor(id)) {
-            const chain = chainBelow(id, this.#moving(id), (above, below) => hangsUnder(this.#rect(above), this.#rect(below), GAP, TOUCH_TOLERANCE));
-            this.#setGroups(split(this.#groups(), chain, () => this.#newGroup(id)));
+            this.#setGroups(split(this.#groups(), [id, ...this.#hangingUnder(id)], () => this.#newGroup(id)));
         }
     }
 
