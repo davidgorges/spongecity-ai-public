@@ -39,6 +39,7 @@ OSM_USER_AGENT="SpongeCityAI/0.1 (contact: you@your-domain.tld)"
 After Forge's own clone and activate lines:
 
 ```bash
+export APP_ENV=prod
 $FORGE_COMPOSER install --no-dev --no-interaction --prefer-dist --optimize-autoloader --classmap-authoritative
 $FORGE_PHP bin/console tailwind:build --minify
 $FORGE_PHP bin/console asset-map:compile
@@ -46,6 +47,11 @@ $FORGE_PHP bin/console cache:clear
 $FORGE_PHP bin/console messenger:setup-transports
 $FORGE_PHP bin/console messenger:stop-workers
 ```
+
+`export APP_ENV=prod` comes first: Composer's `auto-scripts` boot the kernel, and without it they
+boot in `dev`, which needs dev-only bundles that `--no-dev` did not install
+(`Attempted to load class "DebugBundle"`). The environment file alone is not enough, because it may
+not be linked into the release yet when Composer runs.
 
 `messenger:stop-workers` makes Supervisor restart the workers on the new release.
 
