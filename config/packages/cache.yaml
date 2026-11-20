@@ -1,7 +1,10 @@
 framework:
     cache:
         # Unique name of your app: used to compute stable namespaces for cache keys.
-        #prefix_seed: your_vendor_name/app_name
+        # Must not depend on the path: zero-downtime deploys put every release in its own
+        # directory, and the default seed (the project dir) would give each release, and the
+        # workers still running the previous one, a separate namespace in the shared pool.
+        prefix_seed: spongecity-ai/app
 
         # The "app" cache stores to the filesystem by default.
         # The data in this cache should persist between deploys.
