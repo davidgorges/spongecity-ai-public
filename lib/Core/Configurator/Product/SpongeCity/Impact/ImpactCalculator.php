@@ -51,7 +51,6 @@ final readonly class ImpactCalculator
     public const float TRENCH_VOID_SHARE = 0.35;
     /** sealed ground a tree trench (Baumrigole) takes the runoff of, m² per m³ of trench (BlueGreenStreets: 10 to 15 m³ for 100 to 150 m²) */
     public const float TREE_TRENCH_CATCHMENT_M2_PER_M3 = 10.0;
-    public const float SHADE_TEMPERATURE_REDUCTION = 12.0;
     private const float MILLIMETRES_PER_METRE = 1000.0;
     private const float SHADE_RAY_STEP_METRES = 1.5;
     private const float SHADE_RAY_REACH_METRES = 60.0;
@@ -85,7 +84,7 @@ final readonly class ImpactCalculator
 
         $metrics = [
             new Metric(self::METRIC_PERMEABLE_SHARE, 'spongecity.metric.permeable_share', self::UNIT_PERCENT, $baseline['permeable'] * 100, $design['permeable'] * 100,
-                'Share of the plot ground (without roofs) whose runoff coefficient is below 0.7 (DWA-A 138 / DIN 1986-100 classes).',
+                'Share of the plot ground (without roofs) known to have a runoff coefficient below 0.7 (DWA-A 138 / DIN 1986-100 classes); ground of unknown surface is not counted as permeable.',
                 target: new MetricTarget(self::TARGET_PERMEABLE_GOOD, self::TARGET_PERMEABLE_POOR, 'At least half of the open ground unsealed is a common sponge-city orientation; below a quarter the plot behaves like sealed ground.')),
             new Metric(self::METRIC_RUNOFF, 'spongecity.metric.runoff', self::UNIT_CUBIC_METRES, $baseline['runoff'], $design['runoff'],
                 sprintf('Surface runoff in a %d mm/h design storm: sum of area x runoff coefficient x rain depth, minus what rain gardens and canopies hold back.', $stormMillimetres), false),
@@ -98,7 +97,7 @@ final readonly class ImpactCalculator
                 sprintf('Share of the open ground in shade at 14:00 on a summer day (sun %d° high, from the south-west): shadows of buildings, tree crowns and shade sails.', (int) self::SUN_ELEVATION),
                 target: new MetricTarget(self::TARGET_SHADE_GOOD, self::TARGET_SHADE_POOR, 'Guidance for schoolyards and playgrounds asks for a third to half of the area in shade at midday; below a fifth there is little refuge from the sun.')),
             new Metric(self::METRIC_SURFACE_TEMPERATURE, 'spongecity.metric.surface_temperature', self::UNIT_CELSIUS, $baseline['temperature'], $design['temperature'],
-                sprintf('Mean midday surface temperature of the open ground, indicative literature values per surface, shaded ground %d K cooler.', (int) self::SHADE_TEMPERATURE_REDUCTION), false,
+                sprintf('Mean midday surface temperature of the open ground, indicative literature values per surface; in the shade a surface comes close to the air (%d °C): %d %% of what it is warmer in the sun remains.', (int) CoolingCalculator::REFERENCE_AIR_TEMPERATURE, (int) round(GroundClass::SHADED_EXCESS_SHARE * 100)), false,
                 new MetricTarget(self::TARGET_TEMPERATURE_GOOD, self::TARGET_TEMPERATURE_POOR, 'Up to 35 °C is what lawn, planting and shaded ground reach; from 45 °C the ground is mostly sunlit paving or asphalt.')),
         ];
 
@@ -109,7 +108,7 @@ final readonly class ImpactCalculator
             $metrics,
             $design['classes'],
             $this->assumptions(),
-            array_values(array_unique([...$baseline['warnings'], ...$design['warnings']])),
+            array_values(array_unique([...$baseline['warnings'], ...$design['warnings'], ...self::unknownGroundWarnings($design)])),
         );
     }
 
@@ -208,7 +207,7 @@ final readonly class ImpactCalculator
     }
 
     /**
-     * @return array{area: float, permeable: float, runoff: float, retained: float, psi: float, shade: float, temperature: float, classes: array<string, float>, warnings: list<string>}
+     * @return array{area: float, permeable: float, runoff: float, retained: float, psi: float, shade: float, temperature: float, unknown: float, unknown_m2: float, temperature_if: array<string, float>, classes: array<string, float>, warnings: list<string>}
      */
     private function evaluate(GroundSurvey $survey, int $storm): array
     {
@@ -228,10 +227,16 @@ final readonly class ImpactCalculator
         }
         $ground = $survey->groundArea();
         $permeableGround = 0.0;
-        $temperatureSum = 0.0;
-        $survey->eachGroundPatch(static function (GroundClass $class, ShadeKind $shade, float $m2) use (&$permeableGround, &$temperatureSum): void {
-            $permeableGround += $class->isSealed() ? 0.0 : $m2;
-            $temperatureSum += $m2 * ($class->surfaceTemperature() - ($shade->isShaded() ? self::SHADE_TEMPERATURE_REDUCTION : 0.0));
+        $unknownGround = 0.0;
+        // the mean temperature as it is counted, and as it would be were the unknown ground each of what it may be
+        $temperatureSums = array_fill_keys(['counted', ...array_map(static fn (GroundClass $c): string => $c->value, GroundClass::UNKNOWN_BOUNDS)], 0.0);
+        $survey->eachGroundPatch(static function (GroundClass $class, ShadeKind $shade, float $m2) use (&$permeableGround, &$unknownGround, &$temperatureSums): void {
+            $permeableGround += $class->isKnown() && !$class->isSealed() ? $m2 : 0.0;
+            $unknownGround += $class->isKnown() ? 0.0 : $m2;
+            $temperatureSums['counted'] += $m2 * $class->surfaceTemperatureIn($shade->isShaded());
+            foreach (GroundClass::UNKNOWN_BOUNDS as $bound) {
+                $temperatureSums[$bound->value] += $m2 * ($class->isKnown() ? $class : $bound)->surfaceTemperatureIn($shade->isShaded());
+            }
         });
 
         // rain gardens take the runoff of the sealed area around them, up to their storage and the catchment limit
@@ -263,7 +268,10 @@ final readonly class ImpactCalculator
             'retained' => max(0.0, $rainTotal - $runoffAfter),
             'psi' => $rainTotal > 0 ? $runoffAfter / $rainTotal : 0.0,
             'shade' => $ground > 0 ? $survey->shadedGroundArea() / $ground : 0.0,
-            'temperature' => $ground > 0 ? $temperatureSum / $ground : 0.0,
+            'temperature' => $ground > 0 ? $temperatureSums['counted'] / $ground : 0.0,
+            'unknown' => $ground > 0 ? $unknownGround / $ground : 0.0,
+            'unknown_m2' => $unknownGround,
+            'temperature_if' => array_map(static fn (float $sum): float => $ground > 0 ? $sum / $ground : 0.0, array_diff_key($temperatureSums, ['counted' => true])),
             'classes' => $classes,
             'warnings' => $warnings,
         ];
@@ -329,7 +337,7 @@ final readonly class ImpactCalculator
      * the gravel strip, and a stair head standing on a lower level, stay roof. The levels come from the
      * map's building parts, which may reach beyond the building's footprint: only the footprint is roof.
      *
-     * @param array<string, mixed>                                                                                                                             $greenRoof
+     * @param array<string, mixed>                                                                                                                                                                                       $greenRoof
      * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, trench?: float, within?: list<array{0: float, 1: float}>}> $layers
      */
     private function greenRoofLayers(Site $site, array $greenRoof, array &$layers): void
@@ -535,6 +543,26 @@ final readonly class ImpactCalculator
     }
 
     /**
+     * How far the surface temperature could go either way, when part of the open ground is of
+     * unknown surface: so nobody takes the halfway value for a measurement.
+     *
+     * @param array{unknown: float, unknown_m2: float, temperature_if: array<string, float>} $design
+     *
+     * @return list<string>
+     */
+    private static function unknownGroundWarnings(array $design): array
+    {
+        if ($design['unknown_m2'] <= 0.0) {
+            return [];
+        }
+        $range = implode(', ', array_map(static fn (string $class, float $t): string => sprintf('all %s %.1f °C', $class, $t), array_keys($design['temperature_if']), $design['temperature_if']));
+
+        $bounds = implode(' and ', array_map(static fn (GroundClass $c): string => $c->value, GroundClass::UNKNOWN_BOUNDS));
+
+        return [sprintf('%.0f m² of the open ground (%d %%) is of unknown surface, counted halfway between %s: the surface temperature could be from %s. Ask the user what that ground is and record it with describe_zone.', $design['unknown_m2'], (int) round($design['unknown'] * 100), $bounds, $range)];
+    }
+
+    /**
      * @return list<string>
      */
     private function assumptions(): array
@@ -546,7 +574,7 @@ final readonly class ImpactCalculator
             'Shade is evaluated at one moment (14:00, mid-summer); shade sails let rain through.',
             'Surface temperatures are indicative values of a sunny summer midday, not a thermal simulation.',
             'Green roofs: runoff coefficient 0.5 (extensive) or 0.2 (intensive) per DIN 1986-100, planted inside a 0.5 m gravel strip; their runoff does not drain into rain gardens.',
-            'Ground that is not covered by another object has the surface of its area (OpenStreetMap, or as the user set it), else that of the plot.',
+            sprintf('Ground that is not covered by another object has the surface of its area (OpenStreetMap, or as the user set it), else that of the plot. Ground nobody described counts halfway between %s: half sealed for the runoff, %.0f °C in the sun.', implode(' and ', array_map(static fn (GroundClass $c): string => $c->value, GroundClass::UNKNOWN_BOUNDS)), GroundClass::Unknown->surfaceTemperature()),
         ];
     }
 }

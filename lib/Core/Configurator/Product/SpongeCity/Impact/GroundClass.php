@@ -42,10 +42,29 @@ enum GroundClass: string
     case Planting = 'planting';
     case RainGarden = 'raingarden';
     case Water = 'water';
+    /**
+     * Open ground nobody has described: the plot's ground outside every known area. It may be lawn
+     * as well as asphalt, so each of its numbers lies halfway between the two (UNKNOWN_BOUNDS); the
+     * impact report says how far the result could go either way.
+     */
+    case Unknown = 'unknown';
+
+    /** what unknown ground may be: from the hottest, most sealed common ground to the greenest */
+    public const array UNKNOWN_BOUNDS = [self::Asphalt, self::Lawn];
+    /**
+     * In the shade a surface comes close to the air: what it is warmer than the air in the sun shrinks
+     * to this share. US EPA, Heat Island Compendium (Trees and Vegetation): shaded surfaces may be
+     * 11 to 25 °C cooler than the peak of unshaded materials; with 0.25 shaded asphalt is 19 K cooler,
+     * shaded lawn, close to the air already, about 1 K.
+     */
+    public const float SHADED_EXCESS_SHARE = 0.25;
+    /** cool pavements measure 10 to 15 K below dark asphalt at midday (US EPA, Los Angeles and Phoenix trials) */
+    public const float COOL_PAVEMENT_REDUCTION = 12.0;
 
     public function runoffCoefficient(): float
     {
         return match ($this) {
+            self::Unknown => self::between(static fn (self $class): float => $class->runoffCoefficient()),
             self::Roof => 0.90,
             // DIN 1986-100: extensive green roof under 10 cm 0.5, intensive from 30 cm 0.2
             self::GreenRoofExtensive => 0.50,
@@ -67,12 +86,14 @@ enum GroundClass: string
     public function surfaceTemperature(): float
     {
         return match ($this) {
+            self::Unknown => self::between(static fn (self $class): float => $class->surfaceTemperature()),
             self::Roof => 55.0,
             self::GreenRoofExtensive => 36.0,
             self::GreenRoofIntensive => 31.0,
-            self::Asphalt => 62.0,
-            // cool pavements measure 10 to 15 K below dark asphalt at midday (US EPA, Los Angeles and Phoenix trials)
-            self::CoolPavement => 50.0,
+            // dark asphalt on a hot day in a north German city (air about 30 °C): 50 to 55 °C, the 60 °C
+            // and more of the literature are heat-wave peaks under a southern sun
+            self::Asphalt => 55.0,
+            self::CoolPavement => self::Asphalt->surfaceTemperature() - self::COOL_PAVEMENT_REDUCTION,
             self::Concrete => 52.0,
             self::Paving => 48.0,
             self::PermeablePavers => 44.0,
@@ -94,6 +115,7 @@ enum GroundClass: string
     public function cropCoefficient(): float
     {
         return match ($this) {
+            self::Unknown => self::between(static fn (self $class): float => $class->cropCoefficient()),
             self::Roof, self::Asphalt, self::Concrete, self::CoolPavement => 0.0,
             // sedum closes its pores in the heat and the thin substrate dries out
             self::GreenRoofExtensive => 0.50,
@@ -123,6 +145,11 @@ enum GroundClass: string
      */
     public function yearlyWaterBalance(): array
     {
+        if (self::Unknown === $this) {
+            $balances = array_map(static fn (self $class): array => $class->yearlyWaterBalance(), self::UNKNOWN_BOUNDS);
+
+            return array_map(static fn (string $part): float => array_sum(array_column($balances, $part)) / count($balances), [self::RUNOFF => self::RUNOFF, self::INFILTRATION => self::INFILTRATION, self::EVAPORATION => self::EVAPORATION]);
+        }
         [$runoff, $infiltration, $evaporation] = match ($this) {
             self::Roof, self::Asphalt, self::Concrete, self::CoolPavement => [0.80, 0.0, 0.20],
             // FLL / DWA-M 102-4: a green roof keeps 50 to 60 % (extensive) or 70 to 90 % (intensive) of a year's rain
@@ -138,6 +165,7 @@ enum GroundClass: string
             self::Planting => [0.02, 0.35, 0.63],
             self::RainGarden => [0.0, 0.80, 0.20],
             self::Water => [0.0, 0.0, 1.0],
+            self::Unknown => throw new \LogicException('handled above'),
         };
 
         return [self::RUNOFF => $runoff, self::INFILTRATION => $infiltration, self::EVAPORATION => $evaporation];
@@ -154,10 +182,49 @@ enum GroundClass: string
         return O::KIND_INTENSIVE === $kind ? self::GreenRoofIntensive : self::GreenRoofExtensive;
     }
 
-    /** a sealed surface sheds most of the rain */
+    /** a sealed surface sheds most of the rain; ground nobody described is not known to be */
     public function isSealed(): bool
     {
-        return $this->runoffCoefficient() >= 0.7;
+        return $this->isKnown() && $this->runoffCoefficient() >= 0.7;
+    }
+
+    /** whether anybody knows what this ground is (the map, a person, a planned measure) */
+    public function isKnown(): bool
+    {
+        return self::Unknown !== $this;
+    }
+
+    /** how much of this ground counts as sealed, 0 to 1: unknown ground is as much sealed as it may be green */
+    public function sealedShare(): float
+    {
+        return self::Unknown === $this
+            ? self::between(static fn (self $class): float => $class->sealedShare())
+            : ($this->isSealed() ? 1.0 : 0.0);
+    }
+
+    /**
+     * Its midday surface temperature in the sun, or in the shade: there it comes close to the air
+     * (SHADED_EXCESS_SHARE of what it is warmer), never warmer than in the sun.
+     */
+    public function surfaceTemperatureIn(bool $shaded): float
+    {
+        $sun = $this->surfaceTemperature();
+        if (!$shaded) {
+            return $sun;
+        }
+        $air = CoolingCalculator::REFERENCE_AIR_TEMPERATURE;
+
+        return min($sun, $air + ($sun - $air) * self::SHADED_EXCESS_SHARE);
+    }
+
+    /**
+     * A number of unknown ground: halfway between what it may be (UNKNOWN_BOUNDS).
+     *
+     * @param callable(self): float $of
+     */
+    private static function between(callable $of): float
+    {
+        return array_sum(array_map($of, self::UNKNOWN_BOUNDS)) / count(self::UNKNOWN_BOUNDS);
     }
 
     public static function fromSurface(string $surface): self
@@ -167,6 +234,7 @@ enum GroundClass: string
             O::SURFACE_GRAVEL => self::Gravel,
             O::SURFACE_LAWN => self::Lawn,
             O::SURFACE_SOIL => self::Soil,
+            O::SURFACE_UNKNOWN => self::Unknown,
             default => self::Asphalt,
         };
     }

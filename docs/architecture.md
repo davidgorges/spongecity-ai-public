@@ -145,7 +145,19 @@ Compares the plan **without** interventions (baseline) to the plan **with** them
 - The plot is rasterised into square cells (≤ 40 000 cells); each cell takes the top-most surface,
   so overlaps resolve like in the 3D view and nothing is counted twice.
 - Surfaces are `Impact\GroundClass` values with a runoff coefficient (typical DWA-A 138 /
-  DIN 1986-100 values) and an indicative midday surface temperature.
+  DIN 1986-100 values) and an indicative midday surface temperature of a hot north German day
+  (dark asphalt 55 °C, lawn 31 °C, the air 30 °C).
+- **Ground nobody described is `GroundClass::Unknown`**, not asphalt: the import gives the plot the
+  surface `unknown` (the map shows its outline, not its surface), so open ground outside every known
+  area is unknown. Each of its numbers lies halfway between `UNKNOWN_BOUNDS` (asphalt and lawn): half
+  sealed (for the rain gardens' catchment, `sealedShare()`), not counted as permeable, 43 °C in the
+  sun. The report warns how far the surface temperature could go (all asphalt, all lawn) and tells the
+  agent to ask and `describe_zone`. Plans imported before keep their asphalt plot until re-imported
+  (`app:plan:reimport`).
+- **Shade cools a surface by what it is warmer than the air** (`surfaceTemperatureIn()`): in the
+  shade `SHADED_EXCESS_SHARE` (a quarter) of that remains, never warmer than in the sun. Shaded
+  asphalt is about 19 K cooler (US EPA: 11 to 25 K), shaded lawn about 1 K: a tree over asphalt
+  cools the ground far more than one over a lawn.
 - Rain gardens capture runoff from the sealed area around them, up to their storage and a 10:1
   catchment ratio (otherwise a warning is reported). Tree crowns intercept 2 mm.
 - Shade is a ray march toward the sun (14:00, mid-summer: 52° elevation, from the south-west)
@@ -533,7 +545,8 @@ another, zone by zone, the way landscape architects plan it.
   coherent piece of open ground between buildings and paths, taken as a yard of **unknown** ground
   (`source: assumed`, `surface: unknown`): the plot's surface is a default, not a fact, and such
   ground is as likely a lawn or a garden as asphalt. Unknown ground is never paved; the proposal says
-  so and the agent asks.
+  so and the agent asks. The impact calculation counts it the same way, as unknown
+  (`GroundClass::Unknown`, see "Impact calculation").
   A 1 m drip strip along every wall belongs to no zone; ground under trees and planned
   interventions does. `CellOutline` draws zones and paving with straight lines (rounded only for
   basins) and cuts a slit to an enclosed building, so every outline is one polygon.

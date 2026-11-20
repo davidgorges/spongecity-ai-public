@@ -334,7 +334,8 @@ final class SiteObject
                 self::HEIGHT => [self::INT, 50, 30000, 1000],
                 ...$color('#9a9a95'),
             ],
-            self::PLOT => [self::POINTS => [self::OUTLINE, 3], self::SURFACE => [self::ENUM, self::SURFACES, self::SURFACE_ASPHALT]],
+            // the plot's ground outside every known area: the import does not know it (unknown), a demo or a test may
+            self::PLOT => [self::POINTS => [self::OUTLINE, 3], self::SURFACE => [self::ENUM, [...self::SURFACES, self::SURFACE_UNKNOWN], self::SURFACE_ASPHALT]],
             self::AREA => [
                 self::POINTS => [self::OUTLINE, 3],
                 self::USE => [self::ENUM, self::AREA_USES, self::AREA_YARD],

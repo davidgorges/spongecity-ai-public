@@ -114,9 +114,8 @@ final readonly class GroundSurvey
     {
         $sum = 0.0;
         foreach (GroundClass::cases() as $class) {
-            if ($class->isSealed()) {
-                $sum += $this->area($class);
-            }
+            // ground nobody described counts with the share of it that may be sealed
+            $sum += $class->sealedShare() * $this->area($class);
         }
 
         return $sum;
