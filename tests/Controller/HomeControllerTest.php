@@ -69,7 +69,7 @@ final class HomeControllerTest extends WebTestCase
 
                     return new JsonMockResponse([['lat' => '53.57', 'lon' => '10.02', 'display_name' => $school->value.', Hamburg']]);
                 },
-            ), new NullLogger()));
+            ), new NullLogger(), new ArrayAdapter()));
 
             $crawler = $client->request('GET', '/');
             $button = $crawler->filter('#schools-title + ul button')->reduce(

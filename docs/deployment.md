@@ -102,6 +102,13 @@ Mercure (`ChatStream`). Its own transport, so a turn does not hold up site impor
 
 And the Mercure hub (next section): `/home/forge/mercure/start.sh`, directory `/home/forge/mercure`.
 
+## Agents people connect (/mcp)
+
+Nothing to set up: `/mcp` accepts the host of `DEFAULT_URI` (and localhost). Behind a proxy that
+changes the Host header, add that host to `allowed_hosts` in `config/packages/mcp.yaml`. The rate
+limits (`config/packages/rate_limiter.yaml`) count per client address: the address nginx sees, so a
+proxy in front (Cloudflare) would need `trusted_proxies`.
+
 ## Mercure hub
 
 The chat's replies reach the browser through a [Mercure](https://mercure.rocks) hub on the same

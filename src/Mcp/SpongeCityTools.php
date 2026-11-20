@@ -64,6 +64,7 @@ final readonly class SpongeCityTools
         private TerrainStore $terrains,
         private TerrainAnalysis $terrainAnalysis,
         private RationaleStore $rationales,
+        private McpRateLimits $limits,
     ) {
     }
 
@@ -75,6 +76,8 @@ final readonly class SpongeCityTools
     #[McpTool(name: self::TOOL_SEARCH_PLACE, annotations: new ToolAnnotations(readOnlyHint: true, openWorldHint: true))]
     public function searchPlace(string $query): array
     {
+        $this->limits->spendOnExpensiveTool(self::TOOL_SEARCH_PLACE);
+
         return array_map(static fn (GeoPoint $point): array => ['label' => $point->label, 'latitude' => $point->latitude, 'longitude' => $point->longitude], $this->geocoder->search($query));
     }
 
@@ -87,6 +90,7 @@ final readonly class SpongeCityTools
     public function loadSite(string $planId, float $latitude, float $longitude, int $radiusMetres = self::DEFAULT_RADIUS_METRES): array
     {
         $plan = $this->plans->get($planId);
+        $this->limits->spendOnExpensiveTool(self::TOOL_LOAD_SITE);
         $radius = max(self::MIN_RADIUS_METRES, min(self::MAX_RADIUS_METRES, $radiusMetres));
         if (!$this->importer->request($plan, new GeoPoint($latitude, $longitude), $radius)) {
             return ['status' => $plan->status->value, 'note' => 'The site is already being imported. Call get_site until its status is "ready".'];

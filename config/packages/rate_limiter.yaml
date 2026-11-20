@@ -1,0 +1,31 @@
+framework:
+    rate_limiter:
+        # every request to /mcp, per client address: an agent's turn is tens of tool calls, a script
+        # hammering the server is thousands (App\Mcp\McpRateLimits)
+        mcp_requests:
+            policy: sliding_window
+            limit: 600
+            interval: '10 minutes'
+        # the tools that cost the public services or the server real work, per client address: a new
+        # site import (load_site: OpenStreetMap, Hamburg's API), a geocoding (search_place: Nominatim),
+        # a SimStadt run in Docker (simulate_buildings). The in-app agent (stdio) is not limited.
+        mcp_expensive_tools:
+            policy: sliding_window
+            limit: 20
+            interval: '1 hour'
+
+when@test:
+    framework:
+        cache:
+            pools:
+                # on disk, as an array pool is emptied after every request (services are reset);
+                # each test that talks to /mcp clears it first (tests/Mcp/ForgetsRateLimits.php)
+                rate_limiter.test:
+                    adapter: cache.adapter.filesystem
+        rate_limiter:
+            mcp_requests:
+                cache_pool: rate_limiter.test
+                limit: 10
+            mcp_expensive_tools:
+                cache_pool: rate_limiter.test
+                limit: 1

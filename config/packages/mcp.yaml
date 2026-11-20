@@ -7,14 +7,40 @@ mcp:
             # '*' also exposes MCP services from third-party bundles over HTTP.
             registry: 'App\Mcp\'
 
+            # What an agent connected from outside reads first (the in-app agent has its system prompt,
+            # config/prompts/spongecity.md)
+            instructions: |
+                SpongeCity AI redesigns a real place (a schoolyard, a courtyard, a square) as a climate-resilient
+                "sponge" in a 3D model: rain gardens, permeable surfaces, shade trees, green roofs, with the
+                measured effect. Every tool works on one plan, by its id (`planId`): the last part of the plan's
+                link, https://<host>/plan/<planId>. Ask the user for the link. Whoever has the page open sees
+                every change you make at once.
+                Work like a planner: look first (get_site, get_site_conditions), design with the tools (prefer
+                propose_placements and place_candidate, which follow the rules, over drawing yourself with
+                add_objects), measure (calculate_impact) before you claim anything, and never state a number no
+                tool gave you. Coordinates are millimetres, x east, z south.
+
             transports:
                 # bin/console mcp:server: how the in-app agent reaches the tools (see the client below)
                 stdio: true
-                # /mcp, for outside clients (Claude Desktop, the inspector); localhost only by default
+                # /mcp: agents a person connects from outside (Claude Desktop, Claude Code, the inspector)
                 http: true
 
             http:
                 path: /mcp
+                # open to anyone, like the plan page: the plan's id is the key. Requests are rate limited
+                # per client (App\Mcp\McpRateLimits). Only the app's own host (DEFAULT_URI) is accepted,
+                # besides localhost: the DNS rebinding protection stays on.
+                allowed_hosts: ['%env(key:host:url:DEFAULT_URI)%', 'localhost', '127.0.0.1']
+
+            # in the application cache (var/share): shared by every PHP-FPM process, kept across deploys,
+            # unlike the default file store under the release's cache dir
+            session:
+                store: cache
+                # concurrent requests of one session do not overwrite each other (symfony/lock, LOCK_DSN)
+                lock:
+                    enabled: true
+                    factory: lock.factory
 
     clients:
         # The in-app agent talks to the MCP server above like any other MCP client would, over stdio:

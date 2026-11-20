@@ -147,6 +147,14 @@ plan:
             planting: '%area% m² planting'
             shadesail: Shade sail
             greenroof: '%kind%, %planted% m² planted'
+    agent:
+        lead: Connect your own AI agent (Claude Desktop, Claude Code or any MCP client) to work on this plan with the same tools as the planning agent. Every change it makes appears here at once, for everyone who has the plan open.
+        server: MCP server (streamable HTTP)
+        plan: Plan id, for your agent
+        claude_code: Claude Code
+        ask: 'Then tell your agent, for example: "Work on SpongeCity plan %plan%: add shade for heatwaves and measure the effect."'
+        copy: Copy
+        copied: Copied
     windows:
         dock: Windows
         chat: Planning agent
@@ -154,6 +162,7 @@ plan:
         details: Object details
         effect: Measured effect
         measures: Measures and costs
+        agent: Your own agent
         details_empty: Click something in the 3D view, or a zone or play equipment on the mini map, to see and change it here.
         move: 'Move %title% (drag, or arrow keys)'
         minimise: 'Minimise %title%'

@@ -9,9 +9,9 @@ const FAILED = 'failed';
  * Chat with the planning agent. A message is posted to the plan's chat endpoint, which hands it to
  * a worker and answers at once (202); the agent's reply, or that it failed, arrives on the plan's
  * Mercure topic (App\SpongeCity\Chat\ChatStream: {reply} or {error}). While the agent works it
- * changes the plan through MCP tools, so the plan is refreshed meanwhile and when it answers (the
- * `plan:changed` event on window re-renders the PlanWorkspace live component), and the user
- * watches the design appear.
+ * changes the plan through MCP tools, and each change re-renders the plan (plan_updates_controller.js),
+ * so the user watches the design appear; once more when it answers (the `plan:changed` event on
+ * window re-renders the PlanWorkspace live component).
  *
  *   <section data-controller="plan-chat" data-plan-chat-url-value="/plan/…/chat"
  *            data-plan-chat-stream-value="https://…/.well-known/mercure?topic=…" data-live-ignore>
@@ -25,13 +25,11 @@ export default class extends Controller {
         url: String,
         stream: String,
         errors: Object,
-        refreshMs: { type: Number, default: 2500 },
         /** a turn that has not answered by then is given up on (the agent's turn limit is lower) */
         timeoutMs: { type: Number, default: 300000 },
     };
 
     #source = null;
-    #timer = null;
     #timeout = null;
 
     connect() {
@@ -56,7 +54,6 @@ export default class extends Controller {
         this.#append('user', message);
         this.inputTarget.value = '';
         this.#busy(true);
-        this.#timer = setInterval(() => this.#planChanged(), this.refreshMsValue);
         this.#timeout = setTimeout(() => this.#answered({ error: FAILED }), this.timeoutMsValue);
 
         try {
@@ -98,9 +95,8 @@ export default class extends Controller {
     }
 
     #done() {
-        clearInterval(this.#timer);
         clearTimeout(this.#timeout);
-        this.#timer = this.#timeout = null;
+        this.#timeout = null;
         this.#busy(false);
     }
 

@@ -6,14 +6,17 @@ namespace App\Tests\Controller;
 
 use App\Controller\HomeController;
 use App\Controller\Plan\ShowPlanController;
+use App\Mcp\McpEndpoint;
 use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\PlanStore;
+use App\SpongeCity\Plan\PlanUpdates;
 use App\SpongeCity\Plan\SiteEditor;
 use App\Twig\Components\PlanWorkspace;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
 use PHPUnit\Framework\Attributes\Test;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\UX\LiveComponent\Test\InteractsWithLiveComponents;
 
 /**
@@ -21,7 +24,8 @@ use Symfony\UX\LiveComponent\Test\InteractsWithLiveComponents;
  * marks what the mouse is over (the context menu finds the object for it), and a finger held
  * on the view opens the context menu. Measures are told apart in their list and shown when
  * picked there; removing them all is asked first; numbers read as the interface's language
- * writes them; the plans opened are listed on the home page.
+ * writes them; the plans opened are listed on the home page. The page follows the plan's changes
+ * made elsewhere, and tells how to connect one's own agent to it.
  */
 final class WorkspaceViewTest extends WebTestCase
 {
@@ -154,6 +158,26 @@ final class WorkspaceViewTest extends WebTestCase
         self::assertCount(1, $list, 'the list, filled in this browser');
         self::assertNotNull($list->attr('hidden'), 'hidden until there is a plan in it');
         self::assertCount(1, $list->filter('template[data-recent-plans-target="template"]'));
+    }
+
+    #[Test]
+    public function thePageFollowsThePlanAndOffersToConnectOnesOwnAgent(): void
+    {
+        $plan = $this->plan();
+        $client = static::getClient();
+        $page = $client->request('GET', $client->getContainer()->get('router')->generate(ShowPlanController::ROUTE, ['id' => $plan->id]));
+
+        $updates = $page->filter('[data-controller="plan-updates"]');
+        self::assertCount(1, $updates);
+        self::assertStringContainsString(rawurlencode(PlanUpdates::topic($plan->id)), (string) $updates->attr('data-plan-updates-stream-value'));
+        self::assertSame(PlanWorkspace::EVENT_PLAN_CHANGED, $updates->attr('data-plan-updates-event-value'));
+
+        $agent = $page->filter('[data-window="agent"]');
+        self::assertCount(1, $agent);
+        $mcpUrl = $client->getContainer()->get('router')->generate(McpEndpoint::ROUTE, [], UrlGeneratorInterface::ABSOLUTE_URL);
+        self::assertSame($mcpUrl, $agent->filter('#agent-mcp-url')->attr('value'));
+        self::assertSame($plan->id, $agent->filter('#agent-plan-id')->attr('value'));
+        self::assertStringEndsWith(' '.$mcpUrl, (string) $agent->filter('#agent-claude-code')->attr('value'));
     }
 
     private function workspace(): \Symfony\UX\TwigComponent\Test\RenderedComponent

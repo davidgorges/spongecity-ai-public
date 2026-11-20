@@ -10583,7 +10583,7 @@
                         "$ref": "#/$defs/types/variable"
                     },
                     "rate_limiter": {
-                        "$ref": "#/$defs/types/variable"
+                        "$ref": "#/$defs/nodes/rate_limiter"
                     },
                     "uid": {
                         "$ref": "#/$defs/nodes/uid"
@@ -14157,6 +14157,305 @@
                     "with_constructor_extractor": true
                 },
                 "description": "Property info configuration"
+            },
+            "rate_limiter": {
+                "anyOf": [
+                    {
+                        "$ref": "#/$defs/types/object_null",
+                        "properties": {
+                            "enabled": {
+                                "$ref": "#/$defs/types/boolean",
+                                "default": true
+                            },
+                            "builder": {
+                                "$ref": "#/$defs/types/object_null",
+                                "properties": {
+                                    "lock_factory": {
+                                        "$ref": "#/$defs/types/scalar",
+                                        "default": "auto",
+                                        "description": "The service ID of the lock factory to use with the RateLimiterBuilder."
+                                    },
+                                    "cache_pool": {
+                                        "$ref": "#/$defs/types/scalar",
+                                        "default": "cache.rate_limiter",
+                                        "description": "The cache pool to use with RateLimiterBuilder."
+                                    },
+                                    "storage_service": {
+                                        "$ref": "#/$defs/types/scalar",
+                                        "default": null,
+                                        "description": "The service ID of a custom storage implementation, this precedes any configured \"cache_pool\"."
+                                    }
+                                },
+                                "additionalProperties": false,
+                                "default": {
+                                    "lock_factory": "auto",
+                                    "cache_pool": "cache.rate_limiter",
+                                    "storage_service": null
+                                },
+                                "description": "Configuration for the RateLimiterBuilder service."
+                            },
+                            "limiters": {
+                                "$ref": "#/$defs/types/object_null",
+                                "additionalProperties": {
+                                    "$ref": "#/$defs/types/object_null",
+                                    "properties": {
+                                        "lock_factory": {
+                                            "$ref": "#/$defs/types/scalar",
+                                            "default": "auto",
+                                            "description": "The service ID of the lock factory used by this limiter (or null to disable locking)."
+                                        },
+                                        "cache_pool": {
+                                            "$ref": "#/$defs/types/scalar",
+                                            "default": "cache.rate_limiter",
+                                            "description": "The cache pool to use for storing the current limiter state."
+                                        },
+                                        "storage_service": {
+                                            "$ref": "#/$defs/types/scalar",
+                                            "default": null,
+                                            "description": "The service ID of a custom storage implementation, this precedes any configured \"cache_pool\"."
+                                        },
+                                        "policy": {
+                                            "anyOf": [
+                                                {
+                                                    "enum": [
+                                                        "fixed_window",
+                                                        "token_bucket",
+                                                        "sliding_window",
+                                                        "compound",
+                                                        "no_limit"
+                                                    ]
+                                                },
+                                                {
+                                                    "$ref": "#/$defs/types/param"
+                                                }
+                                            ],
+                                            "description": "The algorithm to be used by this limiter."
+                                        },
+                                        "limiters": {
+                                            "anyOf": [
+                                                {
+                                                    "$ref": "#/$defs/types/object_null",
+                                                    "additionalProperties": {
+                                                        "$ref": "#/$defs/types/object_null",
+                                                        "properties": {
+                                                            "key": {
+                                                                "$ref": "#/$defs/types/scalar",
+                                                                "default": null,
+                                                                "description": "The key to pass to this limiter, instead of the one passed to the compound limiter's create() method."
+                                                            }
+                                                        },
+                                                        "additionalProperties": false
+                                                    }
+                                                },
+                                                {
+                                                    "type": [
+                                                        "string"
+                                                    ]
+                                                }
+                                            ],
+                                            "description": "The limiters to use when using the \"compound\" policy."
+                                        },
+                                        "limit": {
+                                            "$ref": "#/$defs/types/integer",
+                                            "description": "The maximum allowed hits in a fixed interval or burst."
+                                        },
+                                        "interval": {
+                                            "$ref": "#/$defs/types/scalar",
+                                            "description": "Configures the fixed interval if \"policy\" is set to \"fixed_window\" or \"sliding_window\". The value must be a number followed by \"second\", \"minute\", \"hour\", \"day\", \"week\" or \"month\" (or their plural equivalent)."
+                                        },
+                                        "rate": {
+                                            "$ref": "#/$defs/types/object_null",
+                                            "properties": {
+                                                "interval": {
+                                                    "$ref": "#/$defs/types/scalar",
+                                                    "description": "Configures the rate interval. The value must be a number followed by \"second\", \"minute\", \"hour\", \"day\", \"week\" or \"month\" (or their plural equivalent)."
+                                                },
+                                                "amount": {
+                                                    "$ref": "#/$defs/types/integer",
+                                                    "default": 1,
+                                                    "description": "Amount of tokens to add each interval."
+                                                }
+                                            },
+                                            "additionalProperties": false,
+                                            "description": "Configures the fill rate if \"policy\" is set to \"token_bucket\"."
+                                        },
+                                        "anchor_at": {
+                                            "$ref": "#/$defs/types/scalar",
+                                            "default": null,
+                                            "description": "Aligns the \"fixed_window\" policy to a calendar (e.g. \"2024-01-05 00:00:00 UTC\" combined with `interval: 1 month` resets the counter on the 5th of each month). UTC if not specified."
+                                        }
+                                    },
+                                    "patternProperties": {
+                                        "^limiter$": {
+                                            "$ref": "#/$defs/types/variable"
+                                        }
+                                    },
+                                    "additionalProperties": false
+                                }
+                            }
+                        },
+                        "patternProperties": {
+                            "^limiter$": {
+                                "$ref": "#/$defs/types/variable"
+                            }
+                        },
+                        "additionalProperties": false
+                    },
+                    {
+                        "$ref": "#/$defs/types/object_null",
+                        "additionalProperties": {
+                            "$ref": "#/$defs/types/object_null",
+                            "properties": {
+                                "lock_factory": {
+                                    "$ref": "#/$defs/types/scalar",
+                                    "default": "auto",
+                                    "description": "The service ID of the lock factory used by this limiter (or null to disable locking)."
+                                },
+                                "cache_pool": {
+                                    "$ref": "#/$defs/types/scalar",
+                                    "default": "cache.rate_limiter",
+                                    "description": "The cache pool to use for storing the current limiter state."
+                                },
+                                "storage_service": {
+                                    "$ref": "#/$defs/types/scalar",
+                                    "default": null,
+                                    "description": "The service ID of a custom storage implementation, this precedes any configured \"cache_pool\"."
+                                },
+                                "policy": {
+                                    "anyOf": [
+                                        {
+                                            "enum": [
+                                                "fixed_window",
+                                                "token_bucket",
+                                                "sliding_window",
+                                                "compound",
+                                                "no_limit"
+                                            ]
+                                        },
+                                        {
+                                            "$ref": "#/$defs/types/param"
+                                        }
+                                    ],
+                                    "description": "The algorithm to be used by this limiter."
+                                },
+                                "limiters": {
+                                    "anyOf": [
+                                        {
+                                            "$ref": "#/$defs/types/object_null",
+                                            "additionalProperties": {
+                                                "$ref": "#/$defs/types/object_null",
+                                                "properties": {
+                                                    "key": {
+                                                        "$ref": "#/$defs/types/scalar",
+                                                        "default": null,
+                                                        "description": "The key to pass to this limiter, instead of the one passed to the compound limiter's create() method."
+                                                    }
+                                                },
+                                                "additionalProperties": false
+                                            }
+                                        },
+                                        {
+                                            "type": [
+                                                "string"
+                                            ]
+                                        }
+                                    ],
+                                    "description": "The limiters to use when using the \"compound\" policy."
+                                },
+                                "limit": {
+                                    "$ref": "#/$defs/types/integer",
+                                    "description": "The maximum allowed hits in a fixed interval or burst."
+                                },
+                                "interval": {
+                                    "$ref": "#/$defs/types/scalar",
+                                    "description": "Configures the fixed interval if \"policy\" is set to \"fixed_window\" or \"sliding_window\". The value must be a number followed by \"second\", \"minute\", \"hour\", \"day\", \"week\" or \"month\" (or their plural equivalent)."
+                                },
+                                "rate": {
+                                    "$ref": "#/$defs/types/object_null",
+                                    "properties": {
+                                        "interval": {
+                                            "$ref": "#/$defs/types/scalar",
+                                            "description": "Configures the rate interval. The value must be a number followed by \"second\", \"minute\", \"hour\", \"day\", \"week\" or \"month\" (or their plural equivalent)."
+                                        },
+                                        "amount": {
+                                            "$ref": "#/$defs/types/integer",
+                                            "default": 1,
+                                            "description": "Amount of tokens to add each interval."
+                                        }
+                                    },
+                                    "additionalProperties": false,
+                                    "description": "Configures the fill rate if \"policy\" is set to \"token_bucket\"."
+                                },
+                                "anchor_at": {
+                                    "$ref": "#/$defs/types/scalar",
+                                    "default": null,
+                                    "description": "Aligns the \"fixed_window\" policy to a calendar (e.g. \"2024-01-05 00:00:00 UTC\" combined with `interval: 1 month` resets the counter on the 5th of each month). UTC if not specified."
+                                }
+                            },
+                            "patternProperties": {
+                                "^limiter$": {
+                                    "$ref": "#/$defs/types/variable"
+                                }
+                            },
+                            "additionalProperties": false
+                        },
+                        "properties": {
+                            "enabled": {
+                                "$ref": "#/$defs/types/boolean",
+                                "default": true
+                            },
+                            "builder": {
+                                "$ref": "#/$defs/types/object_null",
+                                "properties": {
+                                    "lock_factory": {
+                                        "$ref": "#/$defs/types/scalar",
+                                        "default": "auto",
+                                        "description": "The service ID of the lock factory to use with the RateLimiterBuilder."
+                                    },
+                                    "cache_pool": {
+                                        "$ref": "#/$defs/types/scalar",
+                                        "default": "cache.rate_limiter",
+                                        "description": "The cache pool to use with RateLimiterBuilder."
+                                    },
+                                    "storage_service": {
+                                        "$ref": "#/$defs/types/scalar",
+                                        "default": null,
+                                        "description": "The service ID of a custom storage implementation, this precedes any configured \"cache_pool\"."
+                                    }
+                                },
+                                "additionalProperties": false,
+                                "default": {
+                                    "lock_factory": "auto",
+                                    "cache_pool": "cache.rate_limiter",
+                                    "storage_service": null
+                                },
+                                "description": "Configuration for the RateLimiterBuilder service."
+                            }
+                        },
+                        "propertyNames": {
+                            "not": {
+                                "enum": [
+                                    "limiters",
+                                    "limiter"
+                                ]
+                            }
+                        }
+                    },
+                    {
+                        "type": [
+                            "boolean"
+                        ]
+                    }
+                ],
+                "default": {
+                    "enabled": true,
+                    "builder": {
+                        "lock_factory": "auto",
+                        "cache_pool": "cache.rate_limiter",
+                        "storage_service": null
+                    },
+                    "limiters": []
+                }
             },
             "router": {
                 "anyOf": [
@@ -21341,6 +21640,9 @@
         "property_info": {
             "$ref": "#/$defs/nodes/property_info"
         },
+        "rate_limiter": {
+            "$ref": "#/$defs/nodes/rate_limiter"
+        },
         "router": {
             "$ref": "#/$defs/nodes/router"
         },
@@ -21447,6 +21749,9 @@
                 },
                 "property_info": {
                     "$ref": "#/$defs/nodes/property_info"
+                },
+                "rate_limiter": {
+                    "$ref": "#/$defs/nodes/rate_limiter"
                 },
                 "router": {
                     "$ref": "#/$defs/nodes/router"
@@ -21559,6 +21864,9 @@
                 "property_info": {
                     "$ref": "#/$defs/nodes/property_info"
                 },
+                "rate_limiter": {
+                    "$ref": "#/$defs/nodes/rate_limiter"
+                },
                 "router": {
                     "$ref": "#/$defs/nodes/router"
                 },
@@ -21669,6 +21977,9 @@
                 },
                 "property_info": {
                     "$ref": "#/$defs/nodes/property_info"
+                },
+                "rate_limiter": {
+                    "$ref": "#/$defs/nodes/rate_limiter"
                 },
                 "router": {
                     "$ref": "#/$defs/nodes/router"

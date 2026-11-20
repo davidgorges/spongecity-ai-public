@@ -34,6 +34,7 @@ final readonly class SimStadtTools
         private PlanStore $plans,
         private SimulationStore $simulations,
         private MessageBusInterface $bus,
+        private McpRateLimits $limits,
     ) {
     }
 
@@ -57,6 +58,7 @@ final readonly class SimStadtTools
         if (null !== $current && $current->isActive()) {
             return ['status' => $current->status->value, 'note' => 'This simulation is already running. Poll get_building_simulation.'];
         }
+        $this->limits->spendOnExpensiveTool(self::TOOL_SIMULATE);
         $year = max(self::MIN_YEAR, min(self::MAX_YEAR, $yearOfConstruction));
         $this->simulations->save(new Simulation($plan->id, $type, $year));
         $this->bus->dispatch(new RunSimulation($plan->id, $type, $year));

@@ -418,6 +418,30 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         extensions?: list<scalar|Param|null>,
  *     },
  * }
+ * @psalm-type RateLimiterConfig = bool|array{
+ *     enabled?: bool|Param, // Resolved at compile time // Default: true
+ *     builder?: array{ // Configuration for the RateLimiterBuilder service.
+ *         lock_factory?: scalar|Param|null, // The service ID of the lock factory to use with the RateLimiterBuilder. // Default: "auto"
+ *         cache_pool?: scalar|Param|null, // The cache pool to use with RateLimiterBuilder. // Default: "cache.rate_limiter"
+ *         storage_service?: scalar|Param|null, // The service ID of a custom storage implementation, this precedes any configured "cache_pool". // Default: null
+ *     },
+ *     limiters?: array<string, array{ // Default: []
+ *         lock_factory?: scalar|Param|null, // The service ID of the lock factory used by this limiter (or null to disable locking). // Default: "auto"
+ *         cache_pool?: scalar|Param|null, // The cache pool to use for storing the current limiter state. // Default: "cache.rate_limiter"
+ *         storage_service?: scalar|Param|null, // The service ID of a custom storage implementation, this precedes any configured "cache_pool". // Default: null
+ *         policy?: "fixed_window"|"token_bucket"|"sliding_window"|"compound"|"no_limit"|Param, // The algorithm to be used by this limiter.
+ *         limiters?: Param|string|array<string, array{ // Default: []
+ *             key?: scalar|Param|null, // The key to pass to this limiter, instead of the one passed to the compound limiter's create() method. // Default: null
+ *         }>,
+ *         limit?: int|Param, // The maximum allowed hits in a fixed interval or burst.
+ *         interval?: scalar|Param|null, // Configures the fixed interval if "policy" is set to "fixed_window" or "sliding_window". The value must be a number followed by "second", "minute", "hour", "day", "week" or "month" (or their plural equivalent).
+ *         rate?: array{ // Configures the fill rate if "policy" is set to "token_bucket".
+ *             interval?: scalar|Param|null, // Configures the rate interval. The value must be a number followed by "second", "minute", "hour", "day", "week" or "month" (or their plural equivalent).
+ *             amount?: int|Param, // Amount of tokens to add each interval. // Default: 1
+ *         },
+ *         anchor_at?: scalar|Param|null, // Aligns the "fixed_window" policy to a calendar (e.g. "2024-01-05 00:00:00 UTC" combined with `interval: 1 month` resets the counter on the 5th of each month). UTC if not specified. // Default: null
+ *     }>,
+ * }
  * @psalm-type HttpClientConfig = bool|array{
  *     enabled?: bool|Param, // Resolved at compile time // Default: true
  *     max_host_connections?: int|Param, // The maximum number of connections to a single host.
@@ -624,7 +648,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     http_client?: HttpClientConfig,
  *     mailer?: mixed,
  *     notifier?: mixed,
- *     rate_limiter?: mixed,
+ *     rate_limiter?: RateLimiterConfig,
  *     uid?: UidConfig,
  *     html_sanitizer?: mixed,
  *     webhook?: mixed,
@@ -2934,6 +2958,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *     property_info?: PropertyInfoConfig,
  *     uid?: UidConfig,
  *     asset_mapper?: AssetMapperConfig,
+ *     rate_limiter?: RateLimiterConfig,
  *     http_client?: HttpClientConfig,
  *     framework?: FrameworkConfig,
  *     ai?: AiConfig,
@@ -2970,6 +2995,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         property_info?: PropertyInfoConfig,
  *         uid?: UidConfig,
  *         asset_mapper?: AssetMapperConfig,
+ *         rate_limiter?: RateLimiterConfig,
  *         http_client?: HttpClientConfig,
  *         framework?: FrameworkConfig,
  *         ai?: AiConfig,
@@ -3011,6 +3037,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         property_info?: PropertyInfoConfig,
  *         uid?: UidConfig,
  *         asset_mapper?: AssetMapperConfig,
+ *         rate_limiter?: RateLimiterConfig,
  *         http_client?: HttpClientConfig,
  *         framework?: FrameworkConfig,
  *         ai?: AiConfig,
@@ -3048,6 +3075,7 @@ use Symfony\Component\Config\Loader\ParamConfigurator as Param;
  *         property_info?: PropertyInfoConfig,
  *         uid?: UidConfig,
  *         asset_mapper?: AssetMapperConfig,
+ *         rate_limiter?: RateLimiterConfig,
  *         http_client?: HttpClientConfig,
  *         framework?: FrameworkConfig,
  *         ai?: AiConfig,
