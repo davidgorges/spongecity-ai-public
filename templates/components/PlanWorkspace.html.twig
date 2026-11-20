@@ -503,121 +503,126 @@
                     {% set close_label = 'plan.object.deselect_title'|trans %}
                     <twig:Button variant="ghost" size="xs" class="shrink-0 text-muted-foreground" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_SELECTED') }}">{{ 'plan.object.deselect'|trans }}</twig:Button>
                 </twig:Card:Header>
-                <twig:Card:Content class="{{ panel_content }}">
-                    {% if object.schematic %}
-                        {# how the measure is built: changes with its variant (a trench, a kind) #}
-                        <img src="{{ asset(object.schematic) }}" alt="{{ 'plan.object.schematic'|trans({'%kind%': ('plan.object.type.' ~ object.type)|trans}) }}" width="{{ constant('App\\SpongeCity\\Plan\\Schematics::WIDTH') }}" height="{{ constant('App\\SpongeCity\\Plan\\Schematics::HEIGHT') }}" loading="lazy" decoding="async" class="aspect-[3/2] w-full rounded-md bg-[#f6f5f1] object-cover">
-                    {% endif %}
-                    {% if object.cost %}
-                        {# what it costs on its own: once, then every year #}
-                        <dl class="flex items-baseline justify-between gap-3" aria-label="{{ 'plan.object.cost'|trans }}">
-                            <div>
-                                <dt class="sr-only">{{ 'plan.cost.investment'|trans }}</dt>
-                                <dd class="font-heading text-base font-semibold tabular-nums" data-object-cost>{{ object.cost.investment|number_format(0) }} €</dd>
-                            </div>
-                            <div class="text-right">
-                                <dt class="sr-only">{{ 'plan.cost.maintenance'|trans }}</dt>
-                                <dd class="text-xs text-muted-foreground tabular-nums">{{ 'plan.cost.per_year'|trans({'%amount%': object.cost.maintenance_per_year|number_format(0)}) }}</dd>
-                            </div>
-                        </dl>
-                    {% endif %}
-                    <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
-                        {% for fact in object.facts %}
-                            <dt class="text-muted-foreground">{{ fact[0] }}</dt>
-                            <dd class="tabular-nums">{{ fact[1] }}</dd>
-                        {% endfor %}
-                    </dl>
-                    {% for field, spec in object.fields %}
-                        <p id="object-field-{{ field }}" class="text-xs font-medium">{{ ('plan.object.field.' ~ field)|trans }}</p>
-                        <twig:ToggleGroup type="single" variant="outline" size="sm" spacing="1.5" class="flex-wrap" aria-labelledby="object-field-{{ field }}">
-                            {% for option in spec.options %}
-                                <twig:ToggleGroup:Item
-                                    :pressed="option == spec.value"
-                                    class="{{ choice }}"
-                                    data-action="live#action"
-                                    data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_EDIT_OBJECT') }}"
-                                    data-live-id-param="{{ object.id }}"
-                                    data-live-field-param="{{ field }}"
-                                    data-live-value-param="{{ option }}"
-                                >{% if field == 'kind' %}{{ ('plan.object.kind.' ~ option)|trans }}{% elseif field == 'storage' %}{{ 'plan.object.value.storage'|trans({'%value%': option}) }}{% elseif field == constant('Core\\Configurator\\Site\\SiteObject::TRENCH_VOLUME') %}{{ ('plan.object.value.' ~ field)|trans({'%value%': option}) }}{% else %}{{ ('plan.object.value.' ~ field)|trans({'%value%': (option / 1000)|number_format(1)|trim('0', 'right')|trim('.', 'right')}) }}{% endif %}</twig:ToggleGroup:Item>
-                            {% endfor %}
-                        </twig:ToggleGroup>
-                    {% endfor %}
-                    {# why the agent placed it, and what else it had in mind #}
-                    {% set rationale = object.rationale %}
-                    {% if rationale %}
-                        <twig:Card class="gap-0 bg-background" role="group" aria-labelledby="rationale-title">
-                            <twig:Card:Header class="flex-row flex-wrap items-center gap-1.5 space-y-0 p-2.5 pb-1.5">
-                                <twig:Card:Title id="rationale-title" class="flex items-center gap-1.5 text-xs font-medium">
-                                    <twig:ux:icon name="lucide:sparkles" class="size-3.5 text-primary" aria-hidden="true" />
-                                    {{ 'plan.rationale.title'|trans }}
-                                </twig:Card:Title>
-                                <twig:Badge variant="{{ rationale.by == constant('App\\SpongeCity\\Rationale\\Rationale::BY_USER') ? 'warning' : 'secondary' }}">{{ ('plan.rationale.by.' ~ rationale.by)|trans }}</twig:Badge>
-                            </twig:Card:Header>
-                            <twig:Card:Content class="flex flex-col gap-2 p-2.5 pt-0">
-                                {% if rationale.why %}
-                                    <blockquote class="border-l-2 border-primary/50 pl-2 text-sm">{{ rationale.why }}</blockquote>
-                                {% endif %}
-                                {% if rationale.reasons is not empty %}
-                                    <twig:Collapsible class="text-xs">
-                                        <twig:Collapsible:Trigger>
-                                            <twig:Button variant="link" size="xs" class="h-auto px-0 text-muted-foreground" {{ ...collapsible_trigger_attrs }}>
-                                                <twig:ux:icon name="lucide:chevron-right" class="transition-transform in-aria-expanded:rotate-90" aria-hidden="true" />
-                                                {{ 'plan.rationale.reasons'|trans }}
-                                            </twig:Button>
-                                        </twig:Collapsible:Trigger>
-                                        <twig:Collapsible:Content>
-                                            <ul class="mt-1 flex list-disc flex-col gap-1 pl-4">
-                                                {% for reason in rationale.reasons %}<li>{{ reason }}</li>{% endfor %}
-                                            </ul>
-                                        </twig:Collapsible:Content>
-                                    </twig:Collapsible>
-                                {% endif %}
-                                {% for warning in rationale.warnings %}
-                                    <twig:Alert variant="warning" role="note" class="text-xs">
-                                        <twig:ux:icon name="lucide:triangle-alert" class="size-3" aria-hidden="true" />
-                                        <twig:Alert:Description class="text-xs text-current">{{ warning }}</twig:Alert:Description>
-                                    </twig:Alert>
+                <twig:Card:Content class="{{ panel_content }} @container/object">
+                    {# wide enough (a widened window): the schematic beside the facts, at most 256 px wide; narrow: above them #}
+                    <div class="grid gap-3 {{ object.schematic ? '@md/object:grid-cols-[minmax(0,16rem)_minmax(0,1fr)] @md/object:items-start' : '' }}">
+                        {% if object.schematic %}
+                            {# how the measure is built: changes with its variant (a trench, a kind) #}
+                            <img src="{{ asset(object.schematic) }}" alt="{{ 'plan.object.schematic'|trans({'%kind%': ('plan.object.type.' ~ object.type)|trans}) }}" width="{{ constant('App\\SpongeCity\\Plan\\Schematics::WIDTH') }}" height="{{ constant('App\\SpongeCity\\Plan\\Schematics::HEIGHT') }}" loading="lazy" decoding="async" class="mx-auto aspect-[3/2] w-full max-w-64 rounded-md bg-[#f6f5f1] object-cover @md/object:mx-0" data-object-schematic>
+                        {% endif %}
+                        <div class="flex min-w-0 flex-col gap-2">
+                            {% if object.cost %}
+                                {# what it costs on its own: once, then every year #}
+                                <dl class="flex items-baseline justify-between gap-3" aria-label="{{ 'plan.object.cost'|trans }}">
+                                    <div>
+                                        <dt class="sr-only">{{ 'plan.cost.investment'|trans }}</dt>
+                                        <dd class="font-heading text-base font-semibold tabular-nums" data-object-cost>{{ object.cost.investment|number_format(0) }} €</dd>
+                                    </div>
+                                    <div class="text-right">
+                                        <dt class="sr-only">{{ 'plan.cost.maintenance'|trans }}</dt>
+                                        <dd class="text-xs text-muted-foreground tabular-nums">{{ 'plan.cost.per_year'|trans({'%amount%': object.cost.maintenance_per_year|number_format(0)}) }}</dd>
+                                    </div>
+                                </dl>
+                            {% endif %}
+                            <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+                                {% for fact in object.facts %}
+                                    <dt class="text-muted-foreground">{{ fact[0] }}</dt>
+                                    <dd class="tabular-nums">{{ fact[1] }}</dd>
                                 {% endfor %}
-                                {% if rationale.alternatives is not empty %}
-                                    <p class="text-xs font-medium">{{ 'plan.rationale.alternatives'|trans }}</p>
-                                    <twig:Item:Group class="gap-1.5" data-controller="rationale" aria-describedby="rationale-preview-hint">
-                                        {% for alternative in rationale.alternatives %}
-                                            <twig:Item
-                                                variant="outline"
-                                                size="sm"
-                                                role="listitem"
-                                                class="flex-nowrap gap-2 border-dashed border-amber-500/60 px-2 py-1.5 text-xs hover:bg-amber-500/10 focus-within:bg-amber-500/10"
-                                                data-rationale-points-param="{{ alternative.points|json_encode }}"
-                                                data-action="mouseenter->rationale#preview mouseleave->rationale#unpreview focusin->rationale#preview focusout->rationale#unpreview"
-                                            >
-                                                <twig:Item:Content class="min-w-0 gap-0 text-xs">
-                                                    <span>
-                                                        {% if alternative.agent %}<strong class="font-medium">{{ 'plan.rationale.agent_choice'|trans }}:</strong>{% endif %}
-                                                        {{ alternative.summary }}
-                                                    </span>
-                                                </twig:Item:Content>
-                                                <twig:Item:Actions>
-                                                    <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_USE_ALTERNATIVE') }}" data-live-id-param="{{ object.id }}" data-live-alternative-param="{{ alternative.id }}">
-                                                        {{ (alternative.agent ? 'plan.rationale.use_agent' : 'plan.rationale.use')|trans }}
+                            </dl>
+                            {% for field, spec in object.fields %}
+                                <p id="object-field-{{ field }}" class="text-xs font-medium">{{ ('plan.object.field.' ~ field)|trans }}</p>
+                                <twig:ToggleGroup type="single" variant="outline" size="sm" spacing="1.5" class="flex-wrap" aria-labelledby="object-field-{{ field }}">
+                                    {% for option in spec.options %}
+                                        <twig:ToggleGroup:Item
+                                            :pressed="option == spec.value"
+                                            class="{{ choice }}"
+                                            data-action="live#action"
+                                            data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_EDIT_OBJECT') }}"
+                                            data-live-id-param="{{ object.id }}"
+                                            data-live-field-param="{{ field }}"
+                                            data-live-value-param="{{ option }}"
+                                        >{% if field == 'kind' %}{{ ('plan.object.kind.' ~ option)|trans }}{% elseif field == 'storage' %}{{ 'plan.object.value.storage'|trans({'%value%': option}) }}{% elseif field == constant('Core\\Configurator\\Site\\SiteObject::TRENCH_VOLUME') %}{{ ('plan.object.value.' ~ field)|trans({'%value%': option}) }}{% else %}{{ ('plan.object.value.' ~ field)|trans({'%value%': (option / 1000)|number_format(1)|trim('0', 'right')|trim('.', 'right')}) }}{% endif %}</twig:ToggleGroup:Item>
+                                    {% endfor %}
+                                </twig:ToggleGroup>
+                            {% endfor %}
+                            {# why the agent placed it, and what else it had in mind #}
+                            {% set rationale = object.rationale %}
+                            {% if rationale %}
+                                <twig:Card class="gap-0 bg-background" role="group" aria-labelledby="rationale-title">
+                                    <twig:Card:Header class="flex-row flex-wrap items-center gap-1.5 space-y-0 p-2.5 pb-1.5">
+                                        <twig:Card:Title id="rationale-title" class="flex items-center gap-1.5 text-xs font-medium">
+                                            <twig:ux:icon name="lucide:sparkles" class="size-3.5 text-primary" aria-hidden="true" />
+                                            {{ 'plan.rationale.title'|trans }}
+                                        </twig:Card:Title>
+                                        <twig:Badge variant="{{ rationale.by == constant('App\\SpongeCity\\Rationale\\Rationale::BY_USER') ? 'warning' : 'secondary' }}">{{ ('plan.rationale.by.' ~ rationale.by)|trans }}</twig:Badge>
+                                    </twig:Card:Header>
+                                    <twig:Card:Content class="flex flex-col gap-2 p-2.5 pt-0">
+                                        {% if rationale.why %}
+                                            <blockquote class="border-l-2 border-primary/50 pl-2 text-sm">{{ rationale.why }}</blockquote>
+                                        {% endif %}
+                                        {% if rationale.reasons is not empty %}
+                                            <twig:Collapsible class="text-xs">
+                                                <twig:Collapsible:Trigger>
+                                                    <twig:Button variant="link" size="xs" class="h-auto px-0 text-muted-foreground" {{ ...collapsible_trigger_attrs }}>
+                                                        <twig:ux:icon name="lucide:chevron-right" class="transition-transform in-aria-expanded:rotate-90" aria-hidden="true" />
+                                                        {{ 'plan.rationale.reasons'|trans }}
                                                     </twig:Button>
-                                                </twig:Item:Actions>
-                                            </twig:Item>
+                                                </twig:Collapsible:Trigger>
+                                                <twig:Collapsible:Content>
+                                                    <ul class="mt-1 flex list-disc flex-col gap-1 pl-4">
+                                                        {% for reason in rationale.reasons %}<li>{{ reason }}</li>{% endfor %}
+                                                    </ul>
+                                                </twig:Collapsible:Content>
+                                            </twig:Collapsible>
+                                        {% endif %}
+                                        {% for warning in rationale.warnings %}
+                                            <twig:Alert variant="warning" role="note" class="text-xs">
+                                                <twig:ux:icon name="lucide:triangle-alert" class="size-3" aria-hidden="true" />
+                                                <twig:Alert:Description class="text-xs text-current">{{ warning }}</twig:Alert:Description>
+                                            </twig:Alert>
                                         {% endfor %}
-                                    </twig:Item:Group>
-                                    <p id="rationale-preview-hint" class="text-xs text-muted-foreground">{{ 'plan.rationale.preview'|trans }}</p>
-                                {% endif %}
-                            </twig:Card:Content>
-                        </twig:Card>
-                    {% endif %}
-                    {% if object.removable %}
-                        <div>
-                            <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ object.id }}">
-                                <twig:ux:icon name="lucide:trash-2" aria-hidden="true" />
-                                {{ 'plan.object.remove'|trans }}
-                            </twig:Button>
+                                        {% if rationale.alternatives is not empty %}
+                                            <p class="text-xs font-medium">{{ 'plan.rationale.alternatives'|trans }}</p>
+                                            <twig:Item:Group class="gap-1.5" data-controller="rationale" aria-describedby="rationale-preview-hint">
+                                                {% for alternative in rationale.alternatives %}
+                                                    <twig:Item
+                                                        variant="outline"
+                                                        size="sm"
+                                                        role="listitem"
+                                                        class="flex-nowrap gap-2 border-dashed border-amber-500/60 px-2 py-1.5 text-xs hover:bg-amber-500/10 focus-within:bg-amber-500/10"
+                                                        data-rationale-points-param="{{ alternative.points|json_encode }}"
+                                                        data-action="mouseenter->rationale#preview mouseleave->rationale#unpreview focusin->rationale#preview focusout->rationale#unpreview"
+                                                    >
+                                                        <twig:Item:Content class="min-w-0 gap-0 text-xs">
+                                                            <span>
+                                                                {% if alternative.agent %}<strong class="font-medium">{{ 'plan.rationale.agent_choice'|trans }}:</strong>{% endif %}
+                                                                {{ alternative.summary }}
+                                                            </span>
+                                                        </twig:Item:Content>
+                                                        <twig:Item:Actions>
+                                                            <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_USE_ALTERNATIVE') }}" data-live-id-param="{{ object.id }}" data-live-alternative-param="{{ alternative.id }}">
+                                                                {{ (alternative.agent ? 'plan.rationale.use_agent' : 'plan.rationale.use')|trans }}
+                                                            </twig:Button>
+                                                        </twig:Item:Actions>
+                                                    </twig:Item>
+                                                {% endfor %}
+                                            </twig:Item:Group>
+                                            <p id="rationale-preview-hint" class="text-xs text-muted-foreground">{{ 'plan.rationale.preview'|trans }}</p>
+                                        {% endif %}
+                                    </twig:Card:Content>
+                                </twig:Card>
+                            {% endif %}
+                            {% if object.removable %}
+                                <div>
+                                    <twig:Button variant="outline" size="xs" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ object.id }}">
+                                        <twig:ux:icon name="lucide:trash-2" aria-hidden="true" />
+                                        {{ 'plan.object.remove'|trans }}
+                                    </twig:Button>
+                                </div>
+                            {% endif %}
                         </div>
-                    {% endif %}
+                    </div>
                 </twig:Card:Content>
             </twig:Card>
         {% endif %}

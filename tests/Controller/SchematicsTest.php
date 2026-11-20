@@ -52,6 +52,12 @@ final class SchematicsTest extends WebTestCase
         self::assertCount(1, $image);
         self::assertStringContainsString('raingarden-trench', (string) $image->attr('src'));
         self::assertSame('Cutaway showing how it is built: Rain garden', $image->attr('alt'));
+        // at most 256 px wide; beside the facts once the window is wide enough (a container query on the card)
+        self::assertContains('max-w-64', explode(' ', (string) $image->attr('class')));
+        $columns = $image->closest('div');
+        self::assertNotNull($columns);
+        self::assertStringContainsString('@md/object:grid-cols-[minmax(0,16rem)_minmax(0,1fr)]', (string) $columns->attr('class'));
+        self::assertStringContainsString('@container/object', (string) $columns->ancestors()->first()->attr('class'));
 
         $component->call(PlanWorkspace::ACTION_SELECT_OBJECT, ['id' => $ids[1]]);
         self::assertStringContainsString('permeable-grass-pavers', (string) $component->render()->crawler()->filter('[data-window="details"] img[src*="schematics/"]')->attr('src'));
