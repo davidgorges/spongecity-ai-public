@@ -199,6 +199,7 @@ plan:
         fact:
             area: Area
             ponding: Ponding depth
+            trench: Gravel trench below
             storage: Holds
             kind: Kind
             height: Height
@@ -215,11 +216,13 @@ plan:
             planted: Planted
         field:
             storage: Ponding depth
+            trench: Gravel trench below (where water soaks away)
             kind: Kind
             height: Height when grown
             y: Height above ground
         value:
             storage: '%value% mm'
+            trench: '%value% m'
             height: '%value% m'
             y: '%value% m'
         close: Close
@@ -323,6 +326,7 @@ plan:
         SC-PLOT: Analysed area
         SC-TREE: Shade trees
         SC-RAINGARDEN: Rain gardens
+        SC-RAINGARDEN-TRENCH: Gravel trenches below rain gardens
         SC-PERMEABLE-PAVERS: Permeable pavers
         SC-PERMEABLE-GRAVEL: Gravel surface
         SC-PERMEABLE-GRASS: Grass pavers

@@ -7,11 +7,11 @@ namespace App\SpongeCity\Plan;
 use App\SpongeCity\Placement\Zone;
 use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
 use Core\Configurator\Product\SpongeCity\GreenRoof\RoofLevel;
-use Core\Configurator\Product\SpongeCity\InterventionBuilder;
-use Core\Configurator\Site\SiteBuilder;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
+use Core\Configurator\Product\SpongeCity\InterventionBuilder;
 use Core\Configurator\Site\Site;
+use Core\Configurator\Site\SiteBuilder;
 use Core\Configurator\Site\SiteObject as O;
 use Symfony\Contracts\Translation\TranslatorInterface;
 
@@ -159,7 +159,8 @@ final readonly class PlanObjects
             O::RAINGARDEN => [
                 $this->fact('area', $this->squareMetres($area)),
                 $this->fact('ponding', sprintf('%d mm', (int) $object[O::STORAGE]), O::STORAGE),
-                $this->fact('storage', sprintf('%s m³', $this->number($area / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE * ((int) $object[O::STORAGE] / self::MILLIMETRES_PER_METRE + ImpactCalculator::RAIN_GARDEN_MEDIA_STORAGE)))),
+                $this->fact('trench', sprintf('%s m', $this->metres($object[O::TRENCH] ?? 0)), O::TRENCH),
+                $this->fact('storage', sprintf('%s m³', $this->number($area / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE * ImpactCalculator::rainGardenStorageMetres((float) $object[O::STORAGE], (float) ($object[O::TRENCH] ?? 0))))),
             ],
             O::PERMEABLE => [$this->fact('kind', $this->translator->trans('plan.object.kind.'.$object[O::KIND]), O::KIND), $this->fact('area', $this->squareMetres($area))],
             O::NEWTREE => [$this->fact('height', $this->metres($object[O::HEIGHT]).' m', O::HEIGHT), $this->fact('crown', $this->metres(2 * $this->crownRadius($object)).' m')],

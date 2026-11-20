@@ -9,6 +9,8 @@ final class SpongeCitySku
     public const string PLOT = 'SC-PLOT';
     public const string TREE = 'SC-TREE';
     public const string RAINGARDEN = 'SC-RAINGARDEN';
+    /** the gravel trench below a rain garden, per m³: excavation, geotextile, gravel, overflow */
+    public const string RAINGARDEN_TRENCH = 'SC-RAINGARDEN-TRENCH';
     public const string PERMEABLE_PAVERS = 'SC-PERMEABLE-PAVERS';
     public const string PERMEABLE_GRAVEL = 'SC-PERMEABLE-GRAVEL';
     public const string PERMEABLE_GRASS_PAVERS = 'SC-PERMEABLE-GRASS';

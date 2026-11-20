@@ -171,10 +171,14 @@ final class InterventionBuilder
         return match ($type) {
             O::NEWTREE => [new Part(SpongeCitySku::TREE, $label, Model::ofHeight(GardenModels::TREES, self::TREE_VARIANT, $num(O::HEIGHT)), position: new Vector3($num(O::X), 0, $num(O::Z)))],
             // the view draws a basin of its ponding depth, planted, with water in it
-            O::RAINGARDEN => $this->slab(SpongeCitySku::RAINGARDEN, $label, self::MATERIAL_RAINGARDEN, $points, self::RAINGARDEN_TOP, $area, [
-                self::APPEARANCE_KIND => O::RAINGARDEN,
-                self::APPEARANCE_DEPTH => $num(O::STORAGE) / self::MILLIMETRES_PER_METRE,
-            ]),
+            O::RAINGARDEN => [
+                ...$this->slab(SpongeCitySku::RAINGARDEN, $label, self::MATERIAL_RAINGARDEN, $points, self::RAINGARDEN_TOP, $area, [
+                    self::APPEARANCE_KIND => O::RAINGARDEN,
+                    self::APPEARANCE_DEPTH => $num(O::STORAGE) / self::MILLIMETRES_PER_METRE,
+                ]),
+                // the trench lies under the garden, out of sight: on the bill by its volume, not drawn
+                ...($num(O::TRENCH) > 0 ? [new Part(SpongeCitySku::RAINGARDEN_TRENCH, $label, measure: Measure::volume(Polygon::area($points) * $num(O::TRENCH)))] : []),
+            ],
             O::PLANTING => $this->slab(SpongeCitySku::PLANTING, $label, self::MATERIAL_PLANTING, $points, self::PLANTING_TOP, $area),
             O::PERMEABLE => $this->slab(
                 self::PERMEABLE_SKU[$object[O::KIND] ?? O::KIND_PAVERS] ?? SpongeCitySku::PERMEABLE_PAVERS,

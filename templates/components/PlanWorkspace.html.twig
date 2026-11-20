@@ -5,6 +5,7 @@
 #}
 {% set workspace = this %}
 {% set piece = constant('Core\\Configurator\\Assembly\\Measure::PIECE') %}
+{% set volume = constant('Core\\Configurator\\Assembly\\Measure::VOLUME') %}
 {% set plan = this.plan %}
 {% set remove_action = constant('App\\Twig\\Components\\PlanWorkspace::ACTION_REMOVE') %}
 {% set viewer_debug = app.request.query.getBoolean(constant('App\\Twig\\Components\\PlanWorkspace::QUERY_DEBUG')) %}
@@ -771,7 +772,7 @@
                     {% for line in cost.lines %}
                         <twig:Table:Row>
                             <twig:Table:Head scope="row" class="h-auto py-1.5 pl-0 font-normal whitespace-normal">{{ ('plan.sku.' ~ line.sku)|trans }}</twig:Table:Head>
-                            <twig:Table:Cell class="py-1.5 text-right tabular-nums text-muted-foreground">{{ line.amount|number_format(line.unit == piece ? 0 : 1) }} {{ line.unit == piece ? '×' : 'm²' }}</twig:Table:Cell>
+                            <twig:Table:Cell class="py-1.5 text-right tabular-nums text-muted-foreground">{{ line.amount|number_format(line.unit == piece ? 0 : 1) }} {{ line.unit == piece ? '×' : (line.unit == volume ? 'm³' : 'm²') }}</twig:Table:Cell>
                             <twig:Table:Cell class="py-1.5 pr-0 text-right tabular-nums">{{ line.total is null ? '–' : line.total|number_format(0) ~ ' €' }}</twig:Table:Cell>
                         </twig:Table:Row>
                     {% endfor %}

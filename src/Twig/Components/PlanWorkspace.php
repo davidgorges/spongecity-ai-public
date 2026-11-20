@@ -83,7 +83,7 @@ final class PlanWorkspace
     public const string PROP_SELECTED = 'selected';
     /** what an intervention's panel lets a person change: type → field → the values offered */
     public const array EDITABLE = [
-        O::RAINGARDEN => [O::STORAGE => [150, 300, 450]],
+        O::RAINGARDEN => [O::STORAGE => [150, 300, 450], O::TRENCH => [0, 500, 1000]],
         O::PERMEABLE => [O::KIND => O::PERMEABLE_KINDS],
         O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000]],
         O::SHADESAIL => [O::Y => [2500, 3200, 4000]],

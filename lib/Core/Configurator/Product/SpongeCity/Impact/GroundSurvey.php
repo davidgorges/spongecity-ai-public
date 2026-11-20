@@ -12,16 +12,24 @@ namespace Core\Configurator\Product\SpongeCity\Impact;
 final readonly class GroundSurvey
 {
     /**
-     * @param array<string, array<string, float>>   $areas                     m² per GroundClass value and ShadeKind value (roofs, green or not, always in the sun)
-     * @param list<array{m2: float, on_plot: bool}> $crowns                    projected crown area of every tree of the site
-     * @param float                                 $rainGardenPondingCubicMetres water the rain gardens hold above their planting medium
+     * @param array<string, array<string, float>>   $areas                        m² per GroundClass value and ShadeKind value (roofs, green or not, always in the sun)
+     * @param list<array{m2: float, on_plot: bool}> $crowns                       projected crown area of every tree of the site
+     * @param float                                 $rainGardenPondingCubicMetres water the rain gardens hold above their planting medium and in their trenches
+     * @param float|null                            $rainGardenReachSquareMetres  the most sealed ground the rain gardens can take the runoff of (their area times their catchment ratio); null: MAX_CATCHMENT_RATIO times their area
      */
     public function __construct(
         public float $plotSquareMetres,
         public array $areas,
         public array $crowns,
         public float $rainGardenPondingCubicMetres,
+        public ?float $rainGardenReachSquareMetres = null,
     ) {
+    }
+
+    /** m² of sealed ground whose runoff the rain gardens can take at most */
+    public function rainGardenReach(): float
+    {
+        return $this->rainGardenReachSquareMetres ?? $this->area(GroundClass::RainGarden) * ImpactCalculator::MAX_CATCHMENT_RATIO;
     }
 
     /** m², of one class and/or one kind of shade; null means all of them */

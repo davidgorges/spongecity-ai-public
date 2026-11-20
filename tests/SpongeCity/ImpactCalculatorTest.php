@@ -211,6 +211,24 @@ final class ImpactCalculatorTest extends KernelTestCase
         self::assertEqualsWithDelta($roof([]), $roof([$greenRoof]), 0.5, 'the green roof turns roof green, it adds none');
     }
 
+    #[Test]
+    public function aGravelTrenchBelowARainGardenHoldsMoreAndTakesALargerCatchment(): void
+    {
+        // 10 m²: it can take the runoff of 100 m², with a trench 150 m² (and has the storage for it)
+        $garden = [O::TYPE => O::RAINGARDEN, O::POINTS => [[0, 0], [5000, 0], [5000, 2000], [0, 2000]], O::STORAGE => 300];
+        $calculator = new ImpactCalculator();
+
+        $without = $calculator->calculate($this->site([$garden]), self::STORM)->metric(ImpactCalculator::METRIC_RETENTION);
+        $with = $calculator->calculate($this->site([[...$garden, O::TRENCH => 1000]]), self::STORM)->metric(ImpactCalculator::METRIC_RETENTION);
+
+        $runoffPerM2 = GroundClass::Asphalt->runoffCoefficient() * self::STORM / 1000;
+        $gain = 10 * (ImpactCalculator::MAX_CATCHMENT_RATIO_TRENCH - ImpactCalculator::MAX_CATCHMENT_RATIO) * $runoffPerM2;
+        self::assertNotNull($without);
+        self::assertNotNull($with);
+        self::assertEqualsWithDelta($gain, $with->design - $without->design, 0.3);
+        self::assertGreaterThan(ImpactCalculator::rainGardenStorageMetres(300), ImpactCalculator::rainGardenStorageMetres(300, 1000));
+    }
+
     private function site(array $interventions): Site
     {
         $plot = [O::TYPE => O::PLOT, O::POINTS => [[-15000, -15000], [15000, -15000], [15000, 15000], [-15000, 15000]], O::SURFACE => O::SURFACE_ASPHALT];

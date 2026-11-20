@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Core\Configurator\Product\SpongeCity\Impact;
 
+use Core\Configurator\Product\SpongeCity\Impact\CoolingScenario as K;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
-use Core\Configurator\Product\SpongeCity\Impact\CoolingScenario as K;
 
 /**
  * Cooling and water of a plot on a hot summer day and over a year, today and with the plan:
@@ -95,7 +95,7 @@ final readonly class CoolingCalculator
         );
     }
 
-    private function scenario(GroundSurvey $survey, float $precipitationMm): CoolingScenario
+    private function scenario(GroundSurvey $survey, float $precipitationMm): K
     {
         $plot = max($survey->plotSquareMetres, 1.0);
         $ground = max($survey->groundArea(), 1.0);
@@ -147,7 +147,7 @@ final readonly class CoolingCalculator
         $water = $this->yearlyWater($survey, $precipitationMm);
         $rain = max($survey->plotSquareMetres * $precipitationMm / self::MILLIMETRES_PER_METRE, 1e-9);
 
-        return new CoolingScenario([
+        return new K([
             K::KEY_EVAPOTRANSPIRATION => $evapotranspiration,
             K::KEY_EVAPOTRANSPIRATION_TREES => $trees,
             K::KEY_LATENT_COOLING => $latent,
@@ -208,7 +208,7 @@ final readonly class CoolingCalculator
 
         $rainGarden = $survey->area(GroundClass::RainGarden);
         if ($rainGarden > 0.0) {
-            $catchment = min($survey->sealedArea(), $rainGarden * ImpactCalculator::MAX_CATCHMENT_RATIO);
+            $catchment = min($survey->sealedArea(), $survey->rainGardenReach());
             $routed = min($water[GroundClass::RUNOFF], $catchment * $depth * GroundClass::Asphalt->yearlyWaterBalance()[GroundClass::RUNOFF]);
             $water[GroundClass::RUNOFF] -= $routed;
             $water[GroundClass::INFILTRATION] += $routed * self::RAIN_GARDEN_INFILTRATION_SHARE;
