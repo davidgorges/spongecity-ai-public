@@ -27,7 +27,7 @@ final class HomeController extends AbstractController
     #[Route('/', name: self::ROUTE, methods: ['GET'])]
     public function index(): Response
     {
-        return $this->render('home/index.html.twig', ['examples' => ['home.example.schoolyard', 'home.example.courtyard', 'home.example.square']]);
+        return $this->render('home/index.html.twig', ['schools' => ExampleSchool::cases()]);
     }
 
     /** a plan for the place asked for; its import runs in a worker while the plan page shows progress */

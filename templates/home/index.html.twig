@@ -20,12 +20,13 @@
         {% set placeholder = 'home.placeholder'|trans %}
         {% set submit_label = 'home.submit'|trans %}
         <form method="post" action="{{ path('home_start') }}" class="flex flex-col gap-3 sm:flex-row" {{ stimulus_controller('form-submit-disable') }} data-action="submit->form-submit-disable#busy">
-            <twig:Label for="place" class="sr-only">{{ 'home.label'|trans }}</twig:Label>
+            {% set field = constant('App\\Controller\\PlaceSearch::FIELD') %}
+            <twig:Label for="{{ field }}" class="sr-only">{{ 'home.label'|trans }}</twig:Label>
             <twig:InputGroup class="h-11 flex-1">
                 <twig:InputGroup:Addon>
                     <twig:ux:icon name="lucide:map-pin" aria-hidden="true" />
                 </twig:InputGroup:Addon>
-                <twig:InputGroup:Input id="place" name="place" type="search" required autofocus autocomplete="off" placeholder="{{ placeholder }}" />
+                <twig:InputGroup:Input id="{{ field }}" name="{{ field }}" type="search" required autofocus autocomplete="off" placeholder="{{ placeholder }}" />
             </twig:InputGroup>
             <twig:Button type="submit" size="lg" data-form-submit-disable-target="button">
                 {{ submit_label }}
@@ -33,13 +34,21 @@
             </twig:Button>
         </form>
 
-        <section aria-labelledby="examples-title" class="flex flex-col gap-2">
-            <h2 id="examples-title" class="text-sm font-medium text-muted-foreground">{{ 'home.examples'|trans }}</h2>
-            <ul class="flex flex-wrap gap-2">
-                {% for example in examples %}
-                    {% set text = example|trans %}
+        <section aria-labelledby="schools-title" class="flex flex-col gap-2">
+            <h2 id="schools-title" class="text-sm font-medium text-muted-foreground">{{ 'home.schools'|trans }}</h2>
+            <ul class="grid gap-2 sm:grid-cols-3">
+                {% for school in schools %}
                     <li>
-                        <twig:Button type="button" variant="outline" size="sm" data-controller="fill-input" data-action="fill-input#fill" data-fill-input-target-value="place" data-fill-input-text-value="{{ text }}">{{ text }}</twig:Button>
+                        <form method="post" action="{{ path('home_start') }}" class="h-full" {{ stimulus_controller('form-submit-disable') }} data-action="submit->form-submit-disable#busy">
+                            <input type="hidden" name="{{ constant('App\\Controller\\PlaceSearch::FIELD') }}" value="{{ school.place }}">
+                            <button type="submit" class="flex h-full w-full flex-col items-start gap-1 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60" data-form-submit-disable-target="button">
+                                <span class="flex items-start gap-2 text-sm font-medium">
+                                    <twig:ux:icon name="lucide:school" class="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
+                                    {{ school.value }}
+                                </span>
+                                <span class="text-xs text-muted-foreground">{{ school.district }}</span>
+                            </button>
+                        </form>
                     </li>
                 {% endfor %}
             </ul>
