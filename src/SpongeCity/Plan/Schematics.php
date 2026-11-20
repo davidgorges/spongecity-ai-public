@@ -50,6 +50,18 @@ final class Schematics
         return null === $variant ? $type : $type.self::SEPARATOR.str_replace('_', self::SEPARATOR, $variant);
     }
 
+    /**
+     * The path asset() takes to an intervention's schematic, null for an object that has none.
+     *
+     * @param array<string, mixed> $object
+     */
+    public static function of(array $object): ?string
+    {
+        $name = self::name($object);
+
+        return null === $name ? null : self::path($name);
+    }
+
     /** the path asset() takes */
     public static function path(string $name): string
     {

@@ -48,13 +48,13 @@ final class SchematicsTest extends WebTestCase
         $component = $this->createLiveComponent(PlanWorkspace::class, ['planId' => $plan->id]);
 
         $component->call(PlanWorkspace::ACTION_SELECT_OBJECT, ['id' => $ids[0]]);
-        $image = $component->render()->crawler()->filter('img[src*="schematics/"]');
+        $image = $component->render()->crawler()->filter('[data-window="details"] img[src*="schematics/"]');
         self::assertCount(1, $image);
         self::assertStringContainsString('raingarden-trench', (string) $image->attr('src'));
         self::assertSame('Cutaway showing how it is built: Rain garden', $image->attr('alt'));
 
         $component->call(PlanWorkspace::ACTION_SELECT_OBJECT, ['id' => $ids[1]]);
-        self::assertStringContainsString('permeable-grass-pavers', (string) $component->render()->crawler()->filter('img[src*="schematics/"]')->attr('src'));
+        self::assertStringContainsString('permeable-grass-pavers', (string) $component->render()->crawler()->filter('[data-window="details"] img[src*="schematics/"]')->attr('src'));
     }
 
     private function plan(): Plan

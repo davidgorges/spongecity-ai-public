@@ -260,7 +260,7 @@ final class PlanWorkspace
      * else its kind, numbered when several share it: "Shade tree 2") and a `size` (a tree's
      * height, else its area), so they can be told apart.
      *
-     * @return list<array{id: string, type: string, label: string|null, name: string, size: string, cost: float|null}>
+     * @return list<array{id: string, type: string, label: string|null, name: string, size: string, cost: float|null, schematic: string|null}>
      */
     public function interventions(): array
     {
@@ -276,6 +276,8 @@ final class PlanWorkspace
                     'name' => $label ?? $this->translator->trans('plan.measures.type.'.$object[O::TYPE]),
                     'size' => $this->sizeOf($object),
                     'cost' => $costs[(string) $object[O::ID]] ?? null,
+                    // a small picture of how it is built (the object panel shows it large)
+                    'schematic' => Schematics::of($object),
                 ];
             }
         }
@@ -450,7 +452,7 @@ final class PlanWorkspace
             'type' => $row['type'],
             'name' => $row['name'],
             // how it is built, as an isometric cutaway (an intervention's, by its variant): a path for asset()
-            'schematic' => null === Schematics::name($object) ? null : Schematics::path((string) Schematics::name($object)),
+            'schematic' => Schematics::of($object),
             // a fact that may be changed shows as the choice made below, not twice
             'facts' => array_values(array_filter($row['facts'], static fn (array $fact): bool => !isset($fields[$fact[2] ?? '']))),
             'fields' => $fields,

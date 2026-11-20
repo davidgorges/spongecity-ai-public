@@ -300,6 +300,7 @@ plan:
             poor: Poor
     measures:
         title: Planned measures
+        list: 'Measures (%count%)'
         clear: Remove all
         clear_confirm:
             title: '{1}Remove the planned measure?|]1,Inf[Remove all %count% planned measures?'
@@ -325,6 +326,9 @@ plan:
     cost:
         title: Bill of quantities
         total: Estimated cost
+        investment: Investment
+        items_hint: All measures added up per item.
+        count: '%count% measures'
         note: Indicative unit prices, without planning, VAT and site specifics.
         maintenance: Running costs
         per_year: '%amount% € / year'
