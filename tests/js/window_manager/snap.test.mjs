@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { snapMove, snapResize, toGrid, touching } from '../../../assets/window_manager/snap.js';
+import { hangsUnder, snapMove, snapResize, toGrid, touching } from '../../../assets/window_manager/snap.js';
 
 const OPTIONS = { threshold: 10, gap: 12 };
 const BOUNDS = { left: 16, top: 76, right: 1184, bottom: 728 };
@@ -74,4 +74,10 @@ test('windows a gap apart and overlapping along that side touch', () => {
 test('windows further apart, or only meeting at a corner, do not touch', () => {
     assert.ok(!touching(CHAT, { x: 420, y: 200, w: 200, h: 100 }, 12, 1));
     assert.ok(!touching(CHAT, { x: 412, y: 488, w: 200, h: 100 }, 12, 1));
+});
+
+test('a window a gap under another, overlapping across, hangs under it', () => {
+    assert.ok(hangsUnder(CHAT, { x: 100, y: 488, w: 200, h: 100 }, 12, 1));
+    assert.ok(!hangsUnder({ x: 100, y: 488, w: 200, h: 100 }, CHAT, 12, 1));
+    assert.ok(!hangsUnder(CHAT, { x: 412, y: 200, w: 200, h: 100 }, 12, 1), 'beside it, not under');
 });

@@ -1,8 +1,9 @@
 /**
  * Windows snapped together move as one when the group's anchor is dragged (its topmost window,
  * the leftmost of those level): each window's group (null: on its own), kept with its place in the
- * browser. A window joins when it is dropped against another; it leaves when it is dragged while
- * not the anchor (or with Shift), or closed. Pure functions on a map window id → group id
+ * browser. A window joins when it is dropped against another. Any other window dragged takes the
+ * windows hanging under it along and leaves the rest with them (split); with Shift it leaves alone,
+ * closed it leaves too. Pure functions on a map window id → group id
  * (tests/js/window_manager/groups.test.mjs).
  */
 
@@ -27,6 +28,36 @@ export function members(groups, id) {
  */
 export function anchor(ids, places) {
     return [...ids].sort((a, b) => (places[a].y - places[b].y) || (places[a].x - places[b].x))[0];
+}
+
+/**
+ * The window and those hanging under it, and under those in turn.
+ *
+ * @param {string[]} ids the group's windows
+ * @param {(above: string, below: string) => boolean} hangsUnder whether one hangs under the other
+ * @returns {string[]}
+ */
+export function chainBelow(id, ids, hangsUnder) {
+    const chain = [id];
+    for (let i = 0; i < chain.length; i++) {
+        ids.filter((other) => !chain.includes(other) && hangsUnder(chain[i], other)).forEach((other) => chain.push(other));
+    }
+
+    return chain;
+}
+
+/**
+ * The windows leave their group together, as a group of their own; the rest stay together.
+ *
+ * @param {Record<string, string|null>} groups
+ * @param {string[]} ids
+ * @param {() => string} newGroup a group id not used yet
+ * @returns {Record<string, string|null>}
+ */
+export function split(groups, ids, newGroup) {
+    const group = ids.length > 1 ? newGroup() : null;
+
+    return normalise({ ...groups, ...Object.fromEntries(ids.map((id) => [id, group])) });
 }
 
 /**

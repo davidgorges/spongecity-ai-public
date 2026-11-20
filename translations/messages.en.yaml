@@ -164,7 +164,7 @@ plan:
         measures: Measures and costs
         agent: Your own agent
         details_empty: Click something in the 3D view, or a zone or play equipment on the mini map, to see and change it here.
-        move: 'Move %title% (drag, or arrow keys; it snaps to other windows; the topmost of windows snapped together moves them all, any other leaves them; Shift-drag to move it alone, Alt-drag to place it freely)'
+        move: 'Move %title% (drag, or arrow keys; it snaps to other windows; the topmost of windows snapped together moves them all, any other the windows under it; Shift-drag to move it alone, Alt-drag to place it freely)'
         minimise: 'Minimise %title%'
         close: 'Close %title%'
         resize: 'Resize %title% (drag, or arrow keys; double-click for its own size)'

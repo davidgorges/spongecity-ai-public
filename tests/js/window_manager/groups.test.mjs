@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { anchor, join, leave, members, normalise } from '../../../assets/window_manager/groups.js';
+import { anchor, chainBelow, join, leave, members, normalise, split } from '../../../assets/window_manager/groups.js';
 
 const NEW = () => 'g1';
 
@@ -44,4 +44,23 @@ test('the anchor of a group is its topmost window, the leftmost of those level',
 
     assert.equal(anchor(['effect', 'map', 'chat'], places), 'chat');
     assert.equal(anchor(['effect', 'map'], places), 'map');
+});
+
+test('the windows hanging under one, and under those in turn, form its chain', () => {
+    // chat over effect over measures; map beside chat; agent beside effect
+    const under = { chat: ['effect'], effect: ['measures'], map: [], measures: [], agent: [] };
+    const hangsUnder = (above, below) => under[above].includes(below);
+
+    assert.deepEqual(chainBelow('effect', ['chat', 'map', 'effect', 'measures', 'agent'], hangsUnder), ['effect', 'measures']);
+    assert.deepEqual(chainBelow('map', ['chat', 'map', 'effect', 'measures', 'agent'], hangsUnder), ['map']);
+});
+
+test('a chain split off forms its own group, the rest stay together', () => {
+    const groups = split({ chat: 'a', map: 'a', effect: 'a', measures: 'a' }, ['effect', 'measures'], NEW);
+
+    assert.deepEqual(groups, { chat: 'a', map: 'a', effect: 'g1', measures: 'g1' });
+});
+
+test('a window split off alone, and a rest of one, are in no group', () => {
+    assert.deepEqual(split({ chat: 'a', effect: 'a' }, ['effect'], NEW), { chat: null, effect: null });
 });

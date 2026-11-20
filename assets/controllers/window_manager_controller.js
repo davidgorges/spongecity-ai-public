@@ -1,8 +1,8 @@
 import { Controller } from '@hotwired/stimulus';
 import { getComponent } from '@symfony/ux-live-component';
 import { press } from '../configurator/press.js';
-import { snapMove, snapResize, toGrid, touching } from '../window_manager/snap.js';
-import { anchor, join, leave, members, normalise } from '../window_manager/groups.js';
+import { hangsUnder, snapMove, snapResize, toGrid, touching } from '../window_manager/snap.js';
+import { anchor, chainBelow, join, leave, members, normalise, split } from '../window_manager/groups.js';
 
 /** the element of the live component the windows belong to (it re-renders them) */
 const LIVE_ROOT = '[data-controller~="live"]';
@@ -48,8 +48,9 @@ const BOTTOM_EDGE = 'bottom';
  * invisible grid (GRID). Alt places it freely. Dropped against
  * another one it joins its group (window_manager/groups.js): dragging, or moving with the arrow
  * keys, the group's anchor (its topmost window, the leftmost of those level) moves them all;
- * dragging any other one takes it out of the group. Shift-drag takes even the anchor out, closing
- * a window does too. Groups are kept with the places.
+ * any other one takes the windows hanging under its bottom edge along (and those under them),
+ * splitting off from the rest. Shift-drag moves a window alone, out of its group; closing it
+ * takes it out too. Groups are kept with the places.
  *
  * Below FLOATING the windows are not floating: one of them is shown under the view, the dock
  * switches between them like tabs.
@@ -155,10 +156,7 @@ export default class extends Controller {
         const id = element.dataset.window;
         event.preventDefault();
         event.currentTarget.setPointerCapture?.(event.pointerId);
-        // only the anchor drags its group along; any other window (or with Shift, any) leaves it
-        if (event.shiftKey || !this.#isAnchor(id)) {
-            this.#setGroups(leave(this.#groups(), id));
-        }
+        this.#detachFor(id, event.shiftKey);
         const moving = this.#moving(id);
         this.#drag = {
             id,
@@ -266,9 +264,7 @@ export default class extends Controller {
         event.preventDefault();
         const id = event.params.id;
         const step = event.shiftKey ? BIG_NUDGE : NUDGE;
-        if (!this.#isAnchor(id)) {
-            this.#setGroups(leave(this.#groups(), id));
-        }
+        this.#detachFor(id, false);
         const moving = this.#moving(id);
         const starts = Object.fromEntries(moving.map((member) => [member, this.#rect(member)]));
         this.#moveAll(starts, ...this.#clampDelta(starts, move[0] * step, move[1] * step));
@@ -578,6 +574,23 @@ export default class extends Controller {
         return moving.length < 2 || anchor(moving, this.#state) === id;
     }
 
+    /**
+     * Before a window of a group moves: the anchor takes the whole group along; any other one the
+     * windows hanging under it (and under those), splitting off from the rest; alone (Shift) none.
+     */
+    #detachFor(id, alone) {
+        if (alone) {
+            this.#setGroups(leave(this.#groups(), id));
+        } else if (!this.#isAnchor(id)) {
+            const chain = chainBelow(id, this.#moving(id), (above, below) => hangsUnder(this.#rect(above), this.#rect(below), GAP, TOUCH_TOLERANCE));
+            this.#setGroups(split(this.#groups(), chain, () => this.#newGroup(id)));
+        }
+    }
+
+    #newGroup(id) {
+        return `group-${Date.now().toString(36)}-${id}`;
+    }
+
     /** the rectangles of the windows shown, but these */
     #others(ids) {
         return this.windowTargets
@@ -594,7 +607,7 @@ export default class extends Controller {
             .filter((other) => !moving.includes(other) && this.#isShown(other))
             .filter((other) => moving.some((member) => touching(this.#rect(member), this.#rect(other), GAP, TOUCH_TOLERANCE)));
         if (touched.length > 0) {
-            this.#setGroups(join(this.#groups(), [id, ...touched], () => `group-${Date.now().toString(36)}-${id}`));
+            this.#setGroups(join(this.#groups(), [id, ...touched], () => this.#newGroup(id)));
         }
     }
 

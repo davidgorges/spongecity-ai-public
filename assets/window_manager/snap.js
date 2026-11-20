@@ -132,3 +132,14 @@ export function touching(a, b, gap, tolerance) {
     return (overlapY && (near(a.x + a.w, b.x) || near(b.x + b.w, a.x)))
         || (overlapX && (near(a.y + a.h, b.y) || near(b.y + b.h, a.y)));
 }
+
+/**
+ * Whether window b hangs under window a: its top edge gap below a's bottom edge (within
+ * tolerance), the two overlapping across.
+ *
+ * @param {Rect} a
+ * @param {Rect} b
+ */
+export function hangsUnder(a, b, gap, tolerance) {
+    return Math.abs(a.y + a.h + gap - b.y) <= tolerance && Math.min(a.x + a.w, b.x + b.w) > Math.max(a.x, b.x);
+}
