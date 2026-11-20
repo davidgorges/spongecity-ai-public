@@ -9,8 +9,9 @@ mcp:
 
             http:
                 path: /mcp
-                # Only these hosts are answered (MCP_ALLOWED_HOSTS): in production the one MCP_SERVER_URL points at.
-                allowed_hosts: '%env(csv:MCP_ALLOWED_HOSTS)%'
+                # Only these hosts are answered, any other Host header gets a 403 (DNS rebinding protection):
+                # localhost, and the host the in-app agent calls this server by (MCP_SERVER_URL), whatever it is.
+                allowed_hosts: ['localhost', '127.0.0.1', '[::1]', '%env(key:host:url:MCP_SERVER_URL)%']
 
             # Enable STDIO for clients such as Claude Desktop via bin/console mcp:server.
             # transports:

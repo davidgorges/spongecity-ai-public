@@ -407,9 +407,9 @@ model's thinking *and* its answer, and with the platform's default of 1000 the t
 all up, so the reply came back as a bare `ThinkingResult` and `asText()` failed ("The planning
 agent could not answer"). Its tools are the **MCP server of this same application**:
 
-- **Server** (`mcp-bundle`, `config/packages/mcp.yaml`): `/mcp` (HTTP) answers only the hosts in
-  `MCP_ALLOWED_HOSTS` (default `localhost,127.0.0.1,[::1]`, any other Host header gets a 403). In
-  production add the host `MCP_SERVER_URL` points at. It serves `App\Mcp\SpongeCityTools`, declared with
+- **Server** (`mcp-bundle`, `config/packages/mcp.yaml`): `/mcp` (HTTP) answers only localhost and the
+  host of `MCP_SERVER_URL` (the one the agent calls it by, in production the public host); any other
+  Host header gets a 403. It serves `App\Mcp\SpongeCityTools`, declared with
   `#[McpTool]`. Any MCP client (Claude Desktop, the inspector) can use it.
 - **Client**: `mcp.clients.spongecity.servers.local` points at `MCP_SERVER_URL`
   (`${DEFAULT_URI}mcp`, which follows the port the Symfony CLI serves on); the agent's `tools: - mcp_server: 'spongecity.local'`
