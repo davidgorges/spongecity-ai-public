@@ -23,7 +23,9 @@ flowchart LR
         direction TB
         hc["HomeController → PlanImporter"]
         json["JSON endpoints<br/><small>surroundings · conditions · terrain</small>"]
-        chat["ChatController → PlanAssistant"]
+        chat["ChatController<br/><small>queues AskPlanningAgent, answers 202</small>"]
+        agent["AskPlanningAgentHandler → PlanAssistant<br/><small>worker: messenger:consume agent</small>"]
+        hub["Mercure hub<br/><small>ChatStream: spongecity/plan/{id}/chat</small>"]
         tools["MCP server (mcp:server, stdio) · SpongeCityTools<br/><small>PlacementTools · SimStadtTools</small>"]
         handler["ImportSiteHandler<br/><small>worker: messenger:consume async</small>"]
         store[("PlanStore and siblings<br/><small>spongecity.storage · Redis</small>")]
@@ -44,15 +46,16 @@ flowchart LR
     handler --> store
     page <-- "Live Component" --> store
     page -- "GET /plan/{id}/…" --> json --> store
-    page -- "POST /plan/{id}/chat" --> chat -- "agent turn" --> cl
-    cl -. "tool calls (HTTP)" .-> tools --> store
+    page -- "POST /plan/{id}/chat" --> chat -- "AskPlanningAgent via Messenger" --> agent -- "agent turn" --> cl
+    cl -. "tool calls (stdio child process)" .-> tools --> store
+    agent -- "publish reply" --> hub -. "SSE" .-> page
 
     classDef ui fill:#ccfbf1,stroke:#0f766e,color:#042f2e
     classDef svc fill:#e0f2fe,stroke:#0369a1,color:#082f49
     classDef data fill:#fef3c7,stroke:#b45309,color:#451a03
     classDef external fill:#ffffff,stroke:#64748b,color:#0f172a
     class home,page ui
-    class hc,json,chat,tools,handler svc
+    class hc,json,chat,agent,tools,handler,hub svc
     class store data
     class nom,ovp,hh,cl external
     style browser fill:#f0fdfa,stroke:#0f766e,color:#042f2e
@@ -395,10 +398,12 @@ instances are shared and often overloaded, and they reject generic user agents: 
 It is sent with every outgoing request (`framework.http_client.default_options` in
 `config/packages/framework.yaml`), so the clients do not set it themselves.
 
-Messenger: transport `async` on Doctrine (SQLite, `var/data_<env>.db`), no retries (the mirrors are
-the retry), failed messages go to the `failed` transport. **A worker must run**
-(`messenger:consume async`); `.symfony.local.yaml` starts it with `symfony server:start`. DBAL is
-installed only for the queue.
+Messenger: transports on Doctrine (SQLite under the share dir), no retries, failed messages go to the
+`failed` transport. `async` imports sites (the mirrors are the retry), `simstadt` runs building
+simulations, `agent` runs the planning agent's turns (a failed turn may already have changed the
+plan, so the person asks again). **A worker must run for each** (`messenger:consume async`,
+`simstadt`, `agent`); `.symfony.local.yaml` starts them with `symfony server:start`. DBAL is
+installed only for the queues.
 
 ## The agent and MCP
 
@@ -413,7 +418,7 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
   **HTTP** (`/mcp`, localhost only, any other Host header gets a 403) is for outside clients such as
   Claude Desktop or the inspector.
 - **Client**: `mcp.clients.spongecity.servers.local` starts `bin/console mcp:server` as a child
-  process (`transport: stdio`) for the chat turn, with the parent's environment plus its
+  process (`transport: stdio`) for the chat turn, in the `agent` worker, with the parent's environment plus its
   `APP_ENV`/`APP_DEBUG`, so it reads the same storage (the same plans). No URL, no network, no
   host check. The agent's `tools: - mcp_server: 'spongecity.local'` exposes the tools to the model
   with the prefix `local_`. Both are built-in symfony/ai and mcp-bundle wiring: the tools are
@@ -509,7 +514,7 @@ Tools are stateless: the plan id is part of every call (`PlanAssistant` prefixes
 with `plan_id: …`). The system prompt tells the agent to look first, design with tools, measure
 before it claims anything, and never state a number that did not come from a tool.
 
-The agent's tools run in a child process of the chat request (`bin/console mcp:server` over
+The agent's tools run in a child process of the `agent` worker (`bin/console mcp:server` over
 stdio): the server needs the `php` CLI on `PATH` and `proc_open` allowed; `app:doctor` checks it.
 
 
@@ -593,7 +598,18 @@ sequenceDiagram
 
 ## Chat and the live UI
 
-- `POST /plan/{id}/chat` (`ChatController`) → `PlanAssistant::ask()`. The conversation is kept with
+- `POST /plan/{id}/chat` (`ChatController`) binds `ChatMessage`, dispatches
+  `AskPlanningAgent(planId, message, language)` to the `agent` transport and answers **202** at once.
+  One turn is several model calls with tools in between (a minute or more when the agent places
+  interventions): longer than PHP-FPM lets a web request run (nginx answered 504 when the turn ran
+  in the request).
+- `AskPlanningAgentHandler` (worker) → `PlanAssistant::ask()`, then publishes the reply, or that the
+  turn failed, through `ChatStream`: a Mercure update `{reply}` or `{error}` on the public topic
+  `spongecity/plan/{id}/chat` (public like the plan itself, which anyone with its id opens). The
+  hub: `compose.yaml` locally (`dunglas/mercure:v1`: `symfony/mercure` speaks the Mercure protocol
+  1.0, a 0.x hub answers 401 to its tokens), a v1 binary behind nginx in production
+  ([deployment](deployment.md#mercure-hub)).
+- The conversation is kept with
   the plan (`ConversationStore`, last 20 turns), so it is there again after a reload or in another
   browser, and user and agent refine the design together. Every message carries the plan id and
   the interface's language (`PlanAssistant::MESSAGE_FORMAT`): the agent answers in the user's
@@ -602,15 +618,16 @@ sequenceDiagram
   `config/packages/twig.yaml`; JavaScript formats by the page's `lang`).
 - The home page lists the plans opened in this browser (`recent_plans_controller.js`, in
   localStorage under `HomeController::RECENT_PLANS_STORAGE_KEY`): there are no accounts, a plan is
-  reached by its link. One turn is
-  several model calls with tools in between (40 to 60 s when the agent places interventions), so
-  the action raises PHP's time limit to 180 s.
+  reached by its link.
 - `PlanWorkspace` (Live Component) renders the 3D view, the impact cards, the storm slider, the
   planned measures and the cost table. Removing an object or changing the storm are live actions;
   the storm persists into the plan.
-- `plan_chat_controller.js` posts the message and dispatches a `plan:changed` event on window
-  every 2.5 s while the agent works and once more when it answers; the component re-renders on that
-  event, so the user watches the design appear. The chat region is `data-live-ignore`.
+- `plan_chat_controller.js` subscribes to the plan's topic when it connects (an `EventSource` on the
+  URL Twig's `mercure()` builds), so no reply is missed, and every page showing the plan sees it.
+  It posts the message, dispatches a `plan:changed` event on window every 2.5 s while the agent works
+  and once more when the reply arrives; the component re-renders on that event, so the user watches
+  the design appear. A turn that has not answered after 5 minutes is shown as failed. The chat region
+  is `data-live-ignore`.
 - The 3D canvas is `data-live-ignore`; a re-render only changes the `scene` value, and the
   `configurator_viewer_controller.js` updates the scene without moving the camera.
 - **Windows**: the view fills the screen; the agent's chat, the mini map, object details, the
@@ -743,7 +760,7 @@ Setup, optional parts (API key, SimStadt, render loop) and checks: see the [READ
 
 ```bash
 symfony composer install                 # dependencies, importmap, Tailwind build
-symfony server:start -d --no-tls         # web server + workers (import, SimStadt, Tailwind --watch)
+symfony server:start -d --no-tls         # web server + workers (import, SimStadt, agent, Tailwind --watch) + Mercure hub
 symfony console app:doctor               # checks the setup and says how to fix it
 symfony console app:plan:demo            # offline demo plan (synthetic sealed schoolyard)
 symfony console app:plan:reimport <id>   # re-import site and surroundings, keeping interventions
@@ -771,9 +788,9 @@ symfony php vendor/bin/phpunit
   (e.g. the heat-planning dataset's building-age classes, per block) would sharpen heat demand.
 - The geocoder takes the first hit; a pick-list for ambiguous names would help.
 - Public Overpass/Nominatim instances are rate limited; self-host Overpass for reliability.
-- The chat shows the final answer only; streaming the agent's tool steps (Symfony AI
-  `onProgress`) is a natural next step. A turn runs inside the request (up to 180 s); Messenger
-  would be the place for it in production.
+- The chat shows the final answer only; the hub is in place, so publishing the agent's tool steps
+  as they happen (Symfony AI `onProgress`, through `ChatStream`) is a natural next step, and could
+  replace the 2.5 s re-render polling with an update per change.
 - `get_site` gives the agent building centres only, not footprints, so it places interventions
   without knowing exactly where walls are.
 - Areas mapped as multipolygon relations (some schools, parks) are not found as the plot yet: only

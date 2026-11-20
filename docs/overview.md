@@ -18,7 +18,7 @@ reference, with every rule and number, is [architecture.md](architecture.md).
 3. [Starting a plan](#3-starting-a-plan): from a place name to a 3D site
 4. [The import pipeline](#4-the-import-pipeline): six steps, each replaceable
 5. [Lifecycles](#5-lifecycles): the two state machines
-6. [One chat turn](#6-one-chat-turn): the agent designs through tools
+6. [One chat turn](#6-one-chat-turn): a worker runs it, the agent designs through tools, Mercure brings the reply
 7. [Placing an intervention](#7-placing-an-intervention): the LLM chooses, the server does geometry
 8. [Where state lives](#8-where-state-lives): one plan id, several stores
 9. [From values to pixels](#9-from-values-to-pixels): the configurator engine
@@ -35,8 +35,8 @@ reference, with every rule and number, is [architecture.md](architecture.md).
 
 ## 1. System context
 
-The application is one Symfony app plus two Messenger workers. It reaches out to map services,
-Hamburg's open data portal, the Anthropic API and, for building simulations, Docker.
+The application is one Symfony app plus three Messenger workers and a Mercure hub. It reaches out
+to map services, Hamburg's open data portal, the Anthropic API and, for building simulations, Docker.
 
 ```mermaid
 flowchart LR
@@ -47,10 +47,12 @@ flowchart LR
         web["<b>Web app</b><br/><small>pages · Live Component<br/>JSON endpoints · /mcp</small>"]
         stores[("<b>Cache pool</b><br/><small>plans and all that<br/>belongs to them</small>")]
         queue[("<b>SQLite</b><br/><small>Messenger queues</small>")]
-        workers["<b>Two workers</b><br/><small>async: site imports<br/>simstadt: simulations</small>"]
+        workers["<b>Three workers</b><br/><small>async: site imports<br/>simstadt: simulations<br/>agent: chat turns</small>"]
+        hub["<b>Mercure hub</b><br/><small>the agent's replies<br/>to the browser</small>"]
         web --- stores
         web -- "dispatch" --> queue -- "consume" --> workers
         workers --- stores
+        workers -- "publish" --> hub
     end
 
     subgraph ext["External services"]
@@ -62,7 +64,8 @@ flowchart LR
     end
 
     user == "HTTPS" ==> web
-    web <-- "agent turn ⇄ tool calls (mcp:server over stdio)" --> claude
+    user -. "subscribe (SSE)" .-> hub
+    workers <-- "agent turn ⇄ tool calls (mcp:server over stdio)" --> claude
     web -- "geocode" --> osm
     workers -- "map data" --> osm
     workers -- "official layers" --> hh
@@ -77,16 +80,20 @@ flowchart LR
     class web core
     class workers worker
     class stores,queue data
+    class hub worker
     class claude,osm,hh,docker external
     style app fill:#f0fdfa,stroke:#0f766e,stroke-width:1px,color:#042f2e
     style ext fill:#f8fafc,stroke:#94a3b8,stroke-dasharray:4 3,color:#334155
 ```
 
-- **The agent's tools are this app's own MCP server.** The chat request starts it as a child
+- **The agent's tools are this app's own MCP server.** The `agent` worker starts it as a child
   process (`bin/console mcp:server`, stdio) and calls the tools Claude asks for through it: no
   network, no URL. `/mcp` serves the same tools to outside clients (localhost only).
-- **Slow work never blocks a page.** Site imports (seconds to a minute) and SimStadt runs (up to a
-  few minutes) have a queue and a worker each, so one never waits for the other.
+- **Slow work never blocks a page.** Site imports (seconds to a minute), SimStadt runs (up to a
+  few minutes) and the agent's turns (a minute or more) have a queue and a worker each, so one never
+  waits for the other, and no web request runs longer than PHP-FPM allows.
+- **What a worker has to tell the page goes through Mercure.** The page subscribes to its plan's
+  topic; the `agent` worker publishes the reply there (`ChatStream`).
 - **Every external source can fail on its own.** Overpass is tried mirror by mirror, and each
   Hamburg layer falls back to OpenStreetMap separately. Missing surroundings just mean a generic
   city around the site.
@@ -103,11 +110,11 @@ block-beta
     pages["Controllers<br/>Home · ShowPlan · Chat<br/>Conditions · Surroundings · Terrain"]:2
     live["PlanWorkspace<br/>Live Component"]
     mcp["MCP tools<br/>SpongeCity · Placement · SimStadt"]
-    handlers["Message handlers<br/>ImportSite · RunSimulation"]
+    handlers["Message handlers<br/>ImportSite · RunSimulation<br/>AskPlanningAgent"]
     cli["Console<br/>app:doctor · app:plan:*"]
     space:6
     L2["② APPLICATION SERVICES · src/SpongeCity · use ③ and ④"]:6
-    chat["Chat<br/>PlanAssistant"]
+    chat["Chat<br/>PlanAssistant · ChatStream"]
     plan["Plan<br/>SiteEditor · PlanAnalyzer<br/>PlanImport workflow"]
     placement["Placement<br/>Placements · *Siting<br/>RunoffModel · AddHere"]
     import["Import<br/>PlanImporter<br/>six SiteImportSteps"]
@@ -288,25 +295,31 @@ handler in the same process.
   <br><sub>The person and the agent edit the same plan. The agent works only through tools, and the server snaps what it places to the rules.</sub>
 </p>
 
-A turn is several model calls with tool calls in between, 40 to 60 seconds when the agent places
-interventions. The user watches the design appear because the page re-renders while the agent
-works.
+A turn is several model calls with tool calls in between, a minute or more when the agent places
+interventions: longer than a web request may run. So the chat only queues the message; a worker runs
+the turn and publishes the reply through the Mercure hub, which the page is subscribed to. The user
+watches the design appear because the page re-renders while the agent works.
 
 ```mermaid
 sequenceDiagram
     autonumber
     actor U as Planner
     participant JS as plan_chat_controller.js
+    participant H as Mercure hub
     participant C as ChatController
+    participant W as agent worker
     participant A as PlanAssistant
     participant M as Claude
     participant T as MCP tools (stdio)
     participant S as Stores
     participant LC as PlanWorkspace
 
+    JS->>H: subscribe to spongecity/plan/{id}/chat (on page load)
     U->>JS: "Where would rain gardens help most?"
     JS->>C: POST /plan/{id}/chat
-    C->>A: ask(planId, message)
+    C->>W: AskPlanningAgent (Messenger, transport agent)
+    C-->>JS: 202
+    W->>A: ask(planId, message, language)
     A->>A: history + "plan_id, interface_language"
     A->>M: messages
     loop until the model answers in text
@@ -321,8 +334,9 @@ sequenceDiagram
     end
     M-->>A: reply
     A->>S: record the turn (ConversationStore)
-    A-->>C: reply text
-    C-->>JS: 200 { reply }
+    A-->>W: reply text
+    W->>H: publish { reply } (ChatStream), or { error }
+    H--)JS: the reply
     JS--)LC: plan:changed (final)
 ```
 
