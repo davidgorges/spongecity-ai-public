@@ -13,7 +13,7 @@ queues in SQLite under the kernel's share dir (`var/share/<env>`, set by `APP_SH
 | PHP version | 8.4 or later |
 | Frontend package manager | None (AssetMapper and the Tailwind bundle need no Node) |
 | Zero downtime deployments | On |
-| Shared paths | `var/share` |
+| Shared paths | `var/share`, `var/log` |
 
 `var/share` holds the SQLite database (the Messenger queues, see `DATABASE_URL`), which must survive
 a release, and the computed-results cache, which may not. Plans are in Redis. `var/` itself is committed (with only a
@@ -24,6 +24,13 @@ a release, and the computed-results cache, which may not. Plans are in Redis. `v
 the pool namespace with the project dir, which differs per release: plans would vanish on every
 deploy, and workers still on the previous release would not find plans the web just created (or
 hear `messenger:stop-workers`).
+
+## Logs
+
+In prod, errors (with the 50 log lines before them) go to `var/log/prod-YYYY-MM-DD.log`, kept for
+14 days; deprecations to `var/log/prod.deprecations-YYYY-MM-DD.log`. Not stderr: PHP-FPM drops the
+stderr of web requests. `var/log` is shared, so the files survive deploys. The workers also print
+to their background process log in Forge.
 
 ## Environment
 
