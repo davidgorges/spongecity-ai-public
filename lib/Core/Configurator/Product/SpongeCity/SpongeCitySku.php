@@ -7,6 +7,8 @@ namespace Core\Configurator\Product\SpongeCity;
 final class SpongeCitySku
 {
     public const string PLOT = 'SC-PLOT';
+    /** a ground area of the plot (a lawn on an asphalt plot), drawn as it is: not an article, never on the bill */
+    public const string AREA = 'SC-AREA';
     public const string TREE = 'SC-TREE';
     /** the trench below a new tree (Baumrigole), per m³: excavation, structural soil, gravel, inlet */
     public const string TREE_TRENCH = 'SC-TREE-TRENCH';

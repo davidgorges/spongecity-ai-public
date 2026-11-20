@@ -58,6 +58,8 @@ final class InterventionBuilder
     /** layers of the ground, millimetres: the plot lies lowest, interventions on top of existing paving */
     private const int PLOT_TOP = 4;
     private const int PLOT_THICKNESS = 40;
+    /** a ground area of the plot (a lawn on an asphalt plot): over the plot, under every intervention */
+    private const int AREA_TOP = 7;
     private const int LAYER_THICKNESS = 40;
     private const int PERMEABLE_TOP = 14;
     private const int PLANTING_TOP = 18;
@@ -125,15 +127,25 @@ final class InterventionBuilder
         $assembly->environment(Environment::GARDEN_PATH, false);
         $assembly->environment(Environment::SUBURBAN, self::isSuburban($site));
 
+        $plotSurface = O::SURFACE_ASPHALT;
         foreach ($site->ofType(O::PLOT) as $plot) {
-            $surface = is_string($plot[O::SURFACE] ?? null) ? $plot[O::SURFACE] : O::SURFACE_ASPHALT;
-            $material = self::MATERIAL_PLOT_PREFIX.$surface;
-            $assembly->material($material, new Material(self::SURFACE_COLORS[$surface] ?? self::SURFACE_COLORS[O::SURFACE_ASPHALT], roughness: 0.95));
-            $part = Slab::onGround(self::LABEL_PREFIX.O::PLOT, $material, Site::points($plot), self::PLOT_THICKNESS, self::PLOT_TOP - self::PLOT_THICKNESS);
+            $plotSurface = is_string($plot[O::SURFACE] ?? null) ? $plot[O::SURFACE] : O::SURFACE_ASPHALT;
+            $part = Slab::onGround(self::LABEL_PREFIX.O::PLOT, $this->ground($assembly, $plotSurface), Site::points($plot), self::PLOT_THICKNESS, self::PLOT_TOP - self::PLOT_THICKNESS);
             // the whole plot frames the camera, but it is not an article: counted false keeps it off the bill
             $assembly->add(new Part(SpongeCitySku::PLOT, $part->label, $part->shape, $part->material, $part->position, $part->rotation, counted: false, draped: true));
-            // the plot's areas (a lawn, a car park, what a person said a zone's ground is) are not drawn:
-            // they are facts for the balance and the placement, the view shows the place as it looks
+        }
+        // the plot's areas whose ground is known (a lawn, from OpenStreetMap or as a person said) and
+        // differs from the plot's: drawn as that ground, so the view shows the place as it looks. An
+        // area of unknown ground is not drawn: nothing is guessed.
+        foreach ($site->ofType(O::AREA) as $area) {
+            $surface = is_string($area[O::SURFACE] ?? null) ? $area[O::SURFACE] : O::SURFACE_UNKNOWN;
+            $points = Site::points($area);
+            if (!isset(self::SURFACE_COLORS[$surface]) || $surface === $plotSurface || count($points) < 3) {
+                continue;
+            }
+            $part = Slab::onGround(self::LABEL_PREFIX.O::AREA, $this->ground($assembly, $surface), $points, self::LAYER_THICKNESS, self::AREA_TOP - self::LAYER_THICKNESS);
+            // its own SKU: the plot map's preview reshapes the plot's part (SKU_PLOT in scene_renderer.js), not these
+            $assembly->add(new Part(SpongeCitySku::AREA, $part->label, $part->shape, $part->material, $part->position, $part->rotation, counted: false, draped: true));
         }
 
         foreach ($site->objects as $object) {
@@ -297,6 +309,15 @@ final class InterventionBuilder
         $slab = Slab::onGround($label, $material, $points, self::LAYER_THICKNESS, $top - self::LAYER_THICKNESS);
 
         return [new Part($sku, $label, $slab->shape, $material, $slab->position, $slab->rotation, $measure, appearance: $appearance)];
+    }
+
+    /** the material of a ground (a plot's, an area's): one per surface, shared */
+    private function ground(Assembly $assembly, string $surface): string
+    {
+        $material = self::MATERIAL_PLOT_PREFIX.$surface;
+        $assembly->material($material, new Material(self::SURFACE_COLORS[$surface] ?? self::SURFACE_COLORS[O::SURFACE_ASPHALT], roughness: 0.95));
+
+        return $material;
     }
 
     private function materials(Assembly $assembly): void
