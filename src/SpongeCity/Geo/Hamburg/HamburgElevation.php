@@ -11,7 +11,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 /**
  * Hamburg's terrain model DGM1 (1 m, airborne laser scan 2022), read tile by tile
  * out of the city's 1.4 GB ZIP download (RemoteZip): only the 1 × 1 km GeoTIFFs a
- * site needs, about 1.7 MB each, cached for a week.
+ * site needs, about 1.7 MB each, cached (GeodataCache::LIFETIME_SECONDS).
  */
 final readonly class HamburgElevation
 {
@@ -20,7 +20,6 @@ final readonly class HamburgElevation
     /** tiles are named by the kilometre of their south-west corner: …/dgm1_32_<E km>_<N km>_1_hh_2022.tif */
     private const string TILE_PATTERN = '#_32_%d_%d_1_hh_2022\.tif$#i';
     private const int TILE_METRES = 1000;
-    private const int CACHE_SECONDS = 604_800;
 
     private RemoteZip $zip;
 
@@ -28,7 +27,7 @@ final readonly class HamburgElevation
         HttpClientInterface $httpClient,
         CacheInterface $cache,
     ) {
-        $this->zip = new RemoteZip($httpClient, $cache, self::ZIP_URL, self::CACHE_SECONDS);
+        $this->zip = new RemoteZip($httpClient, $cache, self::ZIP_URL);
     }
 
     /**

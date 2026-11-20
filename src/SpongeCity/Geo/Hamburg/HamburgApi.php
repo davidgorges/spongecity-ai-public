@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace App\SpongeCity\Geo\Hamburg;
 
 use App\SpongeCity\Geo\GeoBox;
+use App\SpongeCity\Geo\GeodataCache;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -12,7 +14,7 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
 /**
  * Hamburg's open geodata through its OGC API Features (api.hamburg.de, ldproxy): the
  * features of a collection within a bounding box, as GeoJSON (or, for the LoD2 building
- * model, CityJSON). Answers are cached per box for a day; the city's data changes yearly.
+ * model, CityJSON). Answers are cached per box (GeodataCache::LIFETIME_SECONDS); the city's data changes yearly.
  */
 final readonly class HamburgApi
 {
@@ -29,12 +31,12 @@ final readonly class HamburgApi
     /** the ALKIS service takes about 20 s for a few hundred buildings */
     private const int REQUEST_TIMEOUT_SECONDS = 30;
     private const int MAX_DURATION_SECONDS = 60;
-    private const int CACHE_SECONDS = 86400;
     /** bump when a query changes, so answers to the old one are not reused */
     private const int CACHE_VERSION = 1;
 
     public function __construct(
         private HttpClientInterface $httpClient,
+        #[Autowire(service: GeodataCache::POOL)]
         private CacheInterface $cache,
     ) {
     }
@@ -148,7 +150,7 @@ final readonly class HamburgApi
         $key = sprintf('hamburg_v%d_%s', self::CACHE_VERSION, hash('xxh128', implode('|', [$dataset, $collection, $format, $box->toBbox()])));
 
         return $this->cache->get($key, function (ItemInterface $item) use ($dataset, $collection, $box, $format, $extract): array {
-            $item->expiresAfter(self::CACHE_SECONDS);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
             $items = [];
             for ($page = 0; $page < self::MAX_PAGES; ++$page) {
                 $data = $this->httpClient->request('GET', sprintf('%s/%s/collections/%s/items', self::BASE_URL, $dataset, $collection), [

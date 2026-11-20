@@ -31,7 +31,6 @@ final readonly class RemoteZip
         private HttpClientInterface $httpClient,
         private CacheInterface $cache,
         private string $url,
-        private int $cacheSeconds,
     ) {
     }
 
@@ -41,7 +40,7 @@ final readonly class RemoteZip
     public function entries(): array
     {
         return $this->cache->get($this->key('directory'), function (ItemInterface $item): array {
-            $item->expiresAfter($this->cacheSeconds);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
             $size = (int) ($this->httpClient->request('HEAD', $this->url, $this->options())->getHeaders()['content-length'][0] ?? 0);
             $tail = $this->range(max(0, $size - self::END_OF_DIRECTORY_SEARCH), min($size, self::END_OF_DIRECTORY_SEARCH));
             $end = strrpos($tail, self::END_OF_DIRECTORY);
@@ -88,7 +87,7 @@ final readonly class RemoteZip
         }
 
         return $this->cache->get($this->key('file_'.$name), function (ItemInterface $item) use ($entry): string {
-            $item->expiresAfter($this->cacheSeconds);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
 
             return $this->unpack($entry);
         });

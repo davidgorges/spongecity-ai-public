@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Geo;
 
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\Exception\ExceptionInterface;
@@ -28,7 +29,6 @@ final readonly class OverpassClient
      */
     private const int REQUEST_TIMEOUT_SECONDS = 30;
 
-    private const int CACHE_SECONDS = 86400;
     /** bump when the query changes, so answers to the old query are not reused */
     private const int CACHE_VERSION = 5;
     private const int COORDINATE_DECIMALS = 4;
@@ -37,6 +37,7 @@ final readonly class OverpassClient
 
     public function __construct(
         private HttpClientInterface $httpClient,
+        #[Autowire(service: GeodataCache::POOL)]
         private CacheInterface $cache,
     ) {
     }
@@ -46,11 +47,11 @@ final readonly class OverpassClient
      */
     public function around(GeoPoint $centre, int $radiusMetres): array
     {
-        // the public instances are shared and often overloaded: ask each place once a day
+        // the public instances are shared and often overloaded: ask each place once per cache lifetime
         $key = sprintf('overpass_v%d_%s_%s_%d', self::CACHE_VERSION, round($centre->latitude, self::COORDINATE_DECIMALS), round($centre->longitude, self::COORDINATE_DECIMALS), $radiusMetres);
 
         return $this->cache->get($key, function (ItemInterface $item) use ($centre, $radiusMetres): array {
-            $item->expiresAfter(self::CACHE_SECONDS);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
 
             return $this->fetch($centre, $radiusMetres);
         });
@@ -66,7 +67,7 @@ final readonly class OverpassClient
         $key = sprintf('overpass_surroundings_v%d_%s_%s_%d', self::CACHE_VERSION, round($centre->latitude, self::COORDINATE_DECIMALS), round($centre->longitude, self::COORDINATE_DECIMALS), $radiusMetres);
 
         return $this->cache->get($key, function (ItemInterface $item) use ($centre, $radiusMetres): array {
-            $item->expiresAfter(self::CACHE_SECONDS);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
 
             return $this->request(sprintf(
                 '[out:json][timeout:%1$d];('

@@ -14,6 +14,7 @@ use PHPUnit\Framework\Attributes\Test;
 use Psr\Log\NullLogger;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
 use Symfony\Bundle\FrameworkBundle\Test\WebTestCase;
+use Symfony\Component\Cache\Adapter\ArrayAdapter;
 use Symfony\Component\HttpClient\MockHttpClient;
 use Symfony\Component\HttpClient\Response\MockResponse;
 use Symfony\Component\HttpClient\Response\JsonMockResponse;
@@ -93,7 +94,7 @@ final class HomeControllerTest extends WebTestCase
     {
         $client = static::createClient();
         $client->disableReboot();
-        static::getContainer()->set(NominatimGeocoder::class, new NominatimGeocoder(new MockHttpClient(new JsonMockResponse($hits)), new NullLogger()));
+        static::getContainer()->set(NominatimGeocoder::class, new NominatimGeocoder(new MockHttpClient(new JsonMockResponse($hits)), new NullLogger(), new ArrayAdapter()));
 
         return $client;
     }

@@ -21,3 +21,10 @@ when@prod:
                 spongecity.storage:
                     adapter: cache.adapter.redis
                     provider: '%env(STORAGE_REDIS_URL)%'
+
+                # What the geodata services answered about a place (App\SpongeCity\Geo\GeodataCache):
+                # the same address imports again without asking them. Entries expire (each service
+                # sets its own lifetime); the large raw downloads stay in cache.app on disk.
+                spongecity.geodata:
+                    adapter: cache.adapter.redis
+                    provider: '%env(STORAGE_REDIS_URL)%'

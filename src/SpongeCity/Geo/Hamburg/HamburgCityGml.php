@@ -27,7 +27,6 @@ final readonly class HamburgCityGml
     /** tiles by the kilometre of their south-west corner: LoD2_32_<E km>_<N km>_1_HH.gml */
     private const string TILE_PATTERN = '#^LoD2_32_%d_%d_1_HH\.gml$#';
     private const int TILE_METRES = 1000;
-    private const int CACHE_SECONDS = 604_800;
     private const string SRS = 'urn:adv:crs:ETRS89_UTM32*DE_DHHN2016_NH';
     private const string MEMBER = '#<core:cityObjectMember>.*?</core:cityObjectMember>#s';
     private const string FIRST_POSITION = '#<gml:pos(?:List)?[^>]*>\s*([\d.]+)\s+([\d.]+)#';
@@ -40,7 +39,7 @@ final readonly class HamburgCityGml
         HttpClientInterface $httpClient,
         CacheInterface $cache,
     ) {
-        $this->zip = new RemoteZip($httpClient, $cache, self::ZIP_URL, self::CACHE_SECONDS);
+        $this->zip = new RemoteZip($httpClient, $cache, self::ZIP_URL);
     }
 
     /**

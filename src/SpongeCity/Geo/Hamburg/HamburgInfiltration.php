@@ -8,9 +8,11 @@ use App\SpongeCity\Conditions\InfiltrationPotential;
 use App\SpongeCity\Conditions\SiteConditions;
 use App\SpongeCity\Geo\DataSource;
 use App\SpongeCity\Geo\GeoBox;
+use App\SpongeCity\Geo\GeodataCache;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\LocalProjection;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 
@@ -23,7 +25,6 @@ final readonly class HamburgInfiltration
     public const string SOURCE = 'infiltration';
     public const string DATASET = 'versickerung';
     public const string COLLECTION = 'versickerungspotential';
-    private const int CACHE_SECONDS = 86400;
     private const int CACHE_VERSION = 1;
     private const float MILLIMETRES_PER_METRE = 1000.0;
     private const int DECIMALS = 1;
@@ -31,6 +32,7 @@ final readonly class HamburgInfiltration
     public function __construct(
         private HamburgApi $api,
         private LoggerInterface $logger,
+        #[Autowire(service: GeodataCache::POOL)]
         private CacheInterface $cache,
     ) {
     }
@@ -48,7 +50,7 @@ final readonly class HamburgInfiltration
         // only the part around the site is kept of each area; that is what is cached
         $key = sprintf('hamburg_infiltration_v%d_%s_%s_%d', self::CACHE_VERSION, round($centre->latitude, 5), round($centre->longitude, 5), $radiusMetres);
         $areas = $this->unlessFailing(fn (): array => $this->cache->get($key, function (ItemInterface $item) use ($centre, $radiusMetres): array {
-            $item->expiresAfter(self::CACHE_SECONDS);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
 
             return $this->infiltrationAreas($centre, $radiusMetres);
         }));
