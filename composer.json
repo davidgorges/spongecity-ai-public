@@ -25,6 +25,7 @@
         "symfony/http-client": "8.2.*",
         "symfony/lock": "8.2.*",
         "symfony/mcp-bundle": "^1.0@beta",
+        "symfony/mercure-bundle": "*",
         "symfony/messenger": "8.2.*",
         "symfony/monolog-bundle": "^4.1",
         "symfony/process": "8.2.*",

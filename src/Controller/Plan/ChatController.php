@@ -4,40 +4,34 @@ declare(strict_types=1);
 
 namespace App\Controller\Plan;
 
-use App\SpongeCity\Chat\PlanAssistant;
+use App\SpongeCity\Chat\AskPlanningAgent;
 use App\SpongeCity\Plan\Plan;
-use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
+use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Attribute\MapRequestPayload;
+use Symfony\Component\Messenger\MessageBusInterface;
 use Symfony\Component\Routing\Attribute\Route;
 
+/**
+ * Hands the person's message to the planning agent in a worker and answers at once: a turn takes
+ * a minute or more, longer than a web request may. The reply arrives through Mercure (ChatStream).
+ */
 final class ChatController extends AbstractController
 {
     public const string ROUTE = 'plan_chat';
-    public const string KEY_REPLY = 'reply';
-    public const string KEY_ERROR = 'error';
-    private const int TIME_LIMIT_SECONDS = 180;
 
     public function __construct(
-        private readonly PlanAssistant $assistant,
-        private readonly LoggerInterface $logger,
+        private readonly MessageBusInterface $bus,
     ) {
     }
 
     #[Route('/plan/{id}/chat', name: self::ROUTE, methods: ['POST'])]
-    public function __invoke(Plan $plan, #[MapRequestPayload] ChatMessage $chat): JsonResponse
+    public function __invoke(Plan $plan, #[MapRequestPayload] ChatMessage $chat, Request $request): JsonResponse
     {
-        // one turn of the agent is several model calls with tools in between (40–60 s when it plans
-        // interventions): longer than PHP's default limit for a request
-        set_time_limit(self::TIME_LIMIT_SECONDS);
-        try {
-            return new JsonResponse([self::KEY_REPLY => $this->assistant->ask($plan->id, trim($chat->message))]);
-        } catch (\Throwable $exception) {
-            $this->logger->error('The planning agent failed', ['plan' => $plan->id, 'exception' => $exception]);
+        $this->bus->dispatch(new AskPlanningAgent($plan->id, trim($chat->message), $request->getLocale()));
 
-            return new JsonResponse([self::KEY_ERROR => 'plan.chat.failed'], Response::HTTP_BAD_GATEWAY);
-        }
+        return new JsonResponse(null, Response::HTTP_ACCEPTED);
     }
 }

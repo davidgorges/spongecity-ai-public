@@ -7,6 +7,13 @@ workers:
     simstadt:
         cmd: ['symfony', 'console', 'messenger:consume', 'simstadt', '-vv', '--time-limit=3600']
         watch: ['config', 'src', 'lib', 'vendor']
+    # the planning agent's turns (App\SpongeCity\Chat\AskPlanningAgentHandler): the reply goes out through Mercure
+    agent:
+        cmd: ['symfony', 'console', 'messenger:consume', 'agent', '-vv', '--time-limit=3600']
+        watch: ['config', 'src', 'lib', 'vendor']
+    # the Mercure hub (compose.yaml) the chat's replies reach the browser through; the Symfony CLI
+    # exports its MERCURE_URL and MERCURE_PUBLIC_URL to the web server and `symfony console`
+    docker_compose: ~
     # rebuilds public CSS whenever a template or stylesheet changes
     tailwind:
         cmd: ['symfony', 'console', 'tailwind:build', '--watch']

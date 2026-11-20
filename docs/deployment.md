@@ -47,6 +47,12 @@ ANTHROPIC_API_KEY=
 OSM_USER_AGENT="SpongeCityAI/0.1 (contact: you@your-domain.tld)"
 # Forge's Redis: the default is redis://${REDIS_HOST}:${REDIS_PORT}; with a password
 # STORAGE_REDIS_URL=redis://PASSWORD@127.0.0.1:6379
+# Mercure (see "Mercure hub" below): the app publishes to the hub on localhost, the browser
+# subscribes through nginx; the secret and the issuer must match the hub's
+MERCURE_URL=http://127.0.0.1:3000/.well-known/mercure
+MERCURE_PUBLIC_URL=https://your-domain.tld/.well-known/mercure
+MERCURE_JWT_SECRET=        # openssl rand -hex 32, the same as the hub's keys
+MERCURE_JWT_ISSUER=https://your-domain.tld
 ```
 
 Every release lives in its own directory (`releases/<n>`). The cache namespaces would follow it, so
@@ -76,12 +82,73 @@ not be linked into the release yet when Composer runs.
 
 ## Daemons
 
-One per Messenger transport, both with the directory `/home/forge/<site>/current`:
+One per Messenger transport, all with the directory `/home/forge/<site>/current`:
 
 ```
 php bin/console messenger:consume async --time-limit=3600 --memory-limit=256M
 php bin/console messenger:consume simstadt --time-limit=3600 --limit=1
+php bin/console messenger:consume agent --time-limit=3600 --memory-limit=256M
 ```
+
+`agent` runs the planning agent's turns (`AskPlanningAgent`): a turn takes a minute or more, longer
+than PHP-FPM lets a web request run, so the chat only queues it and the reply comes back through
+Mercure (`ChatStream`). Its own transport, so a turn does not hold up site imports.
+
+And the Mercure hub (next section): `/home/forge/mercure/start.sh`, directory `/home/forge/mercure`.
+
+## Mercure hub
+
+The chat's replies reach the browser through a [Mercure](https://mercure.rocks) hub on the same
+machine, behind nginx. `symfony/mercure` speaks the **Mercure protocol 1.0**: use hub v1.x (a 0.x
+hub answers 401 to its tokens).
+
+```bash
+mkdir -p ~/mercure/data && cd ~/mercure
+curl -fsSL https://github.com/dunglas/mercure/releases/download/v1.1.6/mercure_Linux_x86_64.tar.gz | tar xz
+openssl rand -hex 32    # the secret: MERCURE_JWT_SECRET in the app, both keys below
+
+cat > hub.env <<'ENV'
+SERVER_NAME=:3000
+MERCURE_PUBLISHER_JWT_KEY=<secret>
+MERCURE_SUBSCRIBER_JWT_KEY=<secret>
+MERCURE_TRUSTED_ISSUERS=https://your-domain.tld
+MERCURE_EXTRA_DIRECTIVES=anonymous
+GLOBAL_OPTIONS=admin off
+XDG_DATA_HOME=/home/forge/mercure/data
+XDG_CONFIG_HOME=/home/forge/mercure/data
+ENV
+chmod 600 hub.env
+
+cat > start.sh <<'SH'
+#!/usr/bin/env bash
+set -a; . /home/forge/mercure/hub.env; set +a
+exec /home/forge/mercure/mercure run --config /home/forge/mercure/Caddyfile
+SH
+chmod +x start.sh
+```
+
+- `SERVER_NAME=:3000`: plain HTTP on port 3000; the firewall keeps it off the internet, nginx is
+  the way in. `MERCURE_TRUSTED_ISSUERS` must equal the app's `MERCURE_JWT_ISSUER`.
+- `anonymous`: the chat's updates are public, like the plan itself (anyone with its id opens it).
+
+In the site's nginx configuration (Forge: site, Edit Nginx Configuration), before `location /`:
+
+```nginx
+location /.well-known/mercure {
+    proxy_pass http://127.0.0.1:3000;
+    proxy_http_version 1.1;
+    proxy_set_header Connection "";
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-Host $host;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 24h;
+}
+```
+
+Check: `curl -N https://your-domain.tld/.well-known/mercure?match=test` stays open (the stream),
+instead of answering 404 or 502.
 
 ## Server
 

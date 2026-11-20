@@ -10,6 +10,8 @@
 {% set viewer_debug = app.request.query.getBoolean(constant('App\\Twig\\Components\\PlanWorkspace::QUERY_DEBUG')) %}
 {% set viewer_tier = app.request.query.getInt(constant('App\\Twig\\Components\\PlanWorkspace::QUERY_TIER'), constant('App\\Twig\\Components\\PlanWorkspace::TIER_UNPINNED')) %}
 {% set chat_url = path('plan_chat', {id: plan.id}) %}
+{# the agent answers in a worker; its reply arrives on this Mercure topic (App\SpongeCity\Chat\ChatStream) #}
+{% set chat_stream = mercure(constant('App\\SpongeCity\\Chat\\ChatStream::TOPIC_FORMAT')|format(plan.id)) %}
 {% set viewer_title = plan.title %}
 {% set chat_errors = {
     failed: 'plan.chat.failed'|trans,
@@ -238,7 +240,7 @@
         <section
             class="flex min-h-0 flex-col gap-3"
             data-live-ignore
-            {{ stimulus_controller('plan-chat', {url: chat_url, errors: chat_errors}) }}
+            {{ stimulus_controller('plan-chat', {url: chat_url, stream: chat_stream, errors: chat_errors}) }}
         >
             <ol class="flex max-h-72 min-h-24 flex-col gap-2 overflow-y-auto" data-plan-chat-target="messages" aria-live="polite">
                 {% for turn in history %}
