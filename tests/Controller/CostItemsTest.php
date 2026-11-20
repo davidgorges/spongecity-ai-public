@@ -63,6 +63,26 @@ final class CostItemsTest extends WebTestCase
         self::assertStringContainsString('100.0 m²', $gardens->text());
     }
 
+    #[Test]
+    public function theSelectedMeasureShowsWhatItCostsOnItsOwn(): void
+    {
+        $plan = $this->plan();
+        $costs = static::getContainer()->get(PlanAnalyzer::class)->measureCosts($plan);
+        $component = $this->createLiveComponent(PlanWorkspace::class, ['planId' => $plan->id]);
+        $workspace = $component->component();
+        self::assertInstanceOf(PlanWorkspace::class, $workspace);
+        $garden = array_find($workspace->interventions(), static fn (array $m): bool => O::RAINGARDEN === $m['type']);
+        self::assertNotNull($garden);
+
+        $component->call(PlanWorkspace::ACTION_SELECT_OBJECT, ['id' => $garden['id']]);
+        $card = $component->render()->crawler()->filter('[data-window="details"] [aria-labelledby="object-title"]');
+
+        $cost = $costs[$garden['id']];
+        self::assertGreaterThan(0, $cost['investment']);
+        self::assertSame(number_format($cost['investment'], 0).' €', trim($card->filter('[data-object-cost]')->text()), 'the same price as in the measures list');
+        self::assertStringContainsString(number_format($cost['maintenance_per_year'], 0).' € / year', $card->text());
+    }
+
     private function plan(): Plan
     {
         $plans = static::getContainer()->get(PlanStore::class);

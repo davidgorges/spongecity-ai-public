@@ -180,6 +180,7 @@ plan:
         close: 'Close %title%'
         resize: 'Resize %title% (drag, or arrow keys; double-click for its own size)'
     object:
+        cost: What it costs
         type:
             raingarden: Rain garden
             permeable: Permeable surface
