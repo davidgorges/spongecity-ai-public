@@ -121,9 +121,11 @@ final readonly class PlanAnalyzer
 
     /**
      * The investment, line by line, and what keeping the measures working costs a year: both priced
-     * against the same bill of quantities, so they cover the same measures.
+     * against the same bill of quantities, so they cover the same measures. `lines` are the bill's
+     * lines (one per SKU and size: four rain gardens of four sizes are four lines); `items` add them
+     * up per SKU, for a person to read (four rain gardens, their area and cost together).
      *
-     * @return array{currency: string, total: float, complete: bool, maintenance_per_year: float, lifecycle_years: int, lifecycle_total: float, maintenance_basis: string, funding: array<string, mixed>, net_total: float, lines: list<array{sku: string, label: string, amount: float, unit: string, unit_price: float|null, total: float|null, maintenance_per_year: float|null}>}
+     * @return array{currency: string, total: float, complete: bool, maintenance_per_year: float, lifecycle_years: int, lifecycle_total: float, maintenance_basis: string, funding: array<string, mixed>, net_total: float, lines: list<array{sku: string, label: string, amount: float, quantity: int, unit: string, unit_price: float|null, total: float|null, maintenance_per_year: float|null}>, items: list<array{sku: string, count: int, amount: float, unit: string, total: float|null, maintenance_per_year: float|null}>}
      */
     public function cost(Plan $plan): array
     {
@@ -133,6 +135,17 @@ final readonly class PlanAnalyzer
         $yearly = $maintenance->total() / self::CENTS_PER_EURO;
         $years = SpongeCityDefinition::LIFECYCLE_YEARS;
         $funding = FundingEstimate::of($quote, $plan->applicant(), $this->programmesFor($plan));
+        $lines = array_map(static fn (QuoteLine $line, QuoteLine $care): array => [
+            'sku' => $line->bomLine->sku,
+            'label' => $line->bomLine->label,
+            'amount' => round($line->bomLine->totalAmount(), 1),
+            'quantity' => $line->bomLine->quantity,
+            // pieces (trees, a green roof's set-up) are counted, areas measured
+            'unit' => $line->bomLine->measure->kind,
+            'unit_price' => null === $line->unitPrice ? null : $line->unitPrice / self::CENTS_PER_EURO,
+            'total' => null === $line->total ? null : $line->total / self::CENTS_PER_EURO,
+            'maintenance_per_year' => null === $care->total ? null : $care->total / self::CENTS_PER_EURO,
+        ], $quote->lines, $maintenance->lines);
 
         return [
             'currency' => $quote->currency,
@@ -144,17 +157,33 @@ final readonly class PlanAnalyzer
             'maintenance_basis' => sprintf(self::MAINTENANCE_BASIS, $years),
             'funding' => $this->fundingSummary($funding),
             'net_total' => ($quote->total() - $funding->total()) / self::CENTS_PER_EURO,
-            'lines' => array_map(static fn (QuoteLine $line, QuoteLine $care): array => [
-                'sku' => $line->bomLine->sku,
-                'label' => $line->bomLine->label,
-                'amount' => round($line->bomLine->totalAmount(), 1),
-                // pieces (trees, a green roof's set-up) are counted, areas measured
-                'unit' => $line->bomLine->measure->kind,
-                'unit_price' => null === $line->unitPrice ? null : $line->unitPrice / self::CENTS_PER_EURO,
-                'total' => null === $line->total ? null : $line->total / self::CENTS_PER_EURO,
-                'maintenance_per_year' => null === $care->total ? null : $care->total / self::CENTS_PER_EURO,
-            ], $quote->lines, $maintenance->lines),
+            'lines' => $lines,
+            'items' => self::items($lines),
         ];
+    }
+
+    /**
+     * The bill's lines added up per SKU, in the order the SKUs first appear. A sum is unknown (null)
+     * only when none of its lines has a price.
+     *
+     * @param list<array{sku: string, amount: float, quantity: int, unit: string, total: float|null, maintenance_per_year: float|null}> $lines
+     *
+     * @return list<array{sku: string, count: int, amount: float, unit: string, total: float|null, maintenance_per_year: float|null}>
+     */
+    private static function items(array $lines): array
+    {
+        $sum = static fn (?float $a, ?float $b): ?float => null === $a && null === $b ? null : ($a ?? 0.0) + ($b ?? 0.0);
+        $items = [];
+        foreach ($lines as $line) {
+            $item = $items[$line['sku']] ?? ['sku' => $line['sku'], 'count' => 0, 'amount' => 0.0, 'unit' => $line['unit'], 'total' => null, 'maintenance_per_year' => null];
+            $item['count'] += $line['quantity'];
+            $item['amount'] = round($item['amount'] + $line['amount'], 1);
+            $item['total'] = $sum($item['total'], $line['total']);
+            $item['maintenance_per_year'] = $sum($item['maintenance_per_year'], $line['maintenance_per_year']);
+            $items[$line['sku']] = $item;
+        }
+
+        return array_values($items);
     }
 
     /**

@@ -762,67 +762,103 @@
                 </twig:Empty:Header>
             </twig:Empty>
         {% else %}
-            {# the total first: the list of measures runs long, the bill of quantities follows it #}
-            <div class="flex items-baseline justify-between gap-2">
-                <span class="text-sm font-medium">{{ 'plan.cost.total'|trans }}</span>
-                <span class="font-heading text-lg font-semibold tabular-nums">{{ cost.total|number_format(0) }} €</span>
-            </div>
-            <twig:Item:Group class="divide-y divide-border rounded-lg border border-border">
-                {% for measure in interventions %}
-                    {% set measure_name = measure.name %}
-                    {% set remove_label = 'plan.measures.remove'|trans({'%name%': measure_name}) %}
-                    <twig:Item size="sm" role="listitem" class="flex-nowrap rounded-none px-3 py-2 {{ measure.id == selected_id ? 'bg-accent' : '' }}">
-                        <twig:Item:Content class="min-w-0">
-                            {# a click shows it: selected in the view, its details open #}
-                            <button
-                                type="button"
-                                class="flex min-w-0 flex-col items-start rounded-sm text-left outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
-                                title="{{ 'plan.measures.select'|trans({'%name%': measure_name}) }}"
-                                aria-current="{{ measure.id == selected_id ? 'true' : 'false' }}"
-                                data-action="live#action"
-                                data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SELECT_OBJECT') }}"
-                                data-live-id-param="{{ measure.id }}"
-                            >
-                                <twig:Item:Title class="w-full font-normal break-words">{{ measure_name }}</twig:Item:Title>
-                                <span class="text-xs text-muted-foreground tabular-nums">{{ measure.size }}{% if measure.cost %} · {{ measure.cost|number_format(0) }} €{% endif %}</span>
-                            </button>
-                        </twig:Item:Content>
-                        <twig:Item:Actions>
-                            <twig:Button variant="ghost" size="icon-xs" aria-label="{{ remove_label }}" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ measure.id }}">
-                                <twig:ux:icon name="lucide:x" aria-hidden="true" />
-                            </twig:Button>
-                        </twig:Item:Actions>
-                    </twig:Item>
-                {% endfor %}
-            </twig:Item:Group>
-            <twig:Table>
-                <twig:Table:Caption class="sr-only">{{ 'plan.cost.title'|trans }}</twig:Table:Caption>
-                <twig:Table:Body>
-                    {% for line in cost.lines %}
-                        <twig:Table:Row>
-                            <twig:Table:Head scope="row" class="h-auto py-1.5 pl-0 font-normal whitespace-normal">{{ ('plan.sku.' ~ line.sku)|trans }}</twig:Table:Head>
-                            <twig:Table:Cell class="py-1.5 text-right tabular-nums text-muted-foreground">{{ line.amount|number_format(line.unit == piece ? 0 : 1) }} {{ line.unit == piece ? '×' : (line.unit == volume ? 'm³' : 'm²') }}</twig:Table:Cell>
-                            <twig:Table:Cell class="py-1.5 pr-0 text-right tabular-nums">{{ line.total is null ? '–' : line.total|number_format(0) ~ ' €' }}</twig:Table:Cell>
-                        </twig:Table:Row>
+            {# at a glance: what it costs once, after funding, and every year #}
+            <dl class="grid grid-cols-3 gap-2 rounded-lg bg-muted/60 p-3">
+                <div class="flex min-w-0 flex-col gap-0.5">
+                    <dt class="text-xs text-muted-foreground">{{ 'plan.cost.investment'|trans }}</dt>
+                    <dd class="font-heading text-base font-semibold tabular-nums">{{ cost.total|number_format(0) }} €</dd>
+                </div>
+                <div class="flex min-w-0 flex-col gap-0.5">
+                    <dt class="text-xs text-muted-foreground">{{ 'plan.cost.net'|trans }}</dt>
+                    <dd class="font-heading text-base font-semibold tabular-nums">{{ cost.funding.programmes is empty ? '–' : cost.net_total|number_format(0) ~ ' €' }}</dd>
+                </div>
+                <div class="flex min-w-0 flex-col gap-0.5">
+                    <dt class="text-xs text-muted-foreground">{{ 'plan.cost.maintenance'|trans }}</dt>
+                    <dd class="font-heading text-base font-semibold tabular-nums">{{ 'plan.cost.per_year'|trans({'%amount%': cost.maintenance_per_year|number_format(0)}) }}</dd>
+                </div>
+            </dl>
+
+            {# each measure on its own, as placed: pick one to see it, or remove it #}
+            <section aria-labelledby="measures-list-title" class="flex flex-col gap-2">
+                <h3 id="measures-list-title" class="text-xs font-medium text-muted-foreground">{{ 'plan.measures.list'|trans({'%count%': interventions|length}) }}</h3>
+                <twig:Item:Group class="divide-y divide-border rounded-lg border border-border">
+                    {% for measure in interventions %}
+                        {% set measure_name = measure.name %}
+                        {% set remove_label = 'plan.measures.remove'|trans({'%name%': measure_name}) %}
+                        <twig:Item size="sm" role="listitem" class="flex-nowrap gap-3 rounded-none px-2 py-2 {{ measure.id == selected_id ? 'bg-accent' : '' }}">
+                            <twig:Item:Media class="h-10 w-15 overflow-hidden rounded-sm bg-[#f6f5f1]">
+                                {% if measure.schematic %}
+                                    {# decorative: the name next to it says what it is #}
+                                    <img src="{{ asset(measure.schematic) }}" alt="" width="{{ constant('App\\SpongeCity\\Plan\\Schematics::WIDTH') }}" height="{{ constant('App\\SpongeCity\\Plan\\Schematics::HEIGHT') }}" loading="lazy" decoding="async" class="size-full object-cover">
+                                {% endif %}
+                            </twig:Item:Media>
+                            <twig:Item:Content class="min-w-0">
+                                {# a click shows it: selected in the view, its details open #}
+                                <button
+                                    type="button"
+                                    class="flex min-w-0 flex-col items-start rounded-sm text-left outline-none hover:underline focus-visible:ring-2 focus-visible:ring-ring"
+                                    title="{{ 'plan.measures.select'|trans({'%name%': measure_name}) }}"
+                                    aria-current="{{ measure.id == selected_id ? 'true' : 'false' }}"
+                                    data-action="live#action"
+                                    data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_SELECT_OBJECT') }}"
+                                    data-live-id-param="{{ measure.id }}"
+                                >
+                                    <twig:Item:Title class="w-full font-normal break-words">{{ measure_name }}</twig:Item:Title>
+                                    <span class="text-xs text-muted-foreground tabular-nums">{{ measure.size }}</span>
+                                </button>
+                            </twig:Item:Content>
+                            {% if measure.cost %}
+                                <span class="shrink-0 text-sm tabular-nums">{{ measure.cost|number_format(0) }} €</span>
+                            {% endif %}
+                            <twig:Item:Actions>
+                                <twig:Button variant="ghost" size="icon-xs" aria-label="{{ remove_label }}" data-action="live#action" data-live-action-param="{{ remove_action }}" data-live-id-param="{{ measure.id }}">
+                                    <twig:ux:icon name="lucide:x" aria-hidden="true" />
+                                </twig:Button>
+                            </twig:Item:Actions>
+                        </twig:Item>
                     {% endfor %}
-                </twig:Table:Body>
-                <twig:Table:Footer class="bg-transparent">
-                    <twig:Table:Row class="hover:bg-transparent">
-                        <twig:Table:Head scope="row" colspan="2" class="h-auto py-2 pl-0">{{ 'plan.cost.total'|trans }}</twig:Table:Head>
-                        <twig:Table:Cell class="py-2 pr-0 text-right tabular-nums">{{ cost.total|number_format(0) }} €</twig:Table:Cell>
-                    </twig:Table:Row>
-                    <twig:Table:Row class="hover:bg-transparent">
-                        <twig:Table:Head scope="row" colspan="2" class="h-auto py-1 pl-0 font-normal text-muted-foreground">{{ 'plan.cost.maintenance'|trans }}</twig:Table:Head>
-                        <twig:Table:Cell class="py-1 pr-0 text-right tabular-nums text-muted-foreground">{{ 'plan.cost.per_year'|trans({'%amount%': cost.maintenance_per_year|number_format(0)}) }}</twig:Table:Cell>
-                    </twig:Table:Row>
-                    <twig:Table:Row class="hover:bg-transparent">
-                        <twig:Table:Head scope="row" colspan="2" class="h-auto py-1 pl-0 font-normal text-muted-foreground">{{ 'plan.cost.lifecycle'|trans({'%years%': cost.lifecycle_years}) }}</twig:Table:Head>
-                        <twig:Table:Cell class="py-1 pr-0 text-right tabular-nums text-muted-foreground">{{ cost.lifecycle_total|number_format(0) }} €</twig:Table:Cell>
-                    </twig:Table:Row>
-                </twig:Table:Footer>
-            </twig:Table>
-            <p class="text-xs text-muted-foreground">{{ 'plan.cost.note'|trans }}</p>
+                </twig:Item:Group>
+            </section>
+
+            {# the same measures added up per item, as a contractor would quote them #}
+            <section aria-labelledby="bill-title" class="flex flex-col gap-1">
+                <h3 id="bill-title" class="text-xs font-medium text-muted-foreground">{{ 'plan.cost.title'|trans }}</h3>
+                <p class="text-xs text-muted-foreground">{{ 'plan.cost.items_hint'|trans }}</p>
+                <twig:Table>
+                    <twig:Table:Caption class="sr-only">{{ 'plan.cost.title'|trans }}</twig:Table:Caption>
+                    <twig:Table:Body>
+                        {% for item in cost.items %}
+                            {% set counted = item.unit == piece %}
+                            <twig:Table:Row>
+                                <twig:Table:Head scope="row" class="h-auto py-1.5 pl-0 font-normal whitespace-normal">
+                                    {{ ('plan.sku.' ~ item.sku)|trans }}
+                                    {% if not counted and item.count > 1 %}<span class="text-xs text-muted-foreground tabular-nums">· {{ 'plan.cost.count'|trans({'%count%': item.count}) }}</span>{% endif %}
+                                </twig:Table:Head>
+                                <twig:Table:Cell class="py-1.5 text-right tabular-nums text-muted-foreground">{{ item.amount|number_format(counted ? 0 : 1) }} {{ counted ? '×' : (item.unit == volume ? 'm³' : 'm²') }}</twig:Table:Cell>
+                                <twig:Table:Cell class="py-1.5 pr-0 text-right tabular-nums">{{ item.total is null ? '–' : item.total|number_format(0) ~ ' €' }}</twig:Table:Cell>
+                            </twig:Table:Row>
+                        {% endfor %}
+                    </twig:Table:Body>
+                    <twig:Table:Footer class="bg-transparent">
+                        <twig:Table:Row class="hover:bg-transparent">
+                            <twig:Table:Head scope="row" colspan="2" class="h-auto py-2 pl-0">{{ 'plan.cost.total'|trans }}</twig:Table:Head>
+                            <twig:Table:Cell class="py-2 pr-0 text-right tabular-nums">{{ cost.total|number_format(0) }} €</twig:Table:Cell>
+                        </twig:Table:Row>
+                        <twig:Table:Row class="hover:bg-transparent">
+                            <twig:Table:Head scope="row" colspan="2" class="h-auto py-1 pl-0 font-normal text-muted-foreground">{{ 'plan.cost.maintenance'|trans }}</twig:Table:Head>
+                            <twig:Table:Cell class="py-1 pr-0 text-right tabular-nums text-muted-foreground">{{ 'plan.cost.per_year'|trans({'%amount%': cost.maintenance_per_year|number_format(0)}) }}</twig:Table:Cell>
+                        </twig:Table:Row>
+                        <twig:Table:Row class="hover:bg-transparent">
+                            <twig:Table:Head scope="row" colspan="2" class="h-auto py-1 pl-0 font-normal text-muted-foreground">{{ 'plan.cost.lifecycle'|trans({'%years%': cost.lifecycle_years}) }}</twig:Table:Head>
+                            <twig:Table:Cell class="py-1 pr-0 text-right tabular-nums text-muted-foreground">{{ cost.lifecycle_total|number_format(0) }} €</twig:Table:Cell>
+                        </twig:Table:Row>
+                    </twig:Table:Footer>
+                </twig:Table>
+                <p class="text-xs text-muted-foreground">{{ 'plan.cost.note'|trans }}</p>
+            </section>
+
             {# funding: who applies decides the share the programmes pay #}
+            <h3 id="funding-title" class="text-xs font-medium text-muted-foreground">{{ 'plan.cost.funding'|trans }}</h3>
             <div class="flex flex-col gap-1.5">
                 <label for="applicant" class="text-xs text-muted-foreground">{{ constant('Core\\Configurator\\Product\\SpongeCity\\SpongeCityParameter::LABEL_APPLICANT')|trans }}</label>
                 <select id="applicant" data-model="applicant" class="h-8 rounded-md border border-input bg-background px-2 text-sm">
