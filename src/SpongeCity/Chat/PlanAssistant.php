@@ -21,7 +21,7 @@ final readonly class PlanAssistant
     public const string ROLE_ASSISTANT = Conversation::ROLE_ASSISTANT;
     /** what travels with every message: the plan, and the language the interface shows the agent's reasons in */
     public const string MESSAGE_FORMAT = "plan_id: %s\ninterface_language: %s\n\n%s";
-    /** the agent's tools from this application's MCP server (ai.yaml: mcp_server 'spongecity.local') */
+    /** the agent's tools: this application's MCP server, started over stdio (ai.yaml: mcp_server 'spongecity.local') */
     public const string PLANNING_TOOLBOX = 'ai.toolbox.spongecity.mcp.spongecity.local';
 
     public function __construct(

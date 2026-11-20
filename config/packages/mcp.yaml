@@ -7,20 +7,27 @@ mcp:
             # '*' also exposes MCP services from third-party bundles over HTTP.
             registry: 'App\Mcp\'
 
+            transports:
+                # bin/console mcp:server: how the in-app agent reaches the tools (see the client below)
+                stdio: true
+                # /mcp, for outside clients (Claude Desktop, the inspector); localhost only by default
+                http: true
+
             http:
                 path: /mcp
-                # Only these hosts are answered, any other Host header gets a 403 (DNS rebinding protection):
-                # localhost, and the host the in-app agent calls this server by (MCP_SERVER_URL), whatever it is.
-                allowed_hosts: ['localhost', '127.0.0.1', '[::1]', '%env(key:host:url:MCP_SERVER_URL)%']
-
-            # Enable STDIO for clients such as Claude Desktop via bin/console mcp:server.
-            # transports:
-            #     stdio: true
 
     clients:
-        # The in-app agent talks to the MCP server above like any other MCP client would.
+        # The in-app agent talks to the MCP server above like any other MCP client would, over stdio:
+        # it starts the server as a child process for the turn, no URL, no network.
         spongecity:
             servers:
                 local:
-                    transport: http
-                    url: '%env(MCP_SERVER_URL)%'
+                    transport: stdio
+                    command: ['php', '%kernel.project_dir%/bin/console', 'mcp:server']
+                    # the child runs in the same environment and so sees the same plans: the process
+                    # environment, plus the kernel's own (APP_ENV may come from .env files or the web
+                    # server's config, which a child process would not inherit)
+                    inherit_env: true
+                    env:
+                        APP_ENV: '%kernel.environment%'
+                        APP_DEBUG: '%kernel.debug%'

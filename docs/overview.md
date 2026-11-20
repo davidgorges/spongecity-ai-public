@@ -62,7 +62,7 @@ flowchart LR
     end
 
     user == "HTTPS" ==> web
-    web <-- "agent turn ⇄ tool calls on /mcp" --> claude
+    web <-- "agent turn ⇄ tool calls (mcp:server over stdio)" --> claude
     web -- "geocode" --> osm
     workers -- "map data" --> osm
     workers -- "official layers" --> hh
@@ -82,9 +82,9 @@ flowchart LR
     style ext fill:#f8fafc,stroke:#94a3b8,stroke-dasharray:4 3,color:#334155
 ```
 
-- **The agent's tools are this app's own MCP server.** Claude calls `/mcp` on the same app over
-  HTTP while the chat request is still running, so the web server needs more than one worker
-  process (the Symfony CLI has several).
+- **The agent's tools are this app's own MCP server.** The chat request starts it as a child
+  process (`bin/console mcp:server`, stdio) and calls the tools Claude asks for through it: no
+  network, no URL. `/mcp` serves the same tools to outside clients (localhost only).
 - **Slow work never blocks a page.** Site imports (seconds to a minute) and SimStadt runs (up to a
   few minutes) have a queue and a worker each, so one never waits for the other.
 - **Every external source can fail on its own.** Overpass is tried mirror by mirror, and each
@@ -135,7 +135,7 @@ block-beta
 ```
 
 The one loop back up: during a chat turn, `PlanAssistant` sends the conversation to Claude, and
-Claude calls the **MCP tools** (an entry point) over HTTP before it answers.
+Claude calls the **MCP tools** (an entry point, run in a child process over stdio) before it answers.
 
 | Layer | Rule of thumb |
 |---|---|
@@ -300,7 +300,7 @@ sequenceDiagram
     participant C as ChatController
     participant A as PlanAssistant
     participant M as Claude
-    participant T as /mcp tools
+    participant T as MCP tools (stdio)
     participant S as Stores
     participant LC as PlanWorkspace
 
@@ -326,7 +326,7 @@ sequenceDiagram
     JS--)LC: plan:changed (final)
 ```
 
-**The agent's toolbox** (all on `/mcp`, exposed to the model with the prefix `local_`):
+**The agent's toolbox** (the MCP server's tools, exposed to the model with the prefix `local_`):
 
 | Look | Design | Measure | Place by rules | Buildings |
 |---|---|---|---|---|

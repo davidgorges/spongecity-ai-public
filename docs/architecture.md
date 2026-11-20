@@ -24,7 +24,7 @@ flowchart LR
         hc["HomeController → PlanImporter"]
         json["JSON endpoints<br/><small>surroundings · conditions · terrain</small>"]
         chat["ChatController → PlanAssistant"]
-        tools["/mcp · SpongeCityTools<br/><small>PlacementTools · SimStadtTools</small>"]
+        tools["MCP server (mcp:server, stdio) · SpongeCityTools<br/><small>PlacementTools · SimStadtTools</small>"]
         handler["ImportSiteHandler<br/><small>worker: messenger:consume async</small>"]
         store[("PlanStore and siblings<br/><small>cache.app</small>")]
     end
@@ -407,14 +407,18 @@ model's thinking *and* its answer, and with the platform's default of 1000 the t
 all up, so the reply came back as a bare `ThinkingResult` and `asText()` failed ("The planning
 agent could not answer"). Its tools are the **MCP server of this same application**:
 
-- **Server** (`mcp-bundle`, `config/packages/mcp.yaml`): `/mcp` (HTTP) answers only localhost and the
-  host of `MCP_SERVER_URL` (the one the agent calls it by, in production the public host); any other
-  Host header gets a 403. It serves `App\Mcp\SpongeCityTools`, declared with
-  `#[McpTool]`. Any MCP client (Claude Desktop, the inspector) can use it.
-- **Client**: `mcp.clients.spongecity.servers.local` points at `MCP_SERVER_URL`
-  (`${DEFAULT_URI}mcp`, which follows the port the Symfony CLI serves on); the agent's `tools: - mcp_server: 'spongecity.local'`
-  exposes the tools to the model with the prefix `local_`. A server that cannot be listed (unreachable,
-  or a 403 for its host) contributes no tools, silently, and the model then writes its tool calls as
+- **Server** (`mcp-bundle`, `config/packages/mcp.yaml`): serves the `#[McpTool]` methods of
+  `App\Mcp\*` over two transports. **stdio** (`bin/console mcp:server`) is how the agent reaches it;
+  **HTTP** (`/mcp`, localhost only, any other Host header gets a 403) is for outside clients such as
+  Claude Desktop or the inspector.
+- **Client**: `mcp.clients.spongecity.servers.local` starts `bin/console mcp:server` as a child
+  process (`transport: stdio`) for the chat turn, with the parent's environment plus its
+  `APP_ENV`/`APP_DEBUG`, so it reads the same `cache.app` (the same plans). No URL, no network, no
+  host check. The agent's `tools: - mcp_server: 'spongecity.local'` exposes the tools to the model
+  with the prefix `local_`. Both are built-in symfony/ai and mcp-bundle wiring: the tools are
+  declared once, with `#[McpTool]`.
+- A server that cannot be listed (the child does not start: no `php` on `PATH`, `proc_open`
+  disabled) contributes no tools, silently, and the model then writes its tool calls as
   text. `PlanAssistant` therefore refuses the turn when the toolbox is empty
   (`PlanningToolsUnavailable`, logged as "The planning agent failed").
 
@@ -504,8 +508,8 @@ Tools are stateless: the plan id is part of every call (`PlanAssistant` prefixes
 with `plan_id: …`). The system prompt tells the agent to look first, design with tools, measure
 before it claims anything, and never state a number that did not come from a tool.
 
-Because the app calls its own `/mcp` over HTTP while handling a request, the web server needs more
-than one worker (the Symfony CLI server has several).
+The agent's tools run in a child process of the chat request (`bin/console mcp:server` over
+stdio): the server needs the `php` CLI on `PATH` and `proc_open` allowed; `app:doctor` checks it.
 
 
 **Why it is there (`App\SpongeCity\Rationale`).** `place_candidate` takes the agent's `why` (one or
