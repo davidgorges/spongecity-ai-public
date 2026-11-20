@@ -123,7 +123,7 @@ final readonly class CoolingCalculator
                 $evaporatedBy[$class->value] = ($evaporatedBy[$class->value] ?? 0.0) + $litres;
             }
             $material += $m2 * $class->surfaceTemperature();
-            $shadeCooling += $shade->isShaded() ? $m2 * ImpactCalculator::SHADE_TEMPERATURE_REDUCTION : 0.0;
+            $shadeCooling += $m2 * ($class->surfaceTemperature() - $class->surfaceTemperatureIn($shade->isShaded()));
             $evaporatingArea += $class->evaporates() ? $m2 : 0.0;
             $treeShade += ShadeKind::Tree === $shade ? $m2 : 0.0;
             $felt = self::REFERENCE_AIR_TEMPERATURE + self::perceivedOffset($shade, $class->evaporates());

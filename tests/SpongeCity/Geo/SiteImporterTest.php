@@ -167,12 +167,21 @@ final class SiteImporterTest extends TestCase
     }
 
     /**
-     * @param array<string, string>     $tags
-     * @param list<array{float, float}> $ring    latitude/longitude offsets, closed; a small square when null
-     * @param array<string, mixed>      $element more of the element (a model)
-     *
      * @return array<string, mixed> the imported building, normalised
      */
+    #[Test]
+    public function thePlotsGroundIsUnknownUntilSomebodyDescribesIt(): void
+    {
+        $import = (new SiteImporter())->import(new GeoPoint(self::LATITUDE, self::LONGITUDE, 'Test'), []);
+        /** @var array{objects: list<array<string, mixed>>} $site */
+        $site = json_decode((new SiteType())->normalize($import->siteJson), true, flags: \JSON_THROW_ON_ERROR);
+        $plots = array_values(array_filter($site['objects'], static fn (array $o): bool => O::PLOT === $o[O::TYPE]));
+
+        self::assertCount(1, $plots);
+        // the map shows its outline, not its surface: taking it for asphalt made every plan look sealed and hot
+        self::assertSame(O::SURFACE_UNKNOWN, $plots[0][O::SURFACE], 'kept by the site schema, not reset to asphalt');
+    }
+
     private function importBuilding(array $tags, ?array $ring = null, array $element = []): array
     {
         $d = 0.0001;

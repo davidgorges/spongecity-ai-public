@@ -146,7 +146,7 @@ final readonly class SiteImporter
         $usedFallback = null === $plot;
         $plot ??= [[-self::FALLBACK_PLOT_HALF_SIDE_MM, -self::FALLBACK_PLOT_HALF_SIDE_MM], [self::FALLBACK_PLOT_HALF_SIDE_MM, -self::FALLBACK_PLOT_HALF_SIDE_MM], [self::FALLBACK_PLOT_HALF_SIDE_MM, self::FALLBACK_PLOT_HALF_SIDE_MM], [-self::FALLBACK_PLOT_HALF_SIDE_MM, self::FALLBACK_PLOT_HALF_SIDE_MM]];
 
-        $objects[] = [O::TYPE => O::PLOT, O::POINTS => $plot, O::SURFACE => O::SURFACE_ASPHALT, O::LABEL => $plotName ?? $centre->label];
+        $objects[] = [O::TYPE => O::PLOT, O::POINTS => $plot, O::SURFACE => O::SURFACE_UNKNOWN, O::LABEL => $plotName ?? $centre->label];
         // buildings inside the plot would hide its ground in the balance: they stay, they are real
         // the nearest first, when there are more than the site takes
         $nearest = static fn (array $a, array $b): int => self::distance($a) <=> self::distance($b);
