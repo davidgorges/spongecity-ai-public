@@ -23,6 +23,8 @@ final readonly class GroundSurvey
         public array $crowns,
         public float $rainGardenPondingCubicMetres,
         public ?float $rainGardenReachSquareMetres = null,
+        /** m² of planted wall (façade greening): it evaporates, but is not ground */
+        public float $facadeGreenSquareMetres = 0.0,
     ) {
     }
 

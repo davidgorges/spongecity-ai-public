@@ -24,6 +24,8 @@ spongecity:
         planting: Planting
         shadesail: Shade sail
         greenroof: Green roof
+        facadegreen: Façade greening
+        coolsurface: Cool surface
 
 home:
     title: Don't just ask AI how to make a place greener. Let it redesign the real place.
@@ -154,6 +156,8 @@ plan:
             planting: '%area% m² planting'
             shadesail: Shade sail
             greenroof: '%kind%, %planted% m² planted'
+            facadegreen: '%area% m² of wall greened'
+            coolsurface: '%area% m² cool surface'
     agent:
         lead: Connect your own AI agent (Claude Desktop, Claude Code or any MCP client) to work on this plan with the same tools as the planning agent. Every change it makes appears here at once, for everyone who has the plan open.
         server: MCP server (streamable HTTP)
@@ -183,6 +187,8 @@ plan:
             newtree: Shade tree
             shadesail: Shade sail
             greenroof: Green roof
+            facadegreen: Façade greening
+            coolsurface: Cool surface
             equipment: Play equipment
             tree: Existing tree
             building: Building
@@ -199,6 +205,7 @@ plan:
         fact:
             area: Area
             ponding: Ponding depth
+            wall: Wall greened
             trench: Gravel trench below
             storage: Holds
             kind: Kind
@@ -312,6 +319,8 @@ plan:
             planting: Planting
             shadesail: Shade sail
             greenroof: Green roof
+            facadegreen: Façade greening
+            coolsurface: Cool surface
     cost:
         title: Bill of quantities
         total: Estimated cost
@@ -334,6 +343,8 @@ plan:
         SC-PERMEABLE-GRAVEL: Gravel surface
         SC-PERMEABLE-GRASS: Grass pavers
         SC-PLANTING: Planting
+        SC-FACADE-GREEN: Façade greening (m² of wall)
+        SC-COOL-SURFACE: Cool surface coating
         SC-SHADESAIL: Shade sails
         SC-GREENROOF-EXTENSIVE: Extensive green roof (retrofit)
         SC-GREENROOF-INTENSIVE: Intensive green roof (retrofit)

@@ -34,6 +34,8 @@ final class InterventionBuilder
     public const string MATERIAL_RAINGARDEN = 'raingarden';
     public const string MATERIAL_PLANTING = 'planting';
     public const string MATERIAL_SAIL = 'shadesail';
+    public const string MATERIAL_FACADE_GREEN = 'facade_green';
+    public const string MATERIAL_COOL_SURFACE = 'cool_surface';
     public const string MATERIAL_PAVERS = 'permeable_pavers';
     public const string MATERIAL_GRAVEL = 'permeable_gravel';
     public const string MATERIAL_GRASS_PAVERS = 'permeable_grass';
@@ -59,6 +61,10 @@ final class InterventionBuilder
     private const int LAYER_THICKNESS = 40;
     private const int PERMEABLE_TOP = 14;
     private const int PLANTING_TOP = 18;
+    /** a coating lies on the asphalt, under everything planted */
+    private const int COOL_SURFACE_TOP = 10;
+    /** how far the climbers and their trellis stand out from the wall, millimetres */
+    private const int FACADE_GREEN_DEPTH = 300;
     private const int RAINGARDEN_TOP = 22;
     private const int SAIL_THICKNESS = 30;
     private const string TREE_VARIANT = 'tree_01';
@@ -185,6 +191,8 @@ final class InterventionBuilder
                 ...($num(O::TRENCH) > 0 ? [new Part(SpongeCitySku::RAINGARDEN_TRENCH, $label, measure: Measure::volume(Polygon::area($points) * $num(O::TRENCH)))] : []),
             ],
             O::PLANTING => $this->slab(SpongeCitySku::PLANTING, $label, self::MATERIAL_PLANTING, $points, self::PLANTING_TOP, $area),
+            O::COOLSURFACE => $this->slab(SpongeCitySku::COOL_SURFACE, $label, self::MATERIAL_COOL_SURFACE, $points, self::COOL_SURFACE_TOP, $area),
+            O::FACADEGREEN => $this->facadeGreen($points, $num(O::HEIGHT), $label),
             O::PERMEABLE => $this->slab(
                 self::PERMEABLE_SKU[$object[O::KIND] ?? O::KIND_PAVERS] ?? SpongeCitySku::PERMEABLE_PAVERS,
                 $label,
@@ -206,6 +214,36 @@ final class InterventionBuilder
             )],
             default => [],
         };
+    }
+
+    /**
+     * Façade greening: a thin green wall standing along each segment of its line, as high as the
+     * climbers grow, priced per m² of wall.
+     *
+     * @param list<array{0: float, 1: float}> $points
+     *
+     * @return list<Part>
+     */
+    private function facadeGreen(array $points, float $height, string $label): array
+    {
+        $parts = [];
+        $half = self::FACADE_GREEN_DEPTH / 2;
+        for ($i = 1, $n = count($points); $i < $n; ++$i) {
+            [$x1, $z1] = $points[$i - 1];
+            [$x2, $z2] = $points[$i];
+            $length = hypot($x2 - $x1, $z2 - $z1);
+            if ($length <= 0.0 || $height <= 0.0) {
+                continue;
+            }
+            // a strip FACADE_GREEN_DEPTH wide around the segment, extruded upwards
+            $nx = -($z2 - $z1) / $length * $half;
+            $nz = ($x2 - $x1) / $length * $half;
+            $strip = [[$x1 + $nx, $z1 + $nz], [$x2 + $nx, $z2 + $nz], [$x2 - $nx, $z2 - $nz], [$x1 - $nx, $z1 - $nz]];
+            $slab = Slab::onGround($label, self::MATERIAL_FACADE_GREEN, $strip, (int) round($height), 0);
+            $parts[] = new Part(SpongeCitySku::FACADE_GREEN, $label, $slab->shape, $slab->material, $slab->position, $slab->rotation, Measure::area($length, $height));
+        }
+
+        return $parts;
     }
 
     /**
@@ -265,6 +303,8 @@ final class InterventionBuilder
     {
         $assembly->material(self::MATERIAL_RAINGARDEN, new Material('#46763a', roughness: 1.0));
         $assembly->material(self::MATERIAL_PLANTING, new Material('#6c9b46', roughness: 1.0));
+        $assembly->material(self::MATERIAL_FACADE_GREEN, new Material('#4f7f35', roughness: 1.0));
+        $assembly->material(self::MATERIAL_COOL_SURFACE, new Material('#c9c6bd', roughness: 0.9));
         $assembly->material(self::MATERIAL_SAIL, new Material('#e8c872', roughness: 0.9, opacity: 0.82));
         $assembly->material(self::MATERIAL_PAVERS, new Material('#c9bfae', roughness: 0.85, texture: ProceduralTexture::Paving, textureSize: 0.6));
         $assembly->material(self::MATERIAL_GRAVEL, new Material('#cdbf9f', roughness: 1.0, texture: ProceduralTexture::Stones, textureSize: 0.4));

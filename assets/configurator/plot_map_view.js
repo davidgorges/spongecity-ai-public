@@ -31,6 +31,10 @@ export const PLANTING = 'planting';
 export const PERMEABLE = 'permeable';
 export const SHADESAIL = 'shadesail';
 export const NEWTREE = 'newtree';
+/** façade greening (SiteObject::FACADEGREEN): a line along a wall */
+export const FACADEGREEN = 'facadegreen';
+/** a light coating on sealed ground (SiteObject::COOLSURFACE) */
+export const COOLSURFACE = 'coolsurface';
 /** a green roof (SiteObject::GREENROOF): its points are the building's footprint, drawn over the building */
 export const GREENROOF = 'greenroof';
 export const EXISTING_TREE = 'tree';
@@ -55,8 +59,8 @@ const ZONE_FILL_OPACITY = 0.28;
 const ZONE_SELECTED_FILL_OPACITY = 0.5;
 
 /** the ground first, then what stands above it */
-const SURFACES = [PERMEABLE, PLANTING, RAINGARDEN];
-const ABOVE = [GREENROOF, SHADESAIL, NEWTREE];
+const SURFACES = [COOLSURFACE, PERMEABLE, PLANTING, RAINGARDEN];
+const ABOVE = [GREENROOF, FACADEGREEN, SHADESAIL, NEWTREE];
 
 /**
  * How each kind of object looks on the map and in its legend: map colours, the same in the
@@ -69,6 +73,8 @@ export const STYLES = {
     [SHADESAIL]: { fill: '#e8c872', fillOpacity: 0.35, stroke: '#b98a1e', dashed: true },
     [GREENROOF]: { fill: '#7d9a4a', fillOpacity: 0.55, stroke: '#4d6a26', dashed: true },
     [NEWTREE]: { fill: '#3f8a3a', fillOpacity: 0.5, stroke: '#24611f' },
+    [FACADEGREEN]: { fill: '#4f7f35', fillOpacity: 0.9, stroke: '#2f5a1c' },
+    [COOLSURFACE]: { fill: '#e6e3da', fillOpacity: 0.7, stroke: '#9c988c' },
     [EXISTING_TREE]: { fill: '#6f9a5a', fillOpacity: 0.18, stroke: '#6f9a5a', strokeOpacity: 0.5 },
     [EQUIPMENT]: { fill: '#ebc94d', fillOpacity: 0.3, stroke: '#a88713', dashed: true },
 };

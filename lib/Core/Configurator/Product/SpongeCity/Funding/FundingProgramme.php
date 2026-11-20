@@ -18,6 +18,7 @@ final readonly class FundingProgramme
      * @param string|null          $capPerSku         the cap applies once per piece of this SKU (e.g. per building with a green roof), else once for the plan
      * @param float                $minEligibleAmount the least eligible quantity (m² of the eligible lines) it funds at all
      * @param list<string>         $conditions        what the applicant must know (apply before starting, who may apply)
+     * @param int                  $minEligibleCents  the least eligible cost it funds at all, in cents
      */
     public function __construct(
         public string $key,
@@ -32,6 +33,7 @@ final readonly class FundingProgramme
         public ?string $capPerSku = null,
         public float $minEligibleAmount = 0.0,
         public array $conditions = [],
+        public int $minEligibleCents = 0,
     ) {
     }
 

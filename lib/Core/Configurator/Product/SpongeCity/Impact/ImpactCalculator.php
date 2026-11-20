@@ -204,7 +204,7 @@ final readonly class ImpactCalculator
             'on_plot' => Polygon::contains($outline, $t['x'], $t['z']),
         ], $occluders['trees']);
 
-        return new GroundSurvey(count($grid['cells']) * $cellM2, $areas, $crowns, $ponding, $reach);
+        return new GroundSurvey(count($grid['cells']) * $cellM2, $areas, $crowns, $ponding, $reach, array_sum(array_map(self::wallArea(...), $site->ofType(O::FACADEGREEN))));
     }
 
     /**
@@ -303,6 +303,7 @@ final readonly class ImpactCalculator
             match ($object[O::TYPE]) {
                 O::RAINGARDEN => $add(GroundClass::RainGarden, $object, ...self::rainGardenWater($object)),
                 O::PLANTING => $add(GroundClass::Planting, $object),
+                O::COOLSURFACE => $add(GroundClass::CoolPavement, $object),
                 O::PERMEABLE => $add(GroundClass::fromPermeableKind(is_string($object[O::KIND] ?? null) ? $object[O::KIND] : ''), $object),
                 default => null,
             };
@@ -490,6 +491,22 @@ final readonly class ImpactCalculator
         }
 
         return ShadeKind::Sun;
+    }
+
+    /**
+     * m² of wall a façade greening covers: the length of its line along the wall times its height.
+     *
+     * @param array<string, mixed> $object
+     */
+    public static function wallArea(array $object): float
+    {
+        $points = Site::points($object);
+        $length = 0.0;
+        for ($i = 1, $n = count($points); $i < $n; ++$i) {
+            $length += hypot($points[$i][0] - $points[$i - 1][0], $points[$i][1] - $points[$i - 1][1]);
+        }
+
+        return $length * (is_numeric($object[O::HEIGHT] ?? null) ? (float) $object[O::HEIGHT] : 0.0) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE;
     }
 
     /**

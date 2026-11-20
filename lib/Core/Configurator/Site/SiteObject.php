@@ -109,14 +109,18 @@ final class SiteObject
     public const string SHADESAIL = 'shadesail';
     /** a green roof on one of the plot's buildings: its flat roof levels planted (GreenRoofs decides which) */
     public const string GREENROOF = 'greenroof';
+    /** climbing plants on a building's wall, along its foot (a line) and up to a height */
+    public const string FACADEGREEN = 'facadegreen';
+    /** a light, reflective coating on sealed ground: it stays sealed, but heats up less */
+    public const string COOLSURFACE = 'coolsurface';
     /** the building a green roof lies on, by its id */
     public const string BUILDING_ID = 'building';
 
-    public const array INTERVENTIONS = [self::NEWTREE, self::RAINGARDEN, self::PERMEABLE, self::PLANTING, self::SHADESAIL, self::GREENROOF];
+    public const array INTERVENTIONS = [self::NEWTREE, self::RAINGARDEN, self::PERMEABLE, self::PLANTING, self::SHADESAIL, self::GREENROOF, self::FACADEGREEN, self::COOLSURFACE];
     /** what stands on the ground and is raised to it as a whole; everything else lies on the ground and is draped over the terrain */
     public const array UPRIGHT = [
         self::HOUSE, self::OUTBUILDING, self::HEDGE, self::WALL, self::TREE, self::POOL, self::BOX, self::CYLINDER, self::PRISM,
-        self::BUILDING, self::NEWTREE, self::SHADESAIL,
+        self::BUILDING, self::NEWTREE, self::SHADESAIL, self::FACADEGREEN,
     ];
     public const array TYPES = [
         self::HOUSE, self::OUTBUILDING, self::HEDGE, self::WALL, self::TREE, self::PAVING, self::POOL, self::BOX, self::CYLINDER, self::PRISM,
@@ -227,6 +231,8 @@ final class SiteObject
         self::PLANTING => 'INTERVENTION: unsealed planting or lawn (closed outline) replacing sealed ground.',
         self::SHADESAIL => 'INTERVENTION: a shade sail or pergola roof (closed outline) y millimetres above ground. Shade only; rain falls through to the ground below.',
         self::GREENROOF => 'INTERVENTION: a green roof on a building of the plot (building: its id). Its flat roof levels are planted, with a 0.5 m gravel strip along the edges; points are taken from the building. kind "extensive" (sedum, light) or "intensive" (roof garden, heavy). Place it with propose_placements type "greenroof": not every roof can carry one.',
+        self::FACADEGREEN => 'INTERVENTION: façade greening, climbing plants rooted at the foot of a building\'s wall on a trellis: points is the line along the wall (2 or more points, just outside it), height how high they grow in millimetres. Cools the wall and evaporates water; it does not change the ground. Place it with propose_placements type "facadegreen".',
+        self::COOLSURFACE => 'INTERVENTION: a light, reflective coating on sealed ground (closed outline): the ground stays sealed and sheds the same rain, but heats up less in the sun. For asphalt that must stay (access lanes, sports courts); unsealing is better wherever it is possible.',
     ];
 
     private const array POSITION = [
@@ -368,6 +374,8 @@ final class SiteObject
             self::PLANTING => [self::POINTS => [self::OUTLINE, 3]],
             self::SHADESAIL => [self::POINTS => [self::OUTLINE, 3], self::Y => [self::INT, 2200, 6000, 3200], ...$color('#e8c872')],
             self::GREENROOF => [self::POINTS => [self::OUTLINE, 3], self::BUILDING_ID => [self::REF], self::KIND => [self::ENUM, self::GREENROOF_KINDS, self::KIND_EXTENSIVE]],
+            self::FACADEGREEN => [self::POINTS => [self::OUTLINE, 2], self::HEIGHT => [self::INT, 2000, 15000, 6000]],
+            self::COOLSURFACE => [self::POINTS => [self::OUTLINE, 3]],
             default => [],
         };
     }

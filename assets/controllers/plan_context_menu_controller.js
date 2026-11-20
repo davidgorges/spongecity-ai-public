@@ -23,9 +23,9 @@ const TRUNK_REACH = 800;
 /** a model that was hit is the tree standing within this of it (millimetres) */
 const MODEL_MATCH = 500;
 /** standing on the ground: what lies on top wins (equipment over a rain garden over its zone) */
-const GROUND_ORDER = ['equipment', 'raingarden', 'planting', 'permeable', 'newtree', 'tree', ZONE];
+const GROUND_ORDER = ['equipment', 'raingarden', 'planting', 'permeable', 'coolsurface', 'newtree', 'tree', ZONE];
 /** above it: what stands highest in front */
-const UPRIGHT_ORDER = ['shadesail', 'newtree', 'tree', GREENROOF, BUILDING, 'equipment', 'raingarden', 'planting', 'permeable', ZONE];
+const UPRIGHT_ORDER = ['shadesail', 'newtree', 'tree', 'facadegreen', GREENROOF, BUILDING, 'equipment', 'raingarden', 'planting', 'permeable', 'coolsurface', ZONE];
 /** keeps the menu this far (CSS pixels) inside the view */
 const EDGE_MARGIN = 8;
 const KEY_NEXT = 'ArrowDown';

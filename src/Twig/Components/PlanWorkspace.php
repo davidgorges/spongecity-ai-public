@@ -87,6 +87,7 @@ final class PlanWorkspace
         O::PERMEABLE => [O::KIND => O::PERMEABLE_KINDS],
         O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000], O::TRENCH_VOLUME => [0, 12, 20]],
         O::SHADESAIL => [O::Y => [2500, 3200, 4000]],
+        O::FACADEGREEN => [O::HEIGHT => [4000, 6000, 9000]],
         // narrowed per roof to the kinds its building can take (GreenRoofs)
         O::GREENROOF => [O::KIND => O::GREENROOF_KINDS],
     ];
@@ -298,7 +299,10 @@ final class PlanWorkspace
             return $this->translator->trans('plan.measures.size.height', ['%height%' => round((float) ($object[O::HEIGHT] ?? 0) / self::MILLIMETRES_PER_METRE, 1)]);
         }
 
-        return $this->translator->trans('plan.measures.size.area', ['%area%' => (int) round(Polygon::area(Site::points($object)) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE)]);
+        // a greened façade by its wall, everything else by its ground
+        $area = O::FACADEGREEN === $object[O::TYPE] ? ImpactCalculator::wallArea($object) : Polygon::area(Site::points($object)) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE;
+
+        return $this->translator->trans('plan.measures.size.area', ['%area%' => (int) round($area)]);
     }
 
     /**

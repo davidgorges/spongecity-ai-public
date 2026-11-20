@@ -165,16 +165,19 @@ final readonly class PlanObjects
             O::PERMEABLE => [$this->fact('kind', $this->translator->trans('plan.object.kind.'.$object[O::KIND]), O::KIND), $this->fact('area', $this->squareMetres($area))],
             O::NEWTREE => [$this->fact('height', $this->metres($object[O::HEIGHT]).' m', O::HEIGHT), $this->fact('crown', $this->metres(2 * $this->crownRadius($object)).' m')],
             O::SHADESAIL => [$this->fact('area', $this->squareMetres($area)), $this->fact('height_above', $this->metres($object[O::Y]).' m', O::Y)],
+            O::FACADEGREEN => [$this->fact('height', $this->metres($object[O::HEIGHT]).' m', O::HEIGHT), $this->fact('wall', $this->squareMetres(ImpactCalculator::wallArea($object) * self::SQUARE_MILLIMETRES_PER_SQUARE_METRE))],
             default => [$this->fact('area', $this->squareMetres($area))],
         };
         $shape = match ($type) {
             O::NEWTREE => $this->crown($object),
             // a sail hangs at its height
             O::SHADESAIL => ['points' => Site::points($object), 'base' => (float) $object[O::Y], 'top' => (float) $object[O::Y]],
+            // the climbers stand along the wall, from the ground up
+            O::FACADEGREEN => ['points' => Site::points($object), 'base' => 0.0, 'top' => (float) $object[O::HEIGHT]],
             default => ['points' => Site::points($object)],
         };
 
-        return $this->row($object, $type, $shape, in_array($type, [O::NEWTREE, O::SHADESAIL], true) ? self::UPRIGHT : self::ON_GROUND, [self::CAN_EDIT, self::CAN_DELETE], $facts);
+        return $this->row($object, $type, $shape, in_array($type, [O::NEWTREE, O::SHADESAIL, O::FACADEGREEN], true) ? self::UPRIGHT : self::ON_GROUND, [self::CAN_EDIT, self::CAN_DELETE], $facts);
     }
 
     /**

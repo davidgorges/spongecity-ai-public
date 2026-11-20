@@ -14,6 +14,7 @@ final class HamburgFunding
 {
     public const string GREEN_ROOF = 'hamburg_gruendach';
     public const string UNSEALING = 'hamburg_risa_entsiegelung';
+    public const string FACADE = 'hamburg_fassadenbegruenung';
 
     private function __construct()
     {
@@ -43,6 +44,22 @@ final class HamburgFunding
                     'For private owners and companies (60 / 50 / 40 % for small, medium and large ones); public owners are not among the applicants.',
                     'At least 20 m² of vegetation and 8 cm of substrate on an existing roof; up to 100,000 € per building.',
                 ],
+            ),
+            new FundingProgramme(
+                self::FACADE,
+                'Hamburger Gründachförderung: Fassadenbegrünung',
+                'IFB Hamburg',
+                'https://www.ifbhh.de/resource/blob/13128/b839eac974aec2c31f236657d52284e7/foerderrichtlinie-hamburger-gruendachfoerderung-2026-data.pdf',
+                'Förderrichtlinie 2026',
+                '2026-12-31',
+                [Sku::FACADE_GREEN],
+                [Applicant::Private->value => 0.60, Applicant::MediumCompany->value => 0.50, Applicant::LargeCompany->value => 0.40],
+                capCents: 100_000_00,
+                conditions: [
+                    'Apply to IFB Hamburg and wait for approval before signing any contract.',
+                    'From 1,000 € of eligible cost, up to 100,000 € per building; for private owners and companies, public owners are not among the applicants.',
+                ],
+                minEligibleCents: 1_000_00,
             ),
             new FundingProgramme(
                 self::UNSEALING,

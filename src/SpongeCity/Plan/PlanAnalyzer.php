@@ -28,9 +28,9 @@ use Symfony\Contracts\Cache\CacheInterface;
 final readonly class PlanAnalyzer
 {
     /** bump when the calculation changes, so results of the old one are not reused */
-    private const int IMPACT_VERSION = 6;
+    private const int IMPACT_VERSION = 7;
     private const string IMPACT_KEY = 'spongecity_impact_v%d_%s';
-    private const int COOLING_VERSION = 3;
+    private const int COOLING_VERSION = 4;
     private const string COOLING_KEY = 'spongecity_cooling_v%d_%s';
     private const int COSTS_VERSION = 2;
     private const string COSTS_KEY = 'spongecity_costs_v%d_%s';

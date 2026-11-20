@@ -47,6 +47,8 @@ final readonly class SpongeCityDefinition implements ProductDefinition, StagesSc
         Sku::PERMEABLE_GRASS_PAVERS => 7500,
         Sku::PLANTING => 3500,
         Sku::SHADESAIL => 15000,
+        Sku::FACADE_GREEN => 8000,
+        Sku::COOL_SURFACE => 3000,
         Sku::GREENROOF_EXTENSIVE => 9500,
         Sku::GREENROOF_INTENSIVE => 19000,
         Sku::GREENROOF_SETUP => 800000,
@@ -71,6 +73,10 @@ final readonly class SpongeCityDefinition implements ProductDefinition, StagesSc
         Sku::PERMEABLE_GRASS_PAVERS => 150,
         Sku::PLANTING => 400,
         Sku::SHADESAIL => 400,
+        // pruning the climbers once or twice a year, from a lift above the first floor
+        Sku::FACADE_GREEN => 500,
+        // a coating wears: renewed every 7 to 10 years
+        Sku::COOL_SURFACE => 350,
         Sku::GREENROOF_EXTENSIVE => 150,
         Sku::GREENROOF_INTENSIVE => 600,
         Sku::GREENROOF_SETUP => 0,

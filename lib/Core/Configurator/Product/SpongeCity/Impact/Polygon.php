@@ -274,6 +274,22 @@ final class Polygon
     }
 
     /**
+     * The distance from a point to a line segment, in the points' unit.
+     *
+     * @param array{0: float, 1: float} $a
+     * @param array{0: float, 1: float} $b
+     */
+    public static function segmentDistance(float $x, float $z, array $a, array $b): float
+    {
+        [$ax, $az] = $a;
+        [$bx, $bz] = $b;
+        $lengthSquared = ($bx - $ax) ** 2 + ($bz - $az) ** 2;
+        $t = $lengthSquared > 0.0 ? max(0.0, min(1.0, (($x - $ax) * ($bx - $ax) + ($z - $az) * ($bz - $az)) / $lengthSquared)) : 0.0;
+
+        return hypot($x - ($ax + $t * ($bx - $ax)), $z - ($az + $t * ($bz - $az)));
+    }
+
+    /**
      * @param list<array{0: float|int, 1: float|int}> $points
      *
      * @return array{0: float, 1: float, 2: float, 3: float} minX, maxX, minZ, maxZ

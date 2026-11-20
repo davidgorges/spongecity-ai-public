@@ -44,7 +44,7 @@ final readonly class FundingEstimate
                 continue;
             }
             $share = $programme->shareFor($applicant);
-            $belowMinimum = $eligibleAmount < $programme->minEligibleAmount;
+            $belowMinimum = $eligibleAmount < $programme->minEligibleAmount || $eligible < $programme->minEligibleCents;
             $amount = $belowMinimum ? 0 : (int) round($eligible * $share);
             $cap = null === $programme->capCents ? null : (int) round($programme->capCents * (null === $programme->capPerSku ? 1.0 : max(1.0, $capUnits)));
             $capped = null !== $cap && $amount > $cap;
