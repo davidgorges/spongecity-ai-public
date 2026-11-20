@@ -1,7 +1,8 @@
 {#
     The plan's workspace: the 3D view full screen, the windows over it (Plan:Window) and the dock that
-    opens them, built from the UX Toolkit's components. Inside a nested component's content `this` is
-    that component: the workspace's own computed values are read through `workspace`.
+    opens them (a menu at the top right on desktop), built from the UX Toolkit's components. Inside a
+    nested component's content `this` is that component: the workspace's own computed values are read
+    through `workspace`.
 #}
 {% set workspace = this %}
 {% set piece = constant('Core\\Configurator\\Assembly\\Measure::PIECE') %}
@@ -14,6 +15,14 @@
 {# the agent answers in a worker; its reply arrives on this Mercure topic (App\SpongeCity\Chat\ChatStream) #}
 {% set chat_stream = mercure(constant('App\\SpongeCity\\Chat\\ChatStream::TOPIC_FORMAT')|format(plan.id)) %}
 {% set viewer_title = plan.title %}
+{% set windows = {
+    chat: {icon: 'lucide:message-circle', title: 'plan.windows.chat'|trans},
+    map: {icon: 'lucide:map', title: 'plan.windows.map'|trans},
+    details: {icon: 'lucide:mouse-pointer-click', title: 'plan.windows.details'|trans},
+    effect: {icon: 'lucide:gauge', title: 'plan.windows.effect'|trans},
+    measures: {icon: 'lucide:receipt', title: 'plan.windows.measures'|trans},
+    agent: {icon: 'lucide:plug', title: 'plan.windows.agent'|trans},
+} %}
 {% set chat_errors = {
     failed: 'plan.chat.failed'|trans,
     'plan.chat.failed': 'plan.chat.failed'|trans,
@@ -179,6 +188,27 @@
                 <h1 class="mt-1 truncate font-heading text-lg font-semibold leading-tight sm:text-xl">{{ viewer_title|u.truncate(80, '…') }}</h1>
             </div>
             <div class="flex shrink-0 items-center gap-2">
+                {# on desktop the windows open from this menu; on small screens from the dock under the view #}
+                {% set windows_label = 'plan.windows.dock'|trans %}
+                <twig:DropdownMenu class="pointer-events-auto hidden lg:inline-flex" data-window-menu>
+                    <twig:DropdownMenu:Trigger>
+                        <twig:Button variant="outline" size="sm" class="bg-background" title="{{ windows_label }}" {{ ...dropdown_menu_trigger_attrs }}>
+                            <twig:ux:icon name="lucide:app-window" aria-hidden="true" />
+                            {{ windows_label }}
+                            <twig:ux:icon name="lucide:chevron-down" class="text-muted-foreground" aria-hidden="true" />
+                        </twig:Button>
+                    </twig:DropdownMenu:Trigger>
+                    <twig:DropdownMenu:Content class="w-56" aria-label="{{ windows_label }}">
+                        {% for id, window in windows %}
+                            {# the window manager presses it (aria-pressed) while its window is open: the check shows #}
+                            <twig:DropdownMenu:Item class="group/window aria-pressed:text-primary" aria-pressed="false" aria-controls="window-{{ id }}" data-window-manager-target="dock" data-window-manager-id-param="{{ id }}" data-action="window-manager#toggle">
+                                <twig:ux:icon name="{{ window.icon }}" aria-hidden="true" />
+                                <span class="flex-1">{{ window.title }}</span>
+                                <twig:ux:icon name="lucide:check" class="invisible text-primary group-aria-pressed/window:visible" aria-hidden="true" />
+                            </twig:DropdownMenu:Item>
+                        {% endfor %}
+                    </twig:DropdownMenu:Content>
+                </twig:DropdownMenu>
                 {% set conditions_label = 'plan.viewer.conditions.toggle'|trans %}
                 {# the view presses it (aria-pressed) once the overlay is shown: the Toggle's own controller would reset it #}
                 <twig:Toggle variant="outline" size="sm" class="pointer-events-auto bg-background aria-pressed:text-primary" title="{{ conditions_label }}" data-configurator-viewer-target="conditions" data-action="configurator-viewer#toggleConditions" hidden>
@@ -220,7 +250,7 @@
         {% endif %}
     </section>
 
-    {# the windows over the view, and the dock that opens them (window_manager_controller.js) #}
+    {# the windows over the view (window_manager_controller.js) #}
     {# the lines a window being moved or resized snaps to, shown meanwhile #}
     <div class="pointer-events-none absolute inset-y-0 z-40 w-px bg-primary/60" hidden data-window-guide data-window-manager-target="guideX"></div>
     <div class="pointer-events-none absolute inset-x-0 z-40 h-px bg-primary/60" hidden data-window-guide data-window-manager-target="guideY"></div>
@@ -228,15 +258,8 @@
     {% for kind in this.equipmentKinds %}
         {% set equipment_kinds = equipment_kinds|merge({(kind): ('plan.equipment.kind.' ~ kind)|trans}) %}
     {% endfor %}
-    {% set windows = {
-        chat: {icon: 'lucide:message-circle', title: 'plan.windows.chat'|trans},
-        map: {icon: 'lucide:map', title: 'plan.windows.map'|trans},
-        details: {icon: 'lucide:mouse-pointer-click', title: 'plan.windows.details'|trans},
-        effect: {icon: 'lucide:gauge', title: 'plan.windows.effect'|trans},
-        measures: {icon: 'lucide:receipt', title: 'plan.windows.measures'|trans},
-        agent: {icon: 'lucide:plug', title: 'plan.windows.agent'|trans},
-    } %}
-    <nav class="sticky top-0 z-30 flex justify-center gap-1 border-b border-border bg-background/95 p-1.5 lg:absolute lg:top-auto lg:bottom-6 lg:left-1/2 lg:-translate-x-1/2 lg:rounded-xl lg:border lg:shadow-lg" aria-label="{{ 'plan.windows.dock'|trans }}">
+    {# on small screens the windows are tabs under the view; on desktop they open from the menu at the top right #}
+    <nav class="sticky top-0 z-30 flex justify-center gap-1 border-b border-border bg-background/95 p-1.5 lg:hidden" aria-label="{{ 'plan.windows.dock'|trans }}">
         {% for id, window in windows %}
             {# the window manager presses it (aria-pressed) while its window is open #}
             <twig:Toggle size="sm" class="aria-pressed:text-primary" aria-controls="window-{{ id }}" title="{{ window.title }}" data-window-manager-target="dock" data-window-manager-id-param="{{ id }}" data-action="window-manager#toggle">

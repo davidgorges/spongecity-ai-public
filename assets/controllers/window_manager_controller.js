@@ -8,12 +8,12 @@ import { anchor, chainBelow, join, leave, members, normalise, split } from '../w
 const LIVE_ROOT = '[data-controller~="live"]';
 /** windows float from this width on (Tailwind's lg); below, one is shown at a time under the view */
 const FLOATING = '(min-width: 1024px)';
-/** CSS pixels: room kept around windows, under the view's title bar, above the dock */
+/** CSS pixels: room kept around windows, under the view's title bar, above the data sources line */
 const MARGIN = 16;
 const TOP = 76;
-const BOTTOM = 72;
+const BOTTOM = 32;
 const GAP = 12;
-/** a window opened below others needs this much room above the dock, else it opens over them (CSS pixels) */
+/** a window opened below others needs this much room above the bottom, else it opens over them (CSS pixels) */
 const MIN_ROOM = 240;
 /** windows opened over others step down this far, so each title bar shows */
 const CASCADE = 36;
@@ -40,7 +40,7 @@ const BOTTOM_EDGE = 'bottom';
  * Windows over the 3D view (<twig:Plan:Window>, templates/components/Plan/Window.html.twig): each is dragged by its title bar
  * (or moved with the arrow keys on its grip), resized by its corner handle (or the arrow keys on it;
  * a double click gives it its own size back), minimised to its title bar, closed and opened again
- * from the dock. Where they are and which are open is kept in this browser (storageKey); a window
+ * from the dock (a menu at the top right on desktop). Where they are and which are open is kept in this browser (storageKey); a window
  * with data-window-auto opens by itself when that value changes to a non-empty one (an object was
  * selected). The live component re-renders the windows' contents: their place is applied again.
  *
@@ -132,7 +132,9 @@ export default class extends Controller {
             this.#shut(id);
             this.#save();
             this.#apply();
-            this.dockTargets.find((button) => button.dataset.windowManagerIdParam === id)?.focus({ preventScroll: true });
+            // the dock button shown (small screens), else the desktop menu's trigger: its items are hidden while it is closed
+            const button = this.dockTargets.find((dock) => dock.dataset.windowManagerIdParam === id && dock.checkVisibility());
+            (button ?? this.element.querySelector('[data-window-menu] [aria-haspopup="menu"]'))?.focus({ preventScroll: true });
         }
     }
 
@@ -480,7 +482,7 @@ export default class extends Controller {
         element.style.top = `${state.y}px`;
         // it stays invisible until placed (Plan:Window), so it never shows stacked in a corner
         element.dataset.windowPlaced = '';
-        // never under the dock: its content scrolls inside
+        // never past the bottom: its content scrolls inside
         element.style.maxHeight = `${Math.max(MIN_HEIGHT, this.element.getBoundingClientRect().height - state.y - BOTTOM)}px`;
     }
 
@@ -519,7 +521,7 @@ export default class extends Controller {
     }
 
     /**
-     * y below the windows already open, if enough of it is left above the dock; else the window
+     * y below the windows already open, if enough of it is left above the bottom; else the window
      * opens over them at the top, a step down for each one open on its side (it comes to the front).
      */
     #roomAt(element, x, y) {
@@ -536,7 +538,7 @@ export default class extends Controller {
         return [x, TOP + others * CASCADE];
     }
 
-    /** where a window's corner may be: inside the view, its title bar always reachable, above the dock ([minX, maxX, minY, maxY]) */
+    /** where a window's corner may be: inside the view, its title bar always reachable, above the bottom ([minX, maxX, minY, maxY]) */
     #limits(id) {
         const element = this.#window(id);
         const frame = this.element.getBoundingClientRect();
@@ -570,7 +572,7 @@ export default class extends Controller {
         return { x: state.x ?? 0, y: state.y ?? 0, w: element?.offsetWidth ?? 0, h: element?.offsetHeight ?? 0 };
     }
 
-    /** the edges windows snap to in the view: its sides, under its title bar, above the dock */
+    /** the edges windows snap to in the view: its sides, under its title bar, above the bottom */
     #bounds() {
         const frame = this.element.getBoundingClientRect();
 
