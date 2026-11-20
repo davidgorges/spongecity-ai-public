@@ -4,9 +4,9 @@ declare(strict_types=1);
 
 namespace Core\Configurator\Product\SpongeCity\Impact;
 
+use Core\Configurator\Product\SpongeCity\Impact\CoolingScenario as K;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
-use Core\Configurator\Product\SpongeCity\Impact\CoolingScenario as K;
 
 /**
  * Cooling and water of a plot on a hot summer day and over a year, today and with the plan:
@@ -28,6 +28,12 @@ final readonly class CoolingCalculator
     private const float SHADED_EVAPORATION_FACTOR = 0.6;
     /** transpiration of an urban tree per m² of crown, as a share of ET0 (measured street trees: 0.4 to 1.0) */
     private const float TREE_CROP_COEFFICIENT = 0.7;
+    /** transpiration of a greened façade per m² of wall, as a share of ET0 (measured climbers: 1 to 3 litres a day per m²) */
+    public const float FACADE_CROP_COEFFICIENT = 0.4;
+    /** a sunlit wall behind climbers at midday, kelvin cooler than a bare one (measurements: 5 to 15 K) */
+    public const float FACADE_WALL_COOLING_K = 10.0;
+    /** the key of the façades' evaporation among the ground classes' */
+    public const string FACADE_EVAPORATION = 'facade_green';
     /** latent heat of vaporisation, 2.45 MJ per kg of water */
     private const float KWH_PER_LITRE = 2.45 / 3.6;
     /** the hours of a summer day over which the evaporation is spread for its mean power */
@@ -95,7 +101,7 @@ final readonly class CoolingCalculator
         );
     }
 
-    private function scenario(GroundSurvey $survey, float $precipitationMm): CoolingScenario
+    private function scenario(GroundSurvey $survey, float $precipitationMm): K
     {
         $plot = max($survey->plotSquareMetres, 1.0);
         $ground = max($survey->groundArea(), 1.0);
@@ -136,6 +142,10 @@ final readonly class CoolingCalculator
             $roofHeat += $m2 * $class->surfaceTemperature();
             $greenRoof += GroundClass::Roof === $class ? 0.0 : $m2;
         });
+        // greened walls: not ground, but they transpire
+        if ($survey->facadeGreenSquareMetres > 0.0) {
+            $evaporatedBy[self::FACADE_EVAPORATION] = $survey->facadeGreenSquareMetres * $et0 * self::FACADE_CROP_COEFFICIENT;
+        }
         $roofs = $survey->roofArea();
         $crowns = $survey->crownAreaOnPlot();
         $trees = $crowns * $et0 * self::TREE_CROP_COEFFICIENT;
@@ -147,7 +157,7 @@ final readonly class CoolingCalculator
         $water = $this->yearlyWater($survey, $precipitationMm);
         $rain = max($survey->plotSquareMetres * $precipitationMm / self::MILLIMETRES_PER_METRE, 1e-9);
 
-        return new CoolingScenario([
+        return new K([
             K::KEY_EVAPOTRANSPIRATION => $evapotranspiration,
             K::KEY_EVAPOTRANSPIRATION_TREES => $trees,
             K::KEY_LATENT_COOLING => $latent,
@@ -208,7 +218,7 @@ final readonly class CoolingCalculator
 
         $rainGarden = $survey->area(GroundClass::RainGarden);
         if ($rainGarden > 0.0) {
-            $catchment = min($survey->sealedArea(), $rainGarden * ImpactCalculator::MAX_CATCHMENT_RATIO);
+            $catchment = min($survey->sealedArea(), $survey->rainGardenReach());
             $routed = min($water[GroundClass::RUNOFF], $catchment * $depth * GroundClass::Asphalt->yearlyWaterBalance()[GroundClass::RUNOFF]);
             $water[GroundClass::RUNOFF] -= $routed;
             $water[GroundClass::INFILTRATION] += $routed * self::RAIN_GARDEN_INFILTRATION_SHARE;
@@ -236,6 +246,7 @@ final readonly class CoolingCalculator
             sprintf('Hot day: %d °C air at 14:00, reference evapotranspiration ET0 %.1f mm/day (FAO-56, north Germany), water available in the ground. In a drought, lawn and planting evaporate far less.', (int) self::REFERENCE_AIR_TEMPERATURE, self::REFERENCE_EVAPOTRANSPIRATION_MM),
             sprintf('Evaporation per ground = ET0 x crop coefficient (lawn 0.8, planting and rain garden 1.0, water 1.05, grass pavers 0.5, permeable pavers 0.15, asphalt 0), %d %% of it in the shade.', (int) (self::SHADED_EVAPORATION_FACTOR * self::PERCENT)),
             sprintf('Trees transpire %.1f x ET0 per m² of crown (trees with their trunk on the plot; measured urban trees: 0.4 to 1.0).', self::TREE_CROP_COEFFICIENT),
+            sprintf('Greened façades transpire %.1f x ET0 per m² of wall (climbers: 1 to 3 litres a day per m²) and keep the wall behind them about %d K cooler at midday; they do not change the open ground.', self::FACADE_CROP_COEFFICIENT, (int) self::FACADE_WALL_COOLING_K),
             'Evaporative cooling: 0.68 kWh of heat taken up per litre evaporated (latent heat 2.45 MJ/kg); the power is spread over 12 daylight hours and the plot area.',
             'The surface temperatures per ground already contain their own evaporation (lawn 31 °C, asphalt 62 °C): do not add the evaporative cooling to them. Shaded ground is 12 K cooler, as in calculate_impact.',
             'Roofs: 55 °C (gravel, bitumen), extensive green roof 36 °C, intensive 31 °C, evaporating 0.5 and 0.8 x ET0; roofs are not shaded in the model. surface_temperature_c is the open ground only, site_surface_temperature_c the whole plot with its roofs. A green roof cools the roof and the rooms below it; its effect on the air at street level is small and not counted in air_cooling_k.',

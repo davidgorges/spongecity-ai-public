@@ -4,12 +4,19 @@ declare(strict_types=1);
 
 namespace App\SpongeCity\Plan;
 
+use App\SpongeCity\Geo\Hamburg\Hamburg;
 use App\SpongeCity\PlanEvaluator;
+use Core\Configurator\Pricing\Quote;
 use Core\Configurator\Pricing\QuoteLine;
+use Core\Configurator\Product\SpongeCity\Funding\Applicant;
+use Core\Configurator\Product\SpongeCity\Funding\FundingEstimate;
+use Core\Configurator\Product\SpongeCity\Funding\FundingProgramme;
+use Core\Configurator\Product\SpongeCity\Funding\HamburgFunding;
 use Core\Configurator\Product\SpongeCity\Impact\CoolingCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\CoolingReport;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactReport;
+use Core\Configurator\Product\SpongeCity\SpongeCityDefinition;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
@@ -21,11 +28,11 @@ use Symfony\Contracts\Cache\CacheInterface;
 final readonly class PlanAnalyzer
 {
     /** bump when the calculation changes, so results of the old one are not reused */
-    private const int IMPACT_VERSION = 4;
+    private const int IMPACT_VERSION = 7;
     private const string IMPACT_KEY = 'spongecity_impact_v%d_%s';
-    private const int COOLING_VERSION = 2;
+    private const int COOLING_VERSION = 4;
     private const string COOLING_KEY = 'spongecity_cooling_v%d_%s';
-    private const int COSTS_VERSION = 1;
+    private const int COSTS_VERSION = 2;
     private const string COSTS_KEY = 'spongecity_costs_v%d_%s';
     private const float CENTS_PER_EURO = 100.0;
 
@@ -43,11 +50,18 @@ final readonly class PlanAnalyzer
      */
     public function impact(Plan $plan): ImpactReport
     {
-        $site = $plan->siteJson();
-        $storm = $plan->storm();
-        $key = sprintf(self::IMPACT_KEY, self::IMPACT_VERSION, hash('xxh128', $storm.'|'.$site));
+        return $this->impactOf($plan->siteJson(), $plan->storm());
+    }
 
-        return $this->cache->get($key, fn (): ImpactReport => $this->calculator->calculate(Site::fromJson($site), $storm));
+    /**
+     * The balance of any site in a storm: the plan as it is, without one of its measures, or as a
+     * saved scenario. Kept by site and storm like the plan's own.
+     */
+    public function impactOf(string $siteJson, int $storm): ImpactReport
+    {
+        $key = sprintf(self::IMPACT_KEY, self::IMPACT_VERSION, hash('xxh128', $storm.'|'.$siteJson));
+
+        return $this->cache->get($key, fn (): ImpactReport => $this->calculator->calculate(Site::fromJson($siteJson), $storm));
     }
 
     /**
@@ -71,6 +85,16 @@ final readonly class PlanAnalyzer
      */
     public function costsByMeasure(Plan $plan): array
     {
+        return array_map(static fn (array $cost): float => $cost['investment'], $this->measureCosts($plan));
+    }
+
+    /**
+     * The investment and the yearly running costs of each planned measure on its own, euros by object id.
+     *
+     * @return array<string, array{investment: float, maintenance_per_year: float}>
+     */
+    public function measureCosts(Plan $plan): array
+    {
         $site = $plan->siteJson();
 
         return $this->cache->get(sprintf(self::COSTS_KEY, self::COSTS_VERSION, hash('xxh128', $site)), function () use ($plan, $site): array {
@@ -80,7 +104,11 @@ final readonly class PlanAnalyzer
             foreach ($objects as $object) {
                 if (in_array($object[O::TYPE], O::INTERVENTIONS, true)) {
                     $alone = (new SiteType())->normalize([SiteType::OBJECTS => [...$context, $object]]);
-                    $costs[(string) $object[O::ID]] = $this->evaluator->evaluate([...$plan->values, SiteType::PARAMETER => $alone])->quote->total() / self::CENTS_PER_EURO;
+                    $evaluation = $this->evaluator->evaluate([...$plan->values, SiteType::PARAMETER => $alone]);
+                    $costs[(string) $object[O::ID]] = [
+                        'investment' => $evaluation->quote->total() / self::CENTS_PER_EURO,
+                        'maintenance_per_year' => Quote::price($evaluation->bom, SpongeCityDefinition::maintenancePrices())->total() / self::CENTS_PER_EURO,
+                    ];
                 }
             }
 
@@ -88,26 +116,88 @@ final readonly class PlanAnalyzer
         });
     }
 
+    /** what cost() says about where the running costs come from */
+    public const string MAINTENANCE_BASIS = 'Running costs: indicative yearly care per unit for public open space (GALK / FLL care guidance), averaged over the lifecycle: watering and pruning trees, weeding and clearing silt from rain gardens, sweeping and refilling joints, mowing grass pavers, one or two visits a year to an extensive green roof. Lifecycle total = investment + %d years of running costs, not discounted.';
+
     /**
-     * @return array{currency: string, total: float, complete: bool, lines: list<array{sku: string, label: string, amount: float, unit: string, unit_price: float|null, total: float|null}>}
+     * The investment, line by line, and what keeping the measures working costs a year: both priced
+     * against the same bill of quantities, so they cover the same measures.
+     *
+     * @return array{currency: string, total: float, complete: bool, maintenance_per_year: float, lifecycle_years: int, lifecycle_total: float, maintenance_basis: string, funding: array<string, mixed>, net_total: float, lines: list<array{sku: string, label: string, amount: float, unit: string, unit_price: float|null, total: float|null, maintenance_per_year: float|null}>}
      */
     public function cost(Plan $plan): array
     {
-        $quote = $this->evaluator->evaluate($plan->values)->quote;
+        $evaluation = $this->evaluator->evaluate($plan->values);
+        $quote = $evaluation->quote;
+        $maintenance = Quote::price($evaluation->bom, SpongeCityDefinition::maintenancePrices());
+        $yearly = $maintenance->total() / self::CENTS_PER_EURO;
+        $years = SpongeCityDefinition::LIFECYCLE_YEARS;
+        $funding = FundingEstimate::of($quote, $plan->applicant(), $this->programmesFor($plan));
 
         return [
             'currency' => $quote->currency,
-            'total' => $quote->total() / 100,
+            'total' => $quote->total() / self::CENTS_PER_EURO,
             'complete' => $quote->isComplete(),
-            'lines' => array_map(static fn (QuoteLine $line): array => [
+            'maintenance_per_year' => $yearly,
+            'lifecycle_years' => $years,
+            'lifecycle_total' => ($quote->total() + $years * $maintenance->total()) / self::CENTS_PER_EURO,
+            'maintenance_basis' => sprintf(self::MAINTENANCE_BASIS, $years),
+            'funding' => $this->fundingSummary($funding),
+            'net_total' => ($quote->total() - $funding->total()) / self::CENTS_PER_EURO,
+            'lines' => array_map(static fn (QuoteLine $line, QuoteLine $care): array => [
                 'sku' => $line->bomLine->sku,
                 'label' => $line->bomLine->label,
                 'amount' => round($line->bomLine->totalAmount(), 1),
                 // pieces (trees, a green roof's set-up) are counted, areas measured
                 'unit' => $line->bomLine->measure->kind,
-                'unit_price' => null === $line->unitPrice ? null : $line->unitPrice / 100,
-                'total' => null === $line->total ? null : $line->total / 100,
-            ], $quote->lines),
+                'unit_price' => null === $line->unitPrice ? null : $line->unitPrice / self::CENTS_PER_EURO,
+                'total' => null === $line->total ? null : $line->total / self::CENTS_PER_EURO,
+                'maintenance_per_year' => null === $care->total ? null : $care->total / self::CENTS_PER_EURO,
+            ], $quote->lines, $maintenance->lines),
+        ];
+    }
+
+    /**
+     * The programmes of the place the plan lies in: Hamburg's, or none.
+     *
+     * @return list<FundingProgramme>
+     */
+    public function programmesFor(Plan $plan): array
+    {
+        return Hamburg::covers($plan->centre()) ? HamburgFunding::programmes() : [];
+    }
+
+    /**
+     * @return array{applicant: string, total: float, up_to: bool, programmes: list<array<string, mixed>>, note: string}
+     */
+    private function fundingSummary(FundingEstimate $funding): array
+    {
+        $unknown = Applicant::Unknown === $funding->applicant;
+
+        return [
+            'applicant' => $funding->applicant->value,
+            'total' => $funding->total() / self::CENTS_PER_EURO,
+            // nobody said who applies: every programme at its highest share
+            'up_to' => $unknown,
+            'programmes' => array_map(static fn (array $line): array => [
+                'key' => $line['programme']->key,
+                'name' => $line['programme']->name,
+                'publisher' => $line['programme']->publisher,
+                'source' => $line['programme']->url,
+                'as_of' => $line['programme']->asOf,
+                'valid_until' => $line['programme']->validUntil,
+                'eligible_cost' => $line['eligible'] / self::CENTS_PER_EURO,
+                'share' => $line['share'],
+                'amount' => $line['amount'] / self::CENTS_PER_EURO,
+                'capped' => $line['capped'],
+                'below_minimum' => $line['below_minimum'],
+                'conditions' => $line['programme']->conditions,
+            ], $funding->lines),
+            'note' => [] === $funding->lines
+                ? 'No funding programme known for this place and these measures.'
+                : ($unknown
+                    ? 'Who applies is not known (set_funding_applicant): each programme at its highest share, as "up to". Public owners usually get nothing from these programmes.'
+                    : 'An estimate to apply with, not a promise: apply before ordering anything, and check the current guideline (source).'),
         ];
     }
 }

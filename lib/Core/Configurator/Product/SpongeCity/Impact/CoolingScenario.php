@@ -40,8 +40,8 @@ final readonly class CoolingScenario
     public const string KEY_EVAPORATION_SHARE = 'yearly_evaporation_percent';
 
     /**
-     * @param array<string, float> $values     KEY_* → value
-     * @param array<string, float> $evaporatedBy litres a day per GroundClass value of the open ground
+     * @param array<string, float> $values       KEY_* → value
+     * @param array<string, float> $evaporatedBy litres a day per GroundClass value of the open ground and roofs, and of the greened façades (CoolingCalculator::FACADE_EVAPORATION)
      */
     public function __construct(
         public array $values,

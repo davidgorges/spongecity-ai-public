@@ -32,6 +32,12 @@ enum InfiltrationPotential: string
         return self::GERMAN[mb_strtolower(trim($value))] ?? self::Unknown;
     }
 
+    /** whether a facility that lets water soak away (an infiltrating rain garden, a trench) may be planned here */
+    public function soaksAway(): bool
+    {
+        return self::Possible === $this || self::Likely === $this;
+    }
+
     /** what it means for planning, for the agent */
     public function guidance(): string
     {

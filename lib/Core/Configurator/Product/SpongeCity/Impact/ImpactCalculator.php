@@ -42,6 +42,15 @@ final readonly class ImpactCalculator
     public const float RAIN_GARDEN_MEDIA_STORAGE = 0.12;
     /** a rain garden should not drain more than this many times its own area */
     public const float MAX_CATCHMENT_RATIO = 10.0;
+    /**
+     * a rain garden with a gravel trench below (Mulden-Rigolen-Element) takes the runoff of a larger
+     * area: DWA-A 138 swales drain 5 to 15 times their area, a trench below puts them at the top of it.
+     */
+    public const float MAX_CATCHMENT_RATIO_TRENCH = 15.0;
+    /** water a gravel trench holds, as a share of its volume (pores of 16/32 gravel, DWA-A 138: 0.30 to 0.35) */
+    public const float TRENCH_VOID_SHARE = 0.35;
+    /** sealed ground a tree trench (Baumrigole) takes the runoff of, m² per m³ of trench (BlueGreenStreets: 10 to 15 m³ for 100 to 150 m²) */
+    public const float TREE_TRENCH_CATCHMENT_M2_PER_M3 = 10.0;
     public const float SHADE_TEMPERATURE_REDUCTION = 12.0;
     private const float MILLIMETRES_PER_METRE = 1000.0;
     private const float SHADE_RAY_STEP_METRES = 1.5;
@@ -170,21 +179,32 @@ final readonly class ImpactCalculator
 
         $areas = [];
         $ponding = 0.0;
+        $reach = 0.0;
         foreach ($grid['cells'] as [$x, $z]) {
             $class = $this->classAt($layers, $plotSurface, $x, $z);
             if (GroundClass::RainGarden === $class) {
-                $ponding += $cellM2 * $this->storageAt($layers, $x, $z) / self::MILLIMETRES_PER_METRE;
+                $garden = $this->rainGardenAt($layers, $x, $z);
+                $ponding += $cellM2 * ($garden['storage'] ?? 0.0) / self::MILLIMETRES_PER_METRE;
+                $reach += $cellM2 * (($garden['trench'] ?? 0.0) > 0.0 ? self::MAX_CATCHMENT_RATIO_TRENCH : self::MAX_CATCHMENT_RATIO);
             }
             // a roof's own shade does not matter: only the open ground is looked at
             $shade = $class->isRoof() ? ShadeKind::Sun : $this->shadeAt($shadeMap, $occluders['sails'], $x, $z);
             $areas[$class->value][$shade->value] = ($areas[$class->value][$shade->value] ?? 0.0) + $cellM2;
+        }
+        // tree trenches store runoff below a tree standing on the plot, like a rain garden without its basin
+        foreach ($site->ofType(O::NEWTREE) as $tree) {
+            $volume = is_numeric($tree[O::TRENCH_VOLUME] ?? null) ? (float) $tree[O::TRENCH_VOLUME] : 0.0;
+            if ($volume > 0.0 && Polygon::contains($outline, (float) $tree[O::X], (float) $tree[O::Z])) {
+                $ponding += $volume * self::TRENCH_VOID_SHARE;
+                $reach += $volume * self::TREE_TRENCH_CATCHMENT_M2_PER_M3;
+            }
         }
         $crowns = array_map(static fn (array $t): array => [
             'm2' => M_PI * ($t['radius'] / 1000) ** 2,
             'on_plot' => Polygon::contains($outline, $t['x'], $t['z']),
         ], $occluders['trees']);
 
-        return new GroundSurvey(count($grid['cells']) * $cellM2, $areas, $crowns, $ponding);
+        return new GroundSurvey(count($grid['cells']) * $cellM2, $areas, $crowns, $ponding, $reach, array_sum(array_map(self::wallArea(...), $site->ofType(O::FACADEGREEN))));
     }
 
     /**
@@ -218,12 +238,13 @@ final readonly class ImpactCalculator
         $captured = 0.0;
         $rainGardenArea = $survey->area(GroundClass::RainGarden);
         $sealedCatchment = $survey->sealedArea();
-        if ($rainGardenArea > 0.0) {
+        if ($rainGardenArea > 0.0 || $survey->rainGardenPondingCubicMetres > 0.0) {
             $storage = $survey->rainGardenPondingCubicMetres + $rainGardenArea * self::RAIN_GARDEN_MEDIA_STORAGE;
-            $reachable = min($sealedCatchment, $rainGardenArea * self::MAX_CATCHMENT_RATIO);
+            $reach = $survey->rainGardenReach();
+            $reachable = min($sealedCatchment, $reach);
             $captured = min($storage, $reachable * GroundClass::Asphalt->runoffCoefficient() * $rain);
-            if ($sealedCatchment > $rainGardenArea * self::MAX_CATCHMENT_RATIO) {
-                $warnings[] = sprintf('The rain gardens (%.0f m²) are small for the %.0f m² of sealed surface around them (max. 10 times their area drains into one).', $rainGardenArea, $sealedCatchment);
+            if ($rainGardenArea > 0.0 && $sealedCatchment > $reach) {
+                $warnings[] = sprintf('The rain gardens (%.0f m²) are small for the %.0f m² of sealed surface around them (max. %d times their area drains into one, %d with a gravel trench below).', $rainGardenArea, $sealedCatchment, (int) self::MAX_CATCHMENT_RATIO, (int) self::MAX_CATCHMENT_RATIO_TRENCH);
             }
         }
 
@@ -251,15 +272,15 @@ final readonly class ImpactCalculator
     /**
      * Ground layers from the top: what lies on the plot's own surface, highest priority first.
      *
-     * @return list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, within?: list<array{0: float, 1: float}>}>
+     * @return list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, trench?: float, within?: list<array{0: float, 1: float}>}>
      */
     private function layers(Site $site): array
     {
         $layers = [];
-        $add = static function (GroundClass $class, array $object, float $storage = 0.0) use (&$layers): void {
+        $add = static function (GroundClass $class, array $object, float $storage = 0.0, float $trench = 0.0) use (&$layers): void {
             foreach (Site::outlinesOf($object) as $polygon) {
                 if (count($polygon) >= 3) {
-                    $layers[] = ['class' => $class, 'polygon' => $polygon, 'bounds' => Polygon::bounds($polygon), 'storage' => $storage];
+                    $layers[] = ['class' => $class, 'polygon' => $polygon, 'bounds' => Polygon::bounds($polygon), 'storage' => $storage, 'trench' => $trench];
                 }
             }
         };
@@ -280,8 +301,9 @@ final readonly class ImpactCalculator
         }
         foreach ($site->objects as $object) {
             match ($object[O::TYPE]) {
-                O::RAINGARDEN => $add(GroundClass::RainGarden, $object, is_numeric($object[O::STORAGE] ?? null) ? (float) $object[O::STORAGE] : 0.0),
+                O::RAINGARDEN => $add(GroundClass::RainGarden, $object, ...self::rainGardenWater($object)),
                 O::PLANTING => $add(GroundClass::Planting, $object),
+                O::COOLSURFACE => $add(GroundClass::CoolPavement, $object),
                 O::PERMEABLE => $add(GroundClass::fromPermeableKind(is_string($object[O::KIND] ?? null) ? $object[O::KIND] : ''), $object),
                 default => null,
             };
@@ -307,8 +329,8 @@ final readonly class ImpactCalculator
      * the gravel strip, and a stair head standing on a lower level, stay roof. The levels come from the
      * map's building parts, which may reach beyond the building's footprint: only the footprint is roof.
      *
-     * @param array<string, mixed>                                                                                                                         $greenRoof
-     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, within?: list<array{0: float, 1: float}>}> $layers
+     * @param array<string, mixed>                                                                                                                             $greenRoof
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, trench?: float, within?: list<array{0: float, 1: float}>}> $layers
      */
     private function greenRoofLayers(Site $site, array $greenRoof, array &$layers): void
     {
@@ -336,7 +358,7 @@ final readonly class ImpactCalculator
     }
 
     /**
-     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, within?: list<array{0: float, 1: float}>}> $layers
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, trench?: float, within?: list<array{0: float, 1: float}>}> $layers
      */
     private function classAt(array $layers, GroundClass $plotSurface, float $x, float $z): GroundClass
     {
@@ -353,17 +375,47 @@ final readonly class ImpactCalculator
     }
 
     /**
-     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, within?: list<array{0: float, 1: float}>}> $layers
+     * The rain garden a point lies in: its storage (ponding plus the water its trench holds,
+     * millimetres of water over its area) and its trench's depth.
+     *
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, trench?: float, within?: list<array{0: float, 1: float}>}> $layers
+     *
+     * @return array{storage: float, trench: float}|null
      */
-    private function storageAt(array $layers, float $x, float $z): float
+    private function rainGardenAt(array $layers, float $x, float $z): ?array
     {
         foreach ($layers as $layer) {
             if (GroundClass::RainGarden === $layer['class'] && Polygon::contains($layer['polygon'], $x, $z)) {
-                return $layer['storage'];
+                return ['storage' => $layer['storage'], 'trench' => $layer['trench'] ?? 0.0];
             }
         }
 
-        return 0.0;
+        return null;
+    }
+
+    /**
+     * What a rain garden holds above its planting medium (ponding plus its trench's pores, millimetres
+     * of water) and its trench's depth.
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return array{0: float, 1: float}
+     */
+    private static function rainGardenWater(array $object): array
+    {
+        $ponding = is_numeric($object[O::STORAGE] ?? null) ? (float) $object[O::STORAGE] : 0.0;
+        $trench = is_numeric($object[O::TRENCH] ?? null) ? (float) $object[O::TRENCH] : 0.0;
+
+        return [$ponding + $trench * self::TRENCH_VOID_SHARE, $trench];
+    }
+
+    /**
+     * Metres of water a rain garden holds per m² of its area: its ponding, its planting medium and
+     * the pores of its gravel trench. One formula for the balance, the placement and the panel.
+     */
+    public static function rainGardenStorageMetres(float $pondingMm, float $trenchMm = 0.0): float
+    {
+        return ($pondingMm + $trenchMm * self::TRENCH_VOID_SHARE) / self::MILLIMETRES_PER_METRE + self::RAIN_GARDEN_MEDIA_STORAGE;
     }
 
     /**
@@ -442,6 +494,37 @@ final readonly class ImpactCalculator
     }
 
     /**
+     * m² of wall a façade greening covers: the length of its line along the wall times its height.
+     *
+     * @param array<string, mixed> $object
+     */
+    public static function wallArea(array $object): float
+    {
+        $points = Site::points($object);
+        $length = 0.0;
+        for ($i = 1, $n = count($points); $i < $n; ++$i) {
+            $length += hypot($points[$i][0] - $points[$i - 1][0], $points[$i][1] - $points[$i - 1][1]);
+        }
+
+        return $length * (is_numeric($object[O::HEIGHT] ?? null) ? (float) $object[O::HEIGHT] : 0.0) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE;
+    }
+
+    /**
+     * Where the shadow of a tree's crown falls at the moment the shade is measured: the centre of the
+     * crown's shadow on the ground, plan millimetres (the crown's middle height cast away from the sun).
+     *
+     * @return array{0: float, 1: float}
+     */
+    public static function crownShadowCentre(float $x, float $z, float $height): array
+    {
+        [$dx, $dz] = self::towardsSun();
+        $middle = $height * (self::CROWN_BASE_SHARE + 1.0) / 2;
+        $reach = $middle / tan(deg2rad(self::SUN_ELEVATION));
+
+        return [$x - $dx * $reach, $z - $dz * $reach];
+    }
+
+    /**
      * @return array{0: float, 1: float} the unit vector towards the sun in plan (x east, z south: north is -z)
      */
     private static function towardsSun(): array
@@ -458,7 +541,7 @@ final readonly class ImpactCalculator
     {
         return [
             'Runoff coefficients per surface follow typical DWA-A 138 / DIN 1986-100 values (asphalt 0.9, roof 0.9, permeable pavers 0.4, gravel 0.6, lawn 0.15).',
-            'Rain gardens are connected to the sealed surface around them; they hold ponding depth plus 0.12 m of water in the planting medium.',
+            sprintf('Rain gardens are connected to the sealed surface around them; they hold ponding depth plus %.2f m of water in the planting medium, and %d %% of the volume of a gravel trench below them. Tree trenches hold %d %% of their volume and take the runoff of %d m² per m³.', self::RAIN_GARDEN_MEDIA_STORAGE, (int) round(self::TRENCH_VOID_SHARE * 100), (int) round(self::TRENCH_VOID_SHARE * 100), (int) self::TREE_TRENCH_CATCHMENT_M2_PER_M3),
             'Tree crowns are modelled at their recorded diameter (tree register) or, without one, at mature size (radius 28 % of the height); they intercept 2 mm of rain.',
             'Shade is evaluated at one moment (14:00, mid-summer); shade sails let rain through.',
             'Surface temperatures are indicative values of a sunny summer midday, not a thermal simulation.',

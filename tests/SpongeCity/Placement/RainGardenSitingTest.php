@@ -5,17 +5,22 @@ declare(strict_types=1);
 namespace App\Tests\SpongeCity\Placement;
 
 use App\Mcp\PlacementTools;
+use App\Mcp\SpongeCityTools;
 use App\SpongeCity\Conditions\SiteConditions;
 use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\Hamburg\HamburgTerrain;
 use App\SpongeCity\Placement\OpenGround;
+use App\SpongeCity\Placement\RainGardenSiting;
 use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\PlanStore;
 use App\SpongeCity\Plan\SiteEditor;
 use App\SpongeCity\Terrain\Terrain;
 use App\SpongeCity\Terrain\TerrainGrid;
 use App\SpongeCity\Terrain\TerrainStore;
+use Core\Configurator\Assembly\Measure;
+use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
+use Core\Configurator\Product\SpongeCity\SpongeCitySku as Sku;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
@@ -61,6 +66,37 @@ final class RainGardenSitingTest extends KernelTestCase
         $zs = array_column($candidate[O::POINTS], 1);
         self::assertGreaterThan(1.5 * (max($zs) - min($zs)), max($xs) - min($xs), 'wider along the contour than down the slope, like a swale');
         self::assertGreaterThan(20000, min($zs), 'at the foot of the yard');
+    }
+
+    #[Test]
+    public function whereTheBasinIsTooSmallAndWaterSoaksAwayAGravelTrenchGoesBelowIt(): void
+    {
+        // the whole yard drains to one bowl: more than the largest basin holds
+        $plan = $this->plan(bowl: [20.0, 10.0], infiltration: 'likely');
+
+        $first = $this->tools()->proposePlacements($plan->id, O::RAINGARDEN)['candidates'][0];
+
+        $trench = $first['metrics']['trench_mm'];
+        self::assertGreaterThanOrEqual(RainGardenSiting::MIN_TRENCH_MM, $trench);
+        self::assertLessThanOrEqual(RainGardenSiting::MAX_TRENCH_MM, $trench);
+        $basin = $first['metrics']['area_m2'] * ImpactCalculator::rainGardenStorageMetres(RainGardenSiting::PONDING_MM);
+        self::assertGreaterThan($basin, $first['metrics']['storage_m3'], 'the trench holds more');
+        self::assertStringContainsString('Mulden-Rigolen', implode(' ', $first['reasons']));
+
+        $this->tools()->placeCandidate($plan->id, 'raingarden-1');
+        $cost = static::getContainer()->get(SpongeCityTools::class)->calculateImpact($plan->id)['cost'];
+        $trenchLine = array_find($cost['lines'], static fn (array $line): bool => Sku::RAINGARDEN_TRENCH === $line['sku']);
+        self::assertSame(Measure::VOLUME, $trenchLine['unit']);
+        self::assertEqualsWithDelta($first['metrics']['area_m2'] * $trench / 1000, $trenchLine['amount'], 1.0, 'priced by its volume');
+    }
+
+    #[Test]
+    public function aLinedGardenGetsNoTrench(): void
+    {
+        $first = $this->tools()->proposePlacements($this->plan(bowl: [20.0, 10.0])->id, O::RAINGARDEN)['candidates'][0];
+
+        self::assertTrue($first['metrics']['lined']);
+        self::assertSame(0, $first['metrics']['trench_mm'], 'stored water must soak away');
     }
 
     #[Test]
@@ -165,10 +201,10 @@ final class RainGardenSitingTest extends KernelTestCase
     #[Test]
     public function otherTypesAreStillDrawnByHand(): void
     {
-        $result = $this->tools()->proposePlacements($this->plan(bowl: null)->id, O::NEWTREE);
+        $result = $this->tools()->proposePlacements($this->plan(bowl: null)->id, O::SHADESAIL);
 
         self::assertStringContainsString('add_objects', $result['error']);
-        self::assertEqualsCanonicalizing([O::RAINGARDEN, O::PERMEABLE, O::GREENROOF], $result['types']);
+        self::assertEqualsCanonicalizing([O::RAINGARDEN, O::PERMEABLE, O::PLANTING, O::GREENROOF, O::NEWTREE, O::FACADEGREEN], $result['types']);
     }
 
     #[Test]

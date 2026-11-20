@@ -41,6 +41,10 @@ final readonly class RainGardenSiting implements InterventionSiting
     public const float MIN_CATCHMENT_M2 = 60.0;
     /** the ponding depth a candidate gets (SiteType's default for a rain garden) */
     public const int PONDING_MM = 300;
+    /** a gravel trench below a garden whose basin alone does not hold its catchment's runoff: between these depths, in steps */
+    public const int MIN_TRENCH_MM = 300;
+    public const int MAX_TRENCH_MM = 1500;
+    private const int TRENCH_STEP_MM = 100;
     /** candidates further apart than this, so they serve different parts of the plot */
     private const float MIN_SPACING_METRES = 12.0;
     /** with a point given, only flow paths within this distance of it */
@@ -554,7 +558,7 @@ final readonly class RainGardenSiting implements InterventionSiting
 
     private function infiltrates(InfiltrationPotential $potential): bool
     {
-        return InfiltrationPotential::Possible === $potential || InfiltrationPotential::Likely === $potential;
+        return $potential->soaksAway();
     }
 
     /**
@@ -580,26 +584,35 @@ final readonly class RainGardenSiting implements InterventionSiting
         }, $fit['metres']));
 
         $area = $fit['area'];
-        $storage = $area * (self::PONDING_MM / self::MILLIMETRES_PER_METRE + ImpactCalculator::RAIN_GARDEN_MEDIA_STORAGE);
-        $inflow = $catchment * GroundClass::Asphalt->runoffCoefficient() * $context->stormMillimetres / self::MILLIMETRES_PER_METRE;
-        $retained = min($storage, $inflow);
+        $runoffPerM2 = GroundClass::Asphalt->runoffCoefficient() * $context->stormMillimetres / self::MILLIMETRES_PER_METRE;
+        $inflow = $catchment * $runoffPerM2;
+        $basin = $area * ImpactCalculator::rainGardenStorageMetres(self::PONDING_MM);
+        $trench = $infiltrates ? self::trenchFor($area, $catchment, $runoffPerM2, $basin) : 0;
+        $storage = $area * ImpactCalculator::rainGardenStorageMetres(self::PONDING_MM, $trench);
+        $ratio = $trench > 0 ? ImpactCalculator::MAX_CATCHMENT_RATIO_TRENCH : ImpactCalculator::MAX_CATCHMENT_RATIO;
+        $retained = min($storage, $inflow, $area * $ratio * $runoffPerM2);
         $spot = $this->lowSpotAt($context, $cx, $cz);
 
         $reasons = [sprintf('Collects the runoff of about %d m² of sealed ground: the terrain (DGM1, 2 m) drains it here.', (int) round($catchment, -1))];
         if (null !== $spot) {
             $reasons[] = sprintf('Sits in a low spot %d cm deep, where the water gathers anyway.', $spot['depth_cm']);
         }
-        $reasons[] = sprintf('Holds %.0f m³ of the %.0f m³ that runs off its catchment in a %d mm/h storm (%d mm ponding plus the planting medium).', $storage, $inflow, $context->stormMillimetres, self::PONDING_MM);
+        $reasons[] = $trench > 0
+            ? sprintf('Holds %.0f m³ of the %.0f m³ that runs off its catchment in a %d mm/h storm: %d mm ponding and the planting medium (%.0f m³), and a gravel trench %.1f m deep below it (a swale-trench, Mulden-Rigolen-Element: %.0f m³ more, DWA-A 138).', $storage, $inflow, $context->stormMillimetres, self::PONDING_MM, $basin, $trench / self::MILLIMETRES_PER_METRE, $storage - $basin)
+            : sprintf('Holds %.0f m³ of the %.0f m³ that runs off its catchment in a %d mm/h storm (%d mm ponding plus the planting medium).', $storage, $inflow, $context->stormMillimetres, self::PONDING_MM);
         $reasons[] = $infiltrates
             ? sprintf('Infiltration is %s here (Versickerungspotentialkarte Hamburg): an infiltrating rain garden, kept %.0f m from the buildings (DWA-A 138).', $potential->value, self::INFILTRATING_CLEARANCE_METRES)
             : sprintf('Infiltration is %s here (Versickerungspotentialkarte Hamburg): a lined rain garden with an overflow, so %.0f m from the buildings is enough.', $potential->value, self::LINED_CLEARANCE_METRES);
 
         $warnings = [];
-        if ($catchment > $area * ImpactCalculator::MAX_CATCHMENT_RATIO) {
+        if ($catchment > $area * $ratio) {
             $warnings[] = sprintf('Small for its catchment (%d m² drain into %d m²): the rest overflows; a larger garden did not fit here.', (int) round($catchment, -1), (int) round($area));
         }
         if ($inflow > $storage) {
             $warnings[] = sprintf('Overflows in the design storm (%.0f of %.0f m³ held): plan the overflow (to the sewer or a further garden).', $storage, $inflow);
+            if (!$infiltrates) {
+                $warnings[] = 'No gravel trench below: it would only store water where the ground lets it soak away, which the map does not say here.';
+            }
         }
         if (null !== $request->areaM2 && $area < $request->areaM2 - 0.5) {
             $warnings[] = sprintf('Smaller than asked (%d instead of %d m²): no larger one fits on the flow path here.', (int) round($area), (int) round($request->areaM2));
@@ -610,11 +623,12 @@ final readonly class RainGardenSiting implements InterventionSiting
 
         return new Candidate(
             $id,
-            [O::TYPE => O::RAINGARDEN, O::POINTS => $points, O::STORAGE => self::PONDING_MM],
+            [O::TYPE => O::RAINGARDEN, O::POINTS => $points, O::STORAGE => self::PONDING_MM, O::TRENCH => $trench],
             [
                 'area_m2' => round($area, 1),
                 'catchment_m2' => round($catchment),
                 'storage_m3' => round($storage, 1),
+                'trench_mm' => $trench,
                 'inflow_m3' => round($inflow, 1),
                 'retained_m3' => round($retained, 1),
                 'infiltration' => $potential->value,
@@ -625,6 +639,24 @@ final readonly class RainGardenSiting implements InterventionSiting
             $reasons,
             $warnings,
         );
+    }
+
+    /**
+     * The depth of a gravel trench a garden needs below it to hold what its catchment sheds, where its
+     * basin alone does not: in TRENCH_STEP_MM steps between MIN_TRENCH_MM and MAX_TRENCH_MM, 0 when the
+     * basin is enough. A trench lets the garden take a larger catchment (MAX_CATCHMENT_RATIO_TRENCH).
+     */
+    private static function trenchFor(float $area, float $catchment, float $runoffPerM2, float $basin): int
+    {
+        $reachable = min($catchment, $area * ImpactCalculator::MAX_CATCHMENT_RATIO_TRENCH) * $runoffPerM2;
+        $missing = $reachable - $basin;
+        if ($missing <= 0.0 || $area <= 0.0) {
+            return 0;
+        }
+        $depth = $missing / ($area * ImpactCalculator::TRENCH_VOID_SHARE) * self::MILLIMETRES_PER_METRE;
+        $stepped = (int) (ceil($depth / self::TRENCH_STEP_MM) * self::TRENCH_STEP_MM);
+
+        return max(self::MIN_TRENCH_MM, min(self::MAX_TRENCH_MM, $stepped));
     }
 
     /**
@@ -697,6 +729,7 @@ final readonly class RainGardenSiting implements InterventionSiting
             sprintf('Infiltrating rain gardens (where the Versickerungspotentialkarte says possible or likely) keep %.0f m from buildings (DWA-A 138: 1.5 times the depth of a cellar that is not waterproofed); lined ones %.0f m.', self::INFILTRATING_CLEARANCE_METRES, self::LINED_CLEARANCE_METRES),
             sprintf('Not in tree root zones (crown plus %.1f m, DIN 18920), on streets or paths, at the plot edge, on other interventions, on play or sports areas, in the fall zones of play equipment (DIN EN 1176) or in low spots that are probably built.', OpenGround::ROOT_ZONE_BEYOND_CROWN_METRES),
             sprintf('Sized to about %d %% of the sealed area that drains into it (%d to %d m²), with %d mm ponding.', (int) round(self::SIZE_SHARE_OF_CATCHMENT * 100), (int) self::MIN_AREA_M2, (int) self::MAX_AREA_M2, self::PONDING_MM),
+            sprintf('Where its basin does not hold its catchment\'s runoff and the ground lets water soak away (possible or likely), a gravel trench %.1f to %.1f m deep goes below it (Mulden-Rigolen-Element, DWA-A 138): its pores hold %d %% of its volume, and the garden may take the runoff of %d instead of %d times its area. Lined gardens get no trench.', self::MIN_TRENCH_MM / self::MILLIMETRES_PER_METRE, self::MAX_TRENCH_MM / self::MILLIMETRES_PER_METRE, (int) round(ImpactCalculator::TRENCH_VOID_SHARE * 100), (int) ImpactCalculator::MAX_CATCHMENT_RATIO_TRENCH, (int) ImpactCalculator::MAX_CATCHMENT_RATIO),
         ];
     }
 }

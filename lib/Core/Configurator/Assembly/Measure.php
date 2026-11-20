@@ -5,17 +5,18 @@ declare(strict_types=1);
 namespace Core\Configurator\Assembly;
 
 /**
- * How a part counts on the bill of materials: as a piece, by its cut length or
- * by its area. Parts with the same SKU and the same measure are one BOM line.
+ * How a part counts on the bill of materials: as a piece, by its cut length,
+ * by its area or by its volume. Parts with the same SKU and the same measure are one BOM line.
  */
 final readonly class Measure
 {
     public const string PIECE = 'piece';
     public const string LENGTH = 'length';
     public const string AREA = 'area';
+    public const string VOLUME = 'volume';
 
     /**
-     * @param int $size cut length in mm (LENGTH), area in mm² (AREA), 0 for pieces
+     * @param int $size cut length in mm (LENGTH), area in mm² (AREA), volume in mm³ (VOLUME), 0 for pieces
      */
     private function __construct(
         public string $kind,
@@ -36,6 +37,12 @@ final readonly class Measure
     public static function area(float $width, float $height): self
     {
         return new self(self::AREA, (int) round($width * $height));
+    }
+
+    /** e.g. a gravel trench, priced per m³ */
+    public static function volume(float $cubicMillimetres): self
+    {
+        return new self(self::VOLUME, (int) round($cubicMillimetres));
     }
 
     public function key(): string

@@ -17,7 +17,7 @@ final readonly class BomLine
     }
 
     /**
-     * Total metres (LENGTH), square metres (AREA) or pieces (PIECE) of this line,
+     * Total metres (LENGTH), square metres (AREA), cubic metres (VOLUME) or pieces (PIECE) of this line,
      * the amount a unit price applies to.
      */
     public function totalAmount(): float
@@ -25,6 +25,7 @@ final readonly class BomLine
         return match ($this->measure->kind) {
             Measure::LENGTH => $this->quantity * $this->measure->size / 1_000,
             Measure::AREA => $this->quantity * $this->measure->size / 1_000_000,
+            Measure::VOLUME => $this->quantity * $this->measure->size / 1_000_000_000,
             default => (float) $this->quantity,
         };
     }

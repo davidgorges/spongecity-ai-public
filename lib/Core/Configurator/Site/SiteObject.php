@@ -40,6 +40,10 @@ final class SiteObject
     public const string SURFACE = 'surface';
     public const string KIND = 'kind';
     public const string STORAGE = 'storage';
+    /** a rain garden's gravel trench below it (Mulden-Rigolen-Element): its depth in millimetres, 0 for none */
+    public const string TRENCH = 'trench';
+    /** a new tree's trench below it (Baumrigole: structural soil and gravel that store the runoff of the ground around): its volume in m³, 0 for none */
+    public const string TRENCH_VOLUME = 'trenchVolume';
     /** a building's use (BuildingType) and the look of its walls (Facade) */
     public const string USE = 'use';
     public const string FACADE = 'facade';
@@ -105,14 +109,18 @@ final class SiteObject
     public const string SHADESAIL = 'shadesail';
     /** a green roof on one of the plot's buildings: its flat roof levels planted (GreenRoofs decides which) */
     public const string GREENROOF = 'greenroof';
+    /** climbing plants on a building's wall, along its foot (a line) and up to a height */
+    public const string FACADEGREEN = 'facadegreen';
+    /** a light, reflective coating on sealed ground: it stays sealed, but heats up less */
+    public const string COOLSURFACE = 'coolsurface';
     /** the building a green roof lies on, by its id */
     public const string BUILDING_ID = 'building';
 
-    public const array INTERVENTIONS = [self::NEWTREE, self::RAINGARDEN, self::PERMEABLE, self::PLANTING, self::SHADESAIL, self::GREENROOF];
+    public const array INTERVENTIONS = [self::NEWTREE, self::RAINGARDEN, self::PERMEABLE, self::PLANTING, self::SHADESAIL, self::GREENROOF, self::FACADEGREEN, self::COOLSURFACE];
     /** what stands on the ground and is raised to it as a whole; everything else lies on the ground and is draped over the terrain */
     public const array UPRIGHT = [
         self::HOUSE, self::OUTBUILDING, self::HEDGE, self::WALL, self::TREE, self::POOL, self::BOX, self::CYLINDER, self::PRISM,
-        self::BUILDING, self::NEWTREE, self::SHADESAIL,
+        self::BUILDING, self::NEWTREE, self::SHADESAIL, self::FACADEGREEN,
     ];
     public const array TYPES = [
         self::HOUSE, self::OUTBUILDING, self::HEDGE, self::WALL, self::TREE, self::PAVING, self::POOL, self::BOX, self::CYLINDER, self::PRISM,
@@ -217,12 +225,14 @@ final class SiteObject
         self::ROAD => 'An existing street or footpath along its centre line (points, not closed) with its width in millimetres. Context from OpenStreetMap, not changeable by the design.',
         self::AREA => 'An existing ground area of the plot (closed outline): its use (yard, parking, access = fire lane and deliveries, sport, play, quiet, green) and its surface today. From OpenStreetMap, or set by the user (look "user"); its use decides what its surface may become. Context, not an intervention.',
         self::EQUIPMENT => 'Existing play equipment (swing, slide, climbing, carousel, seesaw, spring, other) at x/z, width × depth its fall zone (DIN EN 1176), turned by turn. From OpenStreetMap or marked by the user. Context: nothing may be planned in its fall zone.',
-        self::NEWTREE => 'INTERVENTION: a newly planted shade tree at x/z (height is the expected height when grown). Gives shade and evaporative cooling.',
-        self::RAINGARDEN => 'INTERVENTION: a sunken planted rain garden (closed outline) that takes runoff from surrounding sealed areas; storage is its ponding depth in millimetres.',
+        self::NEWTREE => 'INTERVENTION: a newly planted shade tree at x/z (height is the expected height when grown). Gives shade and evaporative cooling. trenchVolume (m³, 0 for none): a tree trench below it (Baumrigole) that stores the runoff of the sealed ground around it and waters the tree, only where the ground lets water soak away.',
+        self::RAINGARDEN => 'INTERVENTION: a sunken planted rain garden (closed outline) that takes runoff from surrounding sealed areas; storage is its ponding depth in millimetres; trench is the depth of a gravel trench below it (a swale-trench, Mulden-Rigolen-Element, 0 for none) that stores more water and takes the runoff of a larger area, only where the ground lets water soak away (propose_placements says where).',
         self::PERMEABLE => 'INTERVENTION: a permeable surface (closed outline) replacing sealed ground: pavers with joints, gravel, or grass pavers.',
         self::PLANTING => 'INTERVENTION: unsealed planting or lawn (closed outline) replacing sealed ground.',
         self::SHADESAIL => 'INTERVENTION: a shade sail or pergola roof (closed outline) y millimetres above ground. Shade only; rain falls through to the ground below.',
         self::GREENROOF => 'INTERVENTION: a green roof on a building of the plot (building: its id). Its flat roof levels are planted, with a 0.5 m gravel strip along the edges; points are taken from the building. kind "extensive" (sedum, light) or "intensive" (roof garden, heavy). Place it with propose_placements type "greenroof": not every roof can carry one.',
+        self::FACADEGREEN => 'INTERVENTION: façade greening, climbing plants rooted at the foot of a building\'s wall on a trellis: points is the line along the wall (2 or more points, just outside it), height how high they grow in millimetres. Cools the wall and evaporates water; it does not change the ground. Place it with propose_placements type "facadegreen".',
+        self::COOLSURFACE => 'INTERVENTION: a light, reflective coating on sealed ground (closed outline): the ground stays sealed and sheds the same rain, but heats up less in the sun. For asphalt that must stay (access lanes, sports courts); unsealing is better wherever it is possible.',
     ];
 
     private const array POSITION = [
@@ -358,12 +368,14 @@ final class SiteObject
                 self::WIDTH => [self::INT, 1000, 30000, 6000],
                 self::KIND => [self::ENUM, self::ROAD_KINDS, self::ROAD_CARRIAGEWAY],
             ],
-            self::NEWTREE => [...self::POSITION, self::HEIGHT => [self::INT, 3000, 25000, 9000]],
-            self::RAINGARDEN => [self::POINTS => [self::OUTLINE, 3], self::STORAGE => [self::INT, 100, 600, 300]],
+            self::NEWTREE => [...self::POSITION, self::HEIGHT => [self::INT, 3000, 25000, 9000], self::TRENCH_VOLUME => [self::INT, 0, 40, 0]],
+            self::RAINGARDEN => [self::POINTS => [self::OUTLINE, 3], self::STORAGE => [self::INT, 100, 600, 300], self::TRENCH => [self::INT, 0, 1500, 0]],
             self::PERMEABLE => [self::POINTS => [self::OUTLINE, 3], self::KIND => [self::ENUM, self::PERMEABLE_KINDS, self::KIND_PAVERS]],
             self::PLANTING => [self::POINTS => [self::OUTLINE, 3]],
             self::SHADESAIL => [self::POINTS => [self::OUTLINE, 3], self::Y => [self::INT, 2200, 6000, 3200], ...$color('#e8c872')],
             self::GREENROOF => [self::POINTS => [self::OUTLINE, 3], self::BUILDING_ID => [self::REF], self::KIND => [self::ENUM, self::GREENROOF_KINDS, self::KIND_EXTENSIVE]],
+            self::FACADEGREEN => [self::POINTS => [self::OUTLINE, 2], self::HEIGHT => [self::INT, 2000, 15000, 6000]],
+            self::COOLSURFACE => [self::POINTS => [self::OUTLINE, 3]],
             default => [],
         };
     }

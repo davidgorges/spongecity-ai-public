@@ -30,6 +30,8 @@ enum GroundClass: string
     case GreenRoofIntensive = 'greenroof_intensive';
     case Asphalt = 'asphalt';
     case Concrete = 'concrete';
+    /** asphalt with a light, reflective coating: sealed as before, cooler in the sun */
+    case CoolPavement = 'cool_pavement';
     case Paving = 'paving';
     case PermeablePavers = 'permeable_pavers';
     case PermeableGravel = 'permeable_gravel';
@@ -48,7 +50,7 @@ enum GroundClass: string
             // DIN 1986-100: extensive green roof under 10 cm 0.5, intensive from 30 cm 0.2
             self::GreenRoofExtensive => 0.50,
             self::GreenRoofIntensive => 0.20,
-            self::Asphalt, self::Concrete => 0.90,
+            self::Asphalt, self::Concrete, self::CoolPavement => 0.90,
             self::Paving => 0.75,
             self::PermeablePavers => 0.40,
             self::PermeableGravel => 0.30,
@@ -69,6 +71,8 @@ enum GroundClass: string
             self::GreenRoofExtensive => 36.0,
             self::GreenRoofIntensive => 31.0,
             self::Asphalt => 62.0,
+            // cool pavements measure 10 to 15 K below dark asphalt at midday (US EPA, Los Angeles and Phoenix trials)
+            self::CoolPavement => 50.0,
             self::Concrete => 52.0,
             self::Paving => 48.0,
             self::PermeablePavers => 44.0,
@@ -90,7 +94,7 @@ enum GroundClass: string
     public function cropCoefficient(): float
     {
         return match ($this) {
-            self::Roof, self::Asphalt, self::Concrete => 0.0,
+            self::Roof, self::Asphalt, self::Concrete, self::CoolPavement => 0.0,
             // sedum closes its pores in the heat and the thin substrate dries out
             self::GreenRoofExtensive => 0.50,
             self::GreenRoofIntensive => 0.80,
@@ -120,7 +124,7 @@ enum GroundClass: string
     public function yearlyWaterBalance(): array
     {
         [$runoff, $infiltration, $evaporation] = match ($this) {
-            self::Roof, self::Asphalt, self::Concrete => [0.80, 0.0, 0.20],
+            self::Roof, self::Asphalt, self::Concrete, self::CoolPavement => [0.80, 0.0, 0.20],
             // FLL / DWA-M 102-4: a green roof keeps 50 to 60 % (extensive) or 70 to 90 % (intensive) of a year's rain
             self::GreenRoofExtensive => [0.45, 0.0, 0.55],
             self::GreenRoofIntensive => [0.20, 0.0, 0.80],

@@ -8,7 +8,6 @@ use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\DataSource;
 use App\SpongeCity\Placement\AddHere;
 use App\SpongeCity\Placement\GreenRoofSiting;
-use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
 use App\SpongeCity\Placement\Placements;
 use App\SpongeCity\Placement\Zone;
 use App\SpongeCity\Plan\Plan;
@@ -20,6 +19,8 @@ use App\SpongeCity\PlanEvaluator;
 use App\SpongeCity\Rationale\Alternative;
 use App\SpongeCity\Rationale\Rationale;
 use App\SpongeCity\Rationale\RationaleStore;
+use Core\Configurator\Product\SpongeCity\Funding\Applicant;
+use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
@@ -82,10 +83,11 @@ final class PlanWorkspace
     public const string PROP_SELECTED = 'selected';
     /** what an intervention's panel lets a person change: type → field → the values offered */
     public const array EDITABLE = [
-        O::RAINGARDEN => [O::STORAGE => [150, 300, 450]],
+        O::RAINGARDEN => [O::STORAGE => [150, 300, 450], O::TRENCH => [0, 500, 1000]],
         O::PERMEABLE => [O::KIND => O::PERMEABLE_KINDS],
-        O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000]],
+        O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000], O::TRENCH_VOLUME => [0, 12, 20]],
         O::SHADESAIL => [O::Y => [2500, 3200, 4000]],
+        O::FACADEGREEN => [O::HEIGHT => [4000, 6000, 9000]],
         // narrowed per roof to the kinds its building can take (GreenRoofs)
         O::GREENROOF => [O::KIND => O::GREENROOF_KINDS],
     ];
@@ -115,6 +117,10 @@ final class PlanWorkspace
     /** the slider; the plan's storm, which the agent may change too, wins on every re-render */
     #[LiveProp(writable: true, onUpdated: 'onStormUpdated')]
     public int $storm = SpongeCityParameter::STORM_DEFAULT;
+
+    /** who would apply for funding (Applicant value); the plan's, which the agent may set too, wins on every re-render */
+    #[LiveProp(writable: true, onUpdated: 'onApplicantUpdated')]
+    public string $applicant = '';
 
     /** @var list<array{role: string, content: string}> */
     #[LiveProp]
@@ -198,10 +204,28 @@ final class PlanWorkspace
         $this->plans->save($plan);
     }
 
-    #[PreReRender]
-    public function showThePlansStorm(): void
+    /** the user chose who applies for funding */
+    public function onApplicantUpdated(): void
     {
-        $this->storm = $this->plan()->storm();
+        $plan = $this->plan();
+        $plan->setApplicant(Applicant::tryFrom($this->applicant) ?? Applicant::Unknown);
+        $this->plans->save($plan);
+    }
+
+    #[PreReRender]
+    public function showThePlansSettings(): void
+    {
+        $plan = $this->plan();
+        $this->storm = $plan->storm();
+        $this->applicant = $plan->applicant()->value;
+    }
+
+    /**
+     * @return list<string> the Applicant values, in the order the select lists them
+     */
+    public function applicants(): array
+    {
+        return Applicant::values();
     }
 
     /**
@@ -275,7 +299,10 @@ final class PlanWorkspace
             return $this->translator->trans('plan.measures.size.height', ['%height%' => round((float) ($object[O::HEIGHT] ?? 0) / self::MILLIMETRES_PER_METRE, 1)]);
         }
 
-        return $this->translator->trans('plan.measures.size.area', ['%area%' => (int) round(Polygon::area(Site::points($object)) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE)]);
+        // a greened façade by its wall, everything else by its ground
+        $area = O::FACADEGREEN === $object[O::TYPE] ? ImpactCalculator::wallArea($object) : Polygon::area(Site::points($object)) / self::SQUARE_MILLIMETRES_PER_SQUARE_METRE;
+
+        return $this->translator->trans('plan.measures.size.area', ['%area%' => (int) round($area)]);
     }
 
     /**
@@ -554,8 +581,8 @@ final class PlanWorkspace
      * The values a person may choose for a field of this object: a green roof's kinds are only those
      * its building can take (a roof garden is not offered on a hall).
      *
-     * @param array<string, mixed>   $object
-     * @param list<int|string>       $options
+     * @param array<string, mixed> $object
+     * @param list<int|string>     $options
      *
      * @return list<int|string>
      */

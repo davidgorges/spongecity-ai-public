@@ -5,6 +5,7 @@
 #}
 {% set workspace = this %}
 {% set piece = constant('Core\\Configurator\\Assembly\\Measure::PIECE') %}
+{% set volume = constant('Core\\Configurator\\Assembly\\Measure::VOLUME') %}
 {% set plan = this.plan %}
 {% set remove_action = constant('App\\Twig\\Components\\PlanWorkspace::ACTION_REMOVE') %}
 {% set viewer_debug = app.request.query.getBoolean(constant('App\\Twig\\Components\\PlanWorkspace::QUERY_DEBUG')) %}
@@ -48,6 +49,7 @@
 {% else %}
 {% set impact = this.impact %}
 {% set cost = this.cost %}
+{% set applicants = this.applicants %}
 {% set interventions = this.interventions %}
 {% set plot_map = this.plotMap %}
 <div {{ attributes.defaults({'class': 'min-h-screen lg:h-screen', 'data-action': constant('App\\Twig\\Components\\PlanWorkspace::EVENT_PLAN_CHANGED') ~ '@window->live#$render'}) }}>
@@ -345,6 +347,8 @@
                             planting: 'plan.measures.type.planting'|trans,
                             shadesail: 'plan.measures.type.shadesail'|trans,
                             greenroof: 'plan.measures.type.greenroof'|trans,
+                            facadegreen: 'plan.measures.type.facadegreen'|trans,
+                            coolsurface: 'plan.measures.type.coolsurface'|trans,
                         },
                         saved: 'plan.plot_map.message.saved'|trans,
                         added: 'plan.plot_map.message.added'|trans,
@@ -495,7 +499,7 @@
                                     data-live-id-param="{{ object.id }}"
                                     data-live-field-param="{{ field }}"
                                     data-live-value-param="{{ option }}"
-                                >{% if field == 'kind' %}{{ ('plan.object.kind.' ~ option)|trans }}{% elseif field == 'storage' %}{{ 'plan.object.value.storage'|trans({'%value%': option}) }}{% else %}{{ ('plan.object.value.' ~ field)|trans({'%value%': (option / 1000)|number_format(1)|trim('0', 'right')|trim('.', 'right')}) }}{% endif %}</twig:ToggleGroup:Item>
+                                >{% if field == 'kind' %}{{ ('plan.object.kind.' ~ option)|trans }}{% elseif field == 'storage' %}{{ 'plan.object.value.storage'|trans({'%value%': option}) }}{% elseif field == constant('Core\\Configurator\\Site\\SiteObject::TRENCH_VOLUME') %}{{ ('plan.object.value.' ~ field)|trans({'%value%': option}) }}{% else %}{{ ('plan.object.value.' ~ field)|trans({'%value%': (option / 1000)|number_format(1)|trim('0', 'right')|trim('.', 'right')}) }}{% endif %}</twig:ToggleGroup:Item>
                             {% endfor %}
                         </twig:ToggleGroup>
                     {% endfor %}
@@ -770,7 +774,7 @@
                     {% for line in cost.lines %}
                         <twig:Table:Row>
                             <twig:Table:Head scope="row" class="h-auto py-1.5 pl-0 font-normal whitespace-normal">{{ ('plan.sku.' ~ line.sku)|trans }}</twig:Table:Head>
-                            <twig:Table:Cell class="py-1.5 text-right tabular-nums text-muted-foreground">{{ line.amount|number_format(line.unit == piece ? 0 : 1) }} {{ line.unit == piece ? '×' : 'm²' }}</twig:Table:Cell>
+                            <twig:Table:Cell class="py-1.5 text-right tabular-nums text-muted-foreground">{{ line.amount|number_format(line.unit == piece ? 0 : 1) }} {{ line.unit == piece ? '×' : (line.unit == volume ? 'm³' : 'm²') }}</twig:Table:Cell>
                             <twig:Table:Cell class="py-1.5 pr-0 text-right tabular-nums">{{ line.total is null ? '–' : line.total|number_format(0) ~ ' €' }}</twig:Table:Cell>
                         </twig:Table:Row>
                     {% endfor %}
@@ -780,9 +784,55 @@
                         <twig:Table:Head scope="row" colspan="2" class="h-auto py-2 pl-0">{{ 'plan.cost.total'|trans }}</twig:Table:Head>
                         <twig:Table:Cell class="py-2 pr-0 text-right tabular-nums">{{ cost.total|number_format(0) }} €</twig:Table:Cell>
                     </twig:Table:Row>
+                    <twig:Table:Row class="hover:bg-transparent">
+                        <twig:Table:Head scope="row" colspan="2" class="h-auto py-1 pl-0 font-normal text-muted-foreground">{{ 'plan.cost.maintenance'|trans }}</twig:Table:Head>
+                        <twig:Table:Cell class="py-1 pr-0 text-right tabular-nums text-muted-foreground">{{ 'plan.cost.per_year'|trans({'%amount%': cost.maintenance_per_year|number_format(0)}) }}</twig:Table:Cell>
+                    </twig:Table:Row>
+                    <twig:Table:Row class="hover:bg-transparent">
+                        <twig:Table:Head scope="row" colspan="2" class="h-auto py-1 pl-0 font-normal text-muted-foreground">{{ 'plan.cost.lifecycle'|trans({'%years%': cost.lifecycle_years}) }}</twig:Table:Head>
+                        <twig:Table:Cell class="py-1 pr-0 text-right tabular-nums text-muted-foreground">{{ cost.lifecycle_total|number_format(0) }} €</twig:Table:Cell>
+                    </twig:Table:Row>
                 </twig:Table:Footer>
             </twig:Table>
             <p class="text-xs text-muted-foreground">{{ 'plan.cost.note'|trans }}</p>
+            {# funding: who applies decides the share the programmes pay #}
+            <div class="flex flex-col gap-1.5">
+                <label for="applicant" class="text-xs text-muted-foreground">{{ constant('Core\\Configurator\\Product\\SpongeCity\\SpongeCityParameter::LABEL_APPLICANT')|trans }}</label>
+                <select id="applicant" data-model="applicant" class="h-8 rounded-md border border-input bg-background px-2 text-sm">
+                    {% for value in applicants %}
+                        <option value="{{ value }}" {{ value == applicant ? 'selected' }}>{{ (constant('Core\\Configurator\\Product\\SpongeCity\\SpongeCityParameter::LABEL_APPLICANT_CHOICE') ~ value)|trans }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            {% if cost.funding.programmes is empty %}
+                <p class="text-xs text-muted-foreground">{{ 'plan.cost.funding_none'|trans }}</p>
+            {% else %}
+                <twig:Table>
+                    <twig:Table:Caption class="sr-only">{{ 'plan.cost.funding'|trans }}</twig:Table:Caption>
+                    <twig:Table:Body>
+                        {% for programme in cost.funding.programmes %}
+                            <twig:Table:Row>
+                                <twig:Table:Head scope="row" class="h-auto py-1.5 pl-0 font-normal whitespace-normal">
+                                    <a href="{{ programme.source }}" target="_blank" rel="noopener" class="hover:underline">{{ programme.name }}</a>
+                                    <span class="text-xs text-muted-foreground tabular-nums">· {{ (programme.share * 100)|number_format(0) }} %</span>
+                                </twig:Table:Head>
+                                <twig:Table:Cell class="py-1.5 pr-0 text-right tabular-nums">− {{ programme.amount|number_format(0) }} €</twig:Table:Cell>
+                            </twig:Table:Row>
+                        {% endfor %}
+                    </twig:Table:Body>
+                    <twig:Table:Footer class="bg-transparent">
+                        <twig:Table:Row class="hover:bg-transparent">
+                            <twig:Table:Head scope="row" class="h-auto py-2 pl-0">{{ (cost.funding.up_to ? 'plan.cost.funding_up_to' : 'plan.cost.funding')|trans }}</twig:Table:Head>
+                            <twig:Table:Cell class="py-2 pr-0 text-right tabular-nums">− {{ cost.funding.total|number_format(0) }} €</twig:Table:Cell>
+                        </twig:Table:Row>
+                        <twig:Table:Row class="hover:bg-transparent">
+                            <twig:Table:Head scope="row" class="h-auto py-2 pl-0">{{ 'plan.cost.net'|trans }}</twig:Table:Head>
+                            <twig:Table:Cell class="py-2 pr-0 text-right tabular-nums">{{ cost.net_total|number_format(0) }} €</twig:Table:Cell>
+                        </twig:Table:Row>
+                    </twig:Table:Footer>
+                </twig:Table>
+                <p class="text-xs text-muted-foreground">{{ 'plan.cost.funding_note'|trans }}</p>
+            {% endif %}
         {% endif %}
     </twig:Plan:Window>
 

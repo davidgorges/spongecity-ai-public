@@ -168,7 +168,23 @@ the browser and the MCP tools read and write the same plan in separate requests.
 `SiteEditor` is the only code that mutates the site (add, update, remove, clear interventions); it
 always goes through `SiteType::normalize()`.
 
-`PlanAnalyzer` combines `PlanEvaluator` (engine) and `ImpactCalculator` into impact and cost.
+`PlanAnalyzer` combines `PlanEvaluator` (engine) and `ImpactCalculator` into impact and cost. The
+running costs are a second price list (`SpongeCityDefinition::maintenancePrices()`, cents per unit
+and year) priced against the same bill of quantities, so investment and care always cover the same
+measures; the lifecycle total adds `LIFECYCLE_YEARS` of them, undiscounted.
+
+Funding (`Funding\FundingEstimate`) applies the programmes of the plan's place (`HamburgFunding` for
+plans in Hamburg, none elsewhere) to the same quote: each programme pays its share of its SKUs' lines
+for the plan's `Applicant` (a plan value, set in the cost panel or with `set_funding_applicant`),
+capped (per building for green roofs) and only above its minimum size. An unknown applicant gets each
+programme's highest share, labelled "up to"; public owners get nothing from these programmes. The
+programmes carry their guideline's URL and date: the terms change, the estimate says so.
+
+`ValueForMoney` weighs the measures against each other: a measure's effect is the plan's balance
+minus the balance without it (leave-one-out, so overlaps such as rain gardens sharing a catchment
+count once for the plan as it is), divided by its own investment (`PlanAnalyzer::measureCosts`,
+the measure priced alone) and lifecycle cost. `PlanAnalyzer::impactOf()` caches any site's balance
+by its JSON and storm, so the variants and scenarios cost one raster each, once.
 
 ### The import as a state machine (`PlanImport`)
 
@@ -452,7 +468,14 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | `list_object_types` | Types, fields, ranges, defaults. |
 | `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |
 | `set_design_storm` | Rain depth for the calculation (10 to 120 mm/h). |
-| `calculate_impact` | Metrics with bases, assumptions, warnings, cost. |
+| `calculate_impact` | Metrics with bases, assumptions, warnings, cost: investment, yearly running costs, the lifecycle total, funding and the net total. |
+| `compare_measures` | Per measure and per kind: its effect (the plan minus the plan without it: retained m³, shade and permeable points, K cooler), investment, running and lifecycle cost, euros per unit of effect (`ValueForMoney`). |
+| `save_scenario` / `list_scenarios` / `restore_scenario` / `delete_scenario` | Named sets of the plan's interventions (`ScenarioStore`), listed with the plan as it is: their measures, balance and cost on today's site; restoring keeps the objects' ids (and rationales). |
+| `set_funding_applicant` | Who would apply for funding (private, medium, large, public, unknown): the share the programmes pay. |
+| `propose_placements` type `raingarden` | Basins on the flow paths; where the basin alone does not hold its catchment's runoff and the ground infiltrates, a gravel trench below (`trench`, Mulden-Rigolen-Element): its pores (`TRENCH_VOID_SHARE`) add storage and the garden may take `MAX_CATCHMENT_RATIO_TRENCH` instead of `MAX_CATCHMENT_RATIO` times its area. One storage formula for the balance, the placement and the panel: `ImpactCalculator::rainGardenStorageMetres()`. The trench is priced per m³ (`Measure::VOLUME`). |
+| `propose_placements` type `planting` | `PlantingSiting`: sealed ground nobody walks or drives on, zone by zone like permeable (`SurfaceZones`): in a yard a 3 m strip along the façades and the trees' root zones, a quiet area also whole; car parks, access lanes, sports and play areas, and ground nobody described, are kept. |
+| `propose_placements` type `newtree` | `TreeSiting`: free cells of `OpenGround` with a free pit, the grown crown clear of walls and other crowns; ranked by the sunlit open ground under the crown's shadow (`ImpactCalculator::crownShadowCentre`), the best measured in the balance itself. A tree trench (`trenchVolume`, Baumrigole) where the ground soaks away and is sealed: its pores add to the rain gardens' storage, `TREE_TRENCH_CATCHMENT_M2_PER_M3` to their reach. |
+| `propose_placements` type `facadegreen` | `FacadeSiting`: walls of the plot's buildings facing south-east to west (`SUN_BY_FACING`), at least 6 m, open ground at their foot; a line just off the wall, up to the eaves or 10 m. Priced per m² of wall (`ImpactCalculator::wallArea`); the cooling report counts its transpiration (`CoolingCalculator::FACADE_EVAPORATION`), the ground balance does not change. `coolsurface` (added by hand) is `GroundClass::CoolPavement`: sealed like asphalt, 12 K cooler. |
 | `propose_placements` type `greenroof` | Eligible flat roofs of the plot's buildings (GreenRoofs), with planted area, retention, roof cooling and cost; the rest named with the reason. |
 | `calculate_cooling` | Hot-day evapotranspiration and evaporative cooling, surface/air/perceived temperature, heat stress shares, yearly water balance; today vs. plan and per kind of measure. |
 | `simulate_buildings` / `get_building_simulation` | Hamburg only: a SimStadt run (heat demand, heat demand with shadow, PV potential) for the buildings within 100 m, started and polled (see "Building simulations"). |
