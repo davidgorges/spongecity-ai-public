@@ -508,6 +508,19 @@
                         {# how the measure is built: changes with its variant (a trench, a kind) #}
                         <img src="{{ asset(object.schematic) }}" alt="{{ 'plan.object.schematic'|trans({'%kind%': ('plan.object.type.' ~ object.type)|trans}) }}" width="{{ constant('App\\SpongeCity\\Plan\\Schematics::WIDTH') }}" height="{{ constant('App\\SpongeCity\\Plan\\Schematics::HEIGHT') }}" loading="lazy" decoding="async" class="aspect-[3/2] w-full rounded-md bg-[#f6f5f1] object-cover">
                     {% endif %}
+                    {% if object.cost %}
+                        {# what it costs on its own: once, then every year #}
+                        <dl class="flex items-baseline justify-between gap-3" aria-label="{{ 'plan.object.cost'|trans }}">
+                            <div>
+                                <dt class="sr-only">{{ 'plan.cost.investment'|trans }}</dt>
+                                <dd class="font-heading text-base font-semibold tabular-nums" data-object-cost>{{ object.cost.investment|number_format(0) }} €</dd>
+                            </div>
+                            <div class="text-right">
+                                <dt class="sr-only">{{ 'plan.cost.maintenance'|trans }}</dt>
+                                <dd class="text-xs text-muted-foreground tabular-nums">{{ 'plan.cost.per_year'|trans({'%amount%': object.cost.maintenance_per_year|number_format(0)}) }}</dd>
+                            </div>
+                        </dl>
+                    {% endif %}
                     <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
                         {% for fact in object.facts %}
                             <dt class="text-muted-foreground">{{ fact[0] }}</dt>

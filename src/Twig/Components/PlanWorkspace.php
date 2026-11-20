@@ -426,7 +426,10 @@ final class PlanWorkspace
      * The object selected in the 3D view (an intervention, a tree, a building), with its facts and,
      * for an intervention, what may be changed; null when none is (or it has a panel of its own).
      *
-     * @return array{id: string, type: string, name: string, schematic: string|null, facts: list<array{0: string, 1: string, 2: string|null}>, fields: array<string, array{value: mixed, options: list<int|string>}>, removable: bool}|null
+     * `cost` is what an intervention costs on its own (investment and yearly running costs, euros),
+     * priced like the measures window's list; null for what is not planned (a tree, a building).
+     *
+     * @return array{id: string, type: string, name: string, schematic: string|null, cost: array{investment: float, maintenance_per_year: float}|null, facts: list<array{0: string, 1: string, 2: string|null}>, fields: array<string, array{value: mixed, options: list<int|string>}>, removable: bool}|null
      */
     public function selectedObject(): ?array
     {
@@ -453,6 +456,7 @@ final class PlanWorkspace
             'name' => $row['name'],
             // how it is built, as an isometric cutaway (an intervention's, by its variant): a path for asset()
             'schematic' => Schematics::of($object),
+            'cost' => in_array($object[O::TYPE], O::INTERVENTIONS, true) ? ($this->analyzer->measureCosts($this->plan())[$row['id']] ?? null) : null,
             // a fact that may be changed shows as the choice made below, not twice
             'facts' => array_values(array_filter($row['facts'], static fn (array $fact): bool => !isset($fields[$fact[2] ?? '']))),
             'fields' => $fields,
