@@ -32,6 +32,8 @@ const KEY_NEXT = 'ArrowDown';
 const KEY_PREVIOUS = 'ArrowUp';
 const KEY_CLOSE = 'Escape';
 const KEY_TAB = 'Tab';
+/** the class a floating popup is shown by (assets/styles/_floating_popup.css) */
+const POPUP_OPENED = 'opened';
 /** dispatched as plan-context-menu:opened / :closed: the view holds its hover tooltip meanwhile */
 const EVENT_OPENED = 'opened';
 const EVENT_CLOSED = 'closed';
@@ -139,7 +141,7 @@ export default class extends Controller {
         this.#returnFocus = document.activeElement;
         this.#at = { x: detail.x, z: detail.z, object: target };
         this.#render(target, onPlot);
-        this.menuTarget.hidden = false;
+        this.#show(true);
         this.dispatch(EVENT_OPENED);
         this.#highlight(target);
         this.#place(detail.clientX, detail.clientY);
@@ -150,11 +152,21 @@ export default class extends Controller {
         if (this.menuTarget.hidden) {
             return;
         }
-        this.menuTarget.hidden = true;
+        this.#show(false);
         this.menuTarget.replaceChildren();
         this.#at = null;
         this.dispatch(EVENT_CLOSED);
         this.#highlightPanel();
+    }
+
+    /**
+     * The menu is a DropdownMenu:Content: as a floating popup it is shown only with the `opened`
+     * class (assets/styles/_floating_popup.css), which its own controller would set. This one
+     * places it itself, so it sets the class with `hidden`.
+     */
+    #show(shown) {
+        this.menuTarget.hidden = !shown;
+        this.menuTarget.classList.toggle(POPUP_OPENED, shown);
     }
 
     /** a panel opened or closed (the workspace re-rendered) */
