@@ -5,11 +5,13 @@ declare(strict_types=1);
 namespace App\SpongeCity\Plan;
 
 use App\SpongeCity\PlanEvaluator;
+use Core\Configurator\Pricing\Quote;
 use Core\Configurator\Pricing\QuoteLine;
 use Core\Configurator\Product\SpongeCity\Impact\CoolingCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\CoolingReport;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactReport;
+use Core\Configurator\Product\SpongeCity\SpongeCityDefinition;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
@@ -88,26 +90,41 @@ final readonly class PlanAnalyzer
         });
     }
 
+    /** what cost() says about where the running costs come from */
+    public const string MAINTENANCE_BASIS = 'Running costs: indicative yearly care per unit for public open space (GALK / FLL care guidance), averaged over the lifecycle: watering and pruning trees, weeding and clearing silt from rain gardens, sweeping and refilling joints, mowing grass pavers, one or two visits a year to an extensive green roof. Lifecycle total = investment + %d years of running costs, not discounted.';
+
     /**
-     * @return array{currency: string, total: float, complete: bool, lines: list<array{sku: string, label: string, amount: float, unit: string, unit_price: float|null, total: float|null}>}
+     * The investment, line by line, and what keeping the measures working costs a year: both priced
+     * against the same bill of quantities, so they cover the same measures.
+     *
+     * @return array{currency: string, total: float, complete: bool, maintenance_per_year: float, lifecycle_years: int, lifecycle_total: float, maintenance_basis: string, lines: list<array{sku: string, label: string, amount: float, unit: string, unit_price: float|null, total: float|null, maintenance_per_year: float|null}>}
      */
     public function cost(Plan $plan): array
     {
-        $quote = $this->evaluator->evaluate($plan->values)->quote;
+        $evaluation = $this->evaluator->evaluate($plan->values);
+        $quote = $evaluation->quote;
+        $maintenance = Quote::price($evaluation->bom, SpongeCityDefinition::maintenancePrices());
+        $yearly = $maintenance->total() / self::CENTS_PER_EURO;
+        $years = SpongeCityDefinition::LIFECYCLE_YEARS;
 
         return [
             'currency' => $quote->currency,
-            'total' => $quote->total() / 100,
+            'total' => $quote->total() / self::CENTS_PER_EURO,
             'complete' => $quote->isComplete(),
-            'lines' => array_map(static fn (QuoteLine $line): array => [
+            'maintenance_per_year' => $yearly,
+            'lifecycle_years' => $years,
+            'lifecycle_total' => ($quote->total() + $years * $maintenance->total()) / self::CENTS_PER_EURO,
+            'maintenance_basis' => sprintf(self::MAINTENANCE_BASIS, $years),
+            'lines' => array_map(static fn (QuoteLine $line, QuoteLine $care): array => [
                 'sku' => $line->bomLine->sku,
                 'label' => $line->bomLine->label,
                 'amount' => round($line->bomLine->totalAmount(), 1),
                 // pieces (trees, a green roof's set-up) are counted, areas measured
                 'unit' => $line->bomLine->measure->kind,
-                'unit_price' => null === $line->unitPrice ? null : $line->unitPrice / 100,
-                'total' => null === $line->total ? null : $line->total / 100,
-            ], $quote->lines),
+                'unit_price' => null === $line->unitPrice ? null : $line->unitPrice / self::CENTS_PER_EURO,
+                'total' => null === $line->total ? null : $line->total / self::CENTS_PER_EURO,
+                'maintenance_per_year' => null === $care->total ? null : $care->total / self::CENTS_PER_EURO,
+            ], $quote->lines, $maintenance->lines),
         ];
     }
 }

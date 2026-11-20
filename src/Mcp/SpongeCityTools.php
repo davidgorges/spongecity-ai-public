@@ -281,7 +281,7 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * The measurable balance of the plan today versus with the interventions: permeable share, runoff and retained rainwater in the design storm, shade share, surface temperature, plus the bill of quantities with a cost estimate. Every metric states its basis, the report lists assumptions and warnings: quote them when you explain the impact.
+     * The measurable balance of the plan today versus with the interventions: permeable share, runoff and retained rainwater in the design storm, shade share, surface temperature, plus the bill of quantities with a cost estimate: the investment, the yearly running costs (maintenance_per_year, per line and in total) and the lifecycle total (investment plus lifecycle_years of running costs). Weigh measures by the lifecycle total, not only the investment: a cheap measure that needs a lot of care can cost more over the years. Every metric states its basis, the report lists assumptions and warnings: quote them when you explain the impact.
      *
      * @return array<string, mixed>
      */

@@ -304,6 +304,9 @@ plan:
         title: Bill of quantities
         total: Estimated cost
         note: Indicative unit prices, without planning, VAT and site specifics.
+        maintenance: Running costs
+        per_year: '%amount% € / year'
+        lifecycle: 'Over %years% years, with running costs'
     sku:
         SC-PLOT: Analysed area
         SC-TREE: Shade trees

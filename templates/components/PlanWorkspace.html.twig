@@ -780,6 +780,14 @@
                         <twig:Table:Head scope="row" colspan="2" class="h-auto py-2 pl-0">{{ 'plan.cost.total'|trans }}</twig:Table:Head>
                         <twig:Table:Cell class="py-2 pr-0 text-right tabular-nums">{{ cost.total|number_format(0) }} €</twig:Table:Cell>
                     </twig:Table:Row>
+                    <twig:Table:Row class="hover:bg-transparent">
+                        <twig:Table:Head scope="row" colspan="2" class="h-auto py-1 pl-0 font-normal text-muted-foreground">{{ 'plan.cost.maintenance'|trans }}</twig:Table:Head>
+                        <twig:Table:Cell class="py-1 pr-0 text-right tabular-nums text-muted-foreground">{{ 'plan.cost.per_year'|trans({'%amount%': cost.maintenance_per_year|number_format(0)}) }}</twig:Table:Cell>
+                    </twig:Table:Row>
+                    <twig:Table:Row class="hover:bg-transparent">
+                        <twig:Table:Head scope="row" colspan="2" class="h-auto py-1 pl-0 font-normal text-muted-foreground">{{ 'plan.cost.lifecycle'|trans({'%years%': cost.lifecycle_years}) }}</twig:Table:Head>
+                        <twig:Table:Cell class="py-1 pr-0 text-right tabular-nums text-muted-foreground">{{ cost.lifecycle_total|number_format(0) }} €</twig:Table:Cell>
+                    </twig:Table:Row>
                 </twig:Table:Footer>
             </twig:Table>
             <p class="text-xs text-muted-foreground">{{ 'plan.cost.note'|trans }}</p>

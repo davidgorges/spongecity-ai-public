@@ -168,7 +168,10 @@ the browser and the MCP tools read and write the same plan in separate requests.
 `SiteEditor` is the only code that mutates the site (add, update, remove, clear interventions); it
 always goes through `SiteType::normalize()`.
 
-`PlanAnalyzer` combines `PlanEvaluator` (engine) and `ImpactCalculator` into impact and cost.
+`PlanAnalyzer` combines `PlanEvaluator` (engine) and `ImpactCalculator` into impact and cost. The
+running costs are a second price list (`SpongeCityDefinition::maintenancePrices()`, cents per unit
+and year) priced against the same bill of quantities, so investment and care always cover the same
+measures; the lifecycle total adds `LIFECYCLE_YEARS` of them, undiscounted.
 
 ### The import as a state machine (`PlanImport`)
 
@@ -452,7 +455,7 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | `list_object_types` | Types, fields, ranges, defaults. |
 | `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |
 | `set_design_storm` | Rain depth for the calculation (10 to 120 mm/h). |
-| `calculate_impact` | Metrics with bases, assumptions, warnings, cost. |
+| `calculate_impact` | Metrics with bases, assumptions, warnings, cost: investment, yearly running costs and the lifecycle total. |
 | `propose_placements` type `greenroof` | Eligible flat roofs of the plot's buildings (GreenRoofs), with planted area, retention, roof cooling and cost; the rest named with the reason. |
 | `calculate_cooling` | Hot-day evapotranspiration and evaporative cooling, surface/air/perceived temperature, heat stress shares, yearly water balance; today vs. plan and per kind of measure. |
 | `simulate_buildings` / `get_building_simulation` | Hamburg only: a SimStadt run (heat demand, heat demand with shadow, PV potential) for the buildings within 100 m, started and polled (see "Building simulations"). |
