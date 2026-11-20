@@ -251,7 +251,7 @@ final readonly class ImpactCalculator
     /**
      * Ground layers from the top: what lies on the plot's own surface, highest priority first.
      *
-     * @return list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float}>
+     * @return list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, within?: list<array{0: float, 1: float}>}>
      */
     private function layers(Site $site): array
     {
@@ -304,10 +304,11 @@ final readonly class ImpactCalculator
 
     /**
      * A green roof's planted levels, highest first, each followed by its whole outline as plain roof:
-     * the gravel strip, and a stair head standing on a lower level, stay roof.
+     * the gravel strip, and a stair head standing on a lower level, stay roof. The levels come from the
+     * map's building parts, which may reach beyond the building's footprint: only the footprint is roof.
      *
      * @param array<string, mixed>                                                                                                                         $greenRoof
-     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float}> $layers
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, within?: list<array{0: float, 1: float}>}> $layers
      */
     private function greenRoofLayers(Site $site, array $greenRoof, array &$layers): void
     {
@@ -321,26 +322,29 @@ final readonly class ImpactCalculator
             $parts = [[O::POINTS => Site::points($building), O::HEIGHT => (float) ($building[O::HEIGHT] ?? 0)]];
         }
         usort($parts, static fn (array $a, array $b): int => $b[O::HEIGHT] <=> $a[O::HEIGHT]);
+        $footprint = Site::points($building);
+        $within = count($footprint) >= 3 ? ['within' => $footprint] : [];
         $class = GroundClass::greenRoof(is_string($greenRoof[O::KIND] ?? null) ? $greenRoof[O::KIND] : O::KIND_EXTENSIVE);
         foreach ($parts as $part) {
             foreach ($planted as $level) {
                 if ($level->points === $part[O::POINTS]) {
-                    $layers[] = ['class' => $class, 'polygon' => $level->plantedPoints, 'bounds' => Polygon::bounds($level->plantedPoints), 'storage' => 0.0];
+                    $layers[] = ['class' => $class, 'polygon' => $level->plantedPoints, 'bounds' => Polygon::bounds($level->plantedPoints), 'storage' => 0.0, ...$within];
                 }
             }
-            $layers[] = ['class' => GroundClass::Roof, 'polygon' => $part[O::POINTS], 'bounds' => Polygon::bounds($part[O::POINTS]), 'storage' => 0.0];
+            $layers[] = ['class' => GroundClass::Roof, 'polygon' => $part[O::POINTS], 'bounds' => Polygon::bounds($part[O::POINTS]), 'storage' => 0.0, ...$within];
         }
     }
 
     /**
-     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float}> $layers
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, within?: list<array{0: float, 1: float}>}> $layers
      */
     private function classAt(array $layers, GroundClass $plotSurface, float $x, float $z): GroundClass
     {
         foreach ($layers as $layer) {
             // most layers lie elsewhere: their box rules them out without the polygon test
             [$minX, $maxX, $minZ, $maxZ] = $layer['bounds'];
-            if ($x >= $minX && $x <= $maxX && $z >= $minZ && $z <= $maxZ && Polygon::contains($layer['polygon'], $x, $z)) {
+            if ($x >= $minX && $x <= $maxX && $z >= $minZ && $z <= $maxZ && Polygon::contains($layer['polygon'], $x, $z)
+                && (!isset($layer['within']) || Polygon::contains($layer['within'], $x, $z))) {
                 return $layer['class'];
             }
         }
@@ -349,7 +353,7 @@ final readonly class ImpactCalculator
     }
 
     /**
-     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float}> $layers
+     * @param list<array{class: GroundClass, polygon: list<array{0: float, 1: float}>, bounds: array{0: float, 1: float, 2: float, 3: float}, storage: float, within?: list<array{0: float, 1: float}>}> $layers
      */
     private function storageAt(array $layers, float $x, float $z): float
     {
