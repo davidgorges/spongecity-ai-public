@@ -22,7 +22,7 @@ use Symfony\UX\LiveComponent\Test\InteractsWithLiveComponents;
 
 /**
  * How the workspace is handled: every window can be resized by its corner handle and snaps
- * with guide lines, the view
+ * with guide lines, and opens on desktop from a menu at the top right; the view
  * marks what the mouse is over (the context menu finds the object for it), and a finger held
  * on the view opens the context menu. Measures are told apart in their list and shown when
  * picked there; removing them all is asked first; numbers read as the interface's language
@@ -52,6 +52,30 @@ final class WorkspaceViewTest extends WebTestCase
             self::assertStringContainsString('window-manager#resetSize', $handle->attr('data-action'));
             self::assertStringStartsWith('Resize ', (string) $handle->attr('aria-label'), 'named, not a translation key');
         });
+    }
+
+    #[Test]
+    public function onDesktopTheWindowsOpenFromAMenuAtTheTopRightNotFromABarAtTheBottom(): void
+    {
+        $crawler = $this->workspace()->crawler();
+
+        $windows = $crawler->filter('[data-window-manager-target="window"]')->each(static fn ($window): string => (string) $window->attr('data-window'));
+        $menu = $crawler->filter('[data-window-menu]');
+        self::assertCount(1, $menu);
+        self::assertStringContainsString('lg:inline-flex', (string) $menu->attr('class'));
+        self::assertSame('Windows', trim($menu->filter('[aria-haspopup="menu"]')->text()), 'named, not a translation key');
+        $items = $menu->filter('[role="menu"] [data-window-manager-target="dock"]');
+        self::assertSame($windows, $items->each(static fn ($item): string => (string) $item->attr('data-window-manager-id-param')), 'every window, in order');
+        $items->each(static function ($item): void {
+            self::assertSame('window-manager#toggle', $item->attr('data-action'));
+            self::assertSame('false', $item->attr('aria-pressed'), 'the window manager presses it while its window is open');
+        });
+
+        // the bar of window tabs stays for small screens only
+        $dock = $crawler->filter('nav[aria-label="Windows"]');
+        self::assertCount(1, $dock);
+        self::assertStringContainsString('lg:hidden', (string) $dock->attr('class'));
+        self::assertStringNotContainsString('lg:bottom', (string) $dock->attr('class'));
     }
 
     #[Test]
