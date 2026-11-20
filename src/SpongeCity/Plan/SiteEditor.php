@@ -85,7 +85,7 @@ final readonly class SiteEditor
     /**
      * @param array<string, mixed> $changes
      *
-     * @throws OverlapsBuilding     when the change moves an intervention onto a building (nothing is changed)
+     * @throws OverlapsBuilding    when the change moves an intervention onto a building (nothing is changed)
      * @throws GreenRoofNotAllowed when a green roof would become a kind its building cannot take
      */
     public function update(string $planId, string $id, array $changes): bool
@@ -159,6 +159,25 @@ final readonly class SiteEditor
         $this->save($plan, (new SiteType())->normalize(['objects' => $kept]));
 
         return count($objects) - count($kept);
+    }
+
+    /**
+     * Puts back a set of interventions (a saved scenario) in place of the planned ones, keeping
+     * their ids, so what was said about them (Rationale) still belongs to them. The city stays.
+     *
+     * @param list<array<string, mixed>> $interventions
+     *
+     * @return int how many interventions the plan has now
+     */
+    public function replaceInterventions(string $planId, array $interventions): int
+    {
+        $plan = $this->plans->get($planId);
+        $objects = SiteType::rawObjects($plan->siteJson());
+        $kept = array_values(array_filter($objects, static fn (mixed $object): bool => !is_array($object) || !in_array($object[O::TYPE] ?? null, O::INTERVENTIONS, true)));
+        $restored = array_values(array_filter($interventions, static fn (array $object): bool => in_array($object[O::TYPE] ?? null, O::INTERVENTIONS, true)));
+        $this->save($plan, (new SiteType())->normalize(['objects' => [...$kept, ...$restored]]));
+
+        return count($restored);
     }
 
     /**

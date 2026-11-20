@@ -180,6 +180,12 @@ capped (per building for green roofs) and only above its minimum size. An unknow
 programme's highest share, labelled "up to"; public owners get nothing from these programmes. The
 programmes carry their guideline's URL and date: the terms change, the estimate says so.
 
+`ValueForMoney` weighs the measures against each other: a measure's effect is the plan's balance
+minus the balance without it (leave-one-out, so overlaps such as rain gardens sharing a catchment
+count once for the plan as it is), divided by its own investment (`PlanAnalyzer::measureCosts`,
+the measure priced alone) and lifecycle cost. `PlanAnalyzer::impactOf()` caches any site's balance
+by its JSON and storm, so the variants and scenarios cost one raster each, once.
+
 ### The import as a state machine (`PlanImport`)
 
 A Symfony Workflow state machine, defined in its class (`#[AsWorkflow]`, a `#[Transition]` per
@@ -463,6 +469,8 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |
 | `set_design_storm` | Rain depth for the calculation (10 to 120 mm/h). |
 | `calculate_impact` | Metrics with bases, assumptions, warnings, cost: investment, yearly running costs, the lifecycle total, funding and the net total. |
+| `compare_measures` | Per measure and per kind: its effect (the plan minus the plan without it: retained m³, shade and permeable points, K cooler), investment, running and lifecycle cost, euros per unit of effect (`ValueForMoney`). |
+| `save_scenario` / `list_scenarios` / `restore_scenario` / `delete_scenario` | Named sets of the plan's interventions (`ScenarioStore`), listed with the plan as it is: their measures, balance and cost on today's site; restoring keeps the objects' ids (and rationales). |
 | `set_funding_applicant` | Who would apply for funding (private, medium, large, public, unknown): the share the programmes pay. |
 | `propose_placements` type `greenroof` | Eligible flat roofs of the plot's buildings (GreenRoofs), with planted area, retention, roof cooling and cost; the rest named with the reason. |
 | `calculate_cooling` | Hot-day evapotranspiration and evaporative cooling, surface/air/perceived temperature, heat stress shares, yearly water balance; today vs. plan and per kind of measure. |

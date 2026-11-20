@@ -32,7 +32,7 @@ final readonly class PlanAnalyzer
     private const string IMPACT_KEY = 'spongecity_impact_v%d_%s';
     private const int COOLING_VERSION = 2;
     private const string COOLING_KEY = 'spongecity_cooling_v%d_%s';
-    private const int COSTS_VERSION = 1;
+    private const int COSTS_VERSION = 2;
     private const string COSTS_KEY = 'spongecity_costs_v%d_%s';
     private const float CENTS_PER_EURO = 100.0;
 
@@ -50,11 +50,18 @@ final readonly class PlanAnalyzer
      */
     public function impact(Plan $plan): ImpactReport
     {
-        $site = $plan->siteJson();
-        $storm = $plan->storm();
-        $key = sprintf(self::IMPACT_KEY, self::IMPACT_VERSION, hash('xxh128', $storm.'|'.$site));
+        return $this->impactOf($plan->siteJson(), $plan->storm());
+    }
 
-        return $this->cache->get($key, fn (): ImpactReport => $this->calculator->calculate(Site::fromJson($site), $storm));
+    /**
+     * The balance of any site in a storm: the plan as it is, without one of its measures, or as a
+     * saved scenario. Kept by site and storm like the plan's own.
+     */
+    public function impactOf(string $siteJson, int $storm): ImpactReport
+    {
+        $key = sprintf(self::IMPACT_KEY, self::IMPACT_VERSION, hash('xxh128', $storm.'|'.$siteJson));
+
+        return $this->cache->get($key, fn (): ImpactReport => $this->calculator->calculate(Site::fromJson($siteJson), $storm));
     }
 
     /**
@@ -78,6 +85,16 @@ final readonly class PlanAnalyzer
      */
     public function costsByMeasure(Plan $plan): array
     {
+        return array_map(static fn (array $cost): float => $cost['investment'], $this->measureCosts($plan));
+    }
+
+    /**
+     * The investment and the yearly running costs of each planned measure on its own, euros by object id.
+     *
+     * @return array<string, array{investment: float, maintenance_per_year: float}>
+     */
+    public function measureCosts(Plan $plan): array
+    {
         $site = $plan->siteJson();
 
         return $this->cache->get(sprintf(self::COSTS_KEY, self::COSTS_VERSION, hash('xxh128', $site)), function () use ($plan, $site): array {
@@ -87,7 +104,11 @@ final readonly class PlanAnalyzer
             foreach ($objects as $object) {
                 if (in_array($object[O::TYPE], O::INTERVENTIONS, true)) {
                     $alone = (new SiteType())->normalize([SiteType::OBJECTS => [...$context, $object]]);
-                    $costs[(string) $object[O::ID]] = $this->evaluator->evaluate([...$plan->values, SiteType::PARAMETER => $alone])->quote->total() / self::CENTS_PER_EURO;
+                    $evaluation = $this->evaluator->evaluate([...$plan->values, SiteType::PARAMETER => $alone]);
+                    $costs[(string) $object[O::ID]] = [
+                        'investment' => $evaluation->quote->total() / self::CENTS_PER_EURO,
+                        'maintenance_per_year' => Quote::price($evaluation->bom, SpongeCityDefinition::maintenancePrices())->total() / self::CENTS_PER_EURO,
+                    ];
                 }
             }
 
