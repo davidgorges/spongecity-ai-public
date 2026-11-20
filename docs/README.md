@@ -17,6 +17,7 @@ is measured, and every number says where it comes from.
 | Look up how a part works and why it was built that way | [Architecture reference](architecture.md) |
 | Iterate on the 3D view with screenshots and frame times | [Render loop](render-loop.md) |
 | Understand how Hamburg's roofs are fitted and drawn | [Roof geometry](roof-geometry.md) |
+| Deploy it with Laravel Forge | [Deployment](deployment.md) |
 
 ## The system on one page
 
