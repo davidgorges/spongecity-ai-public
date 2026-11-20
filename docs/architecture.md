@@ -657,7 +657,7 @@ sequenceDiagram
   top instead, a step down for each one on its side), keeps them inside the view
   with their content scrolling, and remembers places and open windows in the browser
   (`PlanWorkspace::WINDOWS_STORAGE_KEY`, sizes and groups too). A window moved or resized follows
-  the pointer; an edge of another window (`GAP` beside it, or lined up) or of the view that comes
+  the pointer; an edge of another window (touching it, no gap, or lined up) or of the view that comes
   within `SNAP_DISTANCE` pulls it on, shown by a guide line. Dropped elsewhere it goes onto an
   invisible 16 px grid; Alt places it freely (`assets/window_manager/snap.js`).
   Dropped against another window it joins its group (`assets/window_manager/groups.js`): dragging

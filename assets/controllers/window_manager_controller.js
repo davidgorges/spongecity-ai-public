@@ -29,7 +29,8 @@ const CONTROLS = 'button, a, input, select, textarea';
 /** windows moved or resized snap to an invisible grid this fine, or to an edge this near (CSS pixels) */
 const GRID = 16;
 const SNAP_DISTANCE = 10;
-/** windows this near to GAP apart count as snapped together (CSS pixels: rounding) */
+/** windows snap edge to edge, touching; this near count as snapped together (CSS pixels: rounding) */
+const SNAP_GAP = 0;
 const TOUCH_TOLERANCE = 1;
 const BELOW = 'below';
 const RIGHT = 'right';
@@ -43,7 +44,7 @@ const BOTTOM_EDGE = 'bottom';
  * with data-window-auto opens by itself when that value changes to a non-empty one (an object was
  * selected). The live component re-renders the windows' contents: their place is applied again.
  *
- * A window moved or resized follows the pointer; an edge of another window (GAP beside it, or
+ * A window moved or resized follows the pointer; an edge of another window (touching it, or
  * lined up with it) or of the view that comes near pulls it on. Dropped elsewhere, it goes onto an
  * invisible grid (GRID). Alt places it freely. Dropped against
  * another one it joins its group (window_manager/groups.js): dragging, or moving with the arrow
@@ -154,7 +155,7 @@ export default class extends Controller {
 
     /** the windows of its group hanging under its bottom edge, and under those in turn (not itself) */
     #hangingUnder(id) {
-        return chainBelow(id, this.#moving(id), (above, below) => hangsUnder(this.#rect(above), this.#rect(below), GAP, TOUCH_TOLERANCE)).slice(1);
+        return chainBelow(id, this.#moving(id), (above, below) => hangsUnder(this.#rect(above), this.#rect(below), SNAP_GAP, TOUCH_TOLERANCE)).slice(1);
     }
 
     /** a press or the focus in a window brings it to the front */
@@ -306,7 +307,7 @@ export default class extends Controller {
         drag.snapped = [false, false];
         if (!drag.free) {
             const moved = Object.values(drag.starts).map((rect) => ({ ...rect, x: rect.x + dx, y: rect.y + dy }));
-            const snap = snapMove(moved, drag.targets, this.#bounds(), { threshold: SNAP_DISTANCE, gap: GAP });
+            const snap = snapMove(moved, drag.targets, this.#bounds(), { threshold: SNAP_DISTANCE, gap: SNAP_GAP });
             dx += snap.x.delta ?? 0;
             dy += snap.y.delta ?? 0;
             drag.snapped = [snap.x.delta !== null, snap.y.delta !== null];
@@ -354,7 +355,7 @@ export default class extends Controller {
         resizing.snapped = [false, false];
         if (!resizing.free) {
             const state = this.#state[resizing.id];
-            const snap = snapResize({ x: state.x, y: state.y, w: width, h: height }, resizing.targets, this.#bounds(), { threshold: SNAP_DISTANCE, gap: GAP });
+            const snap = snapResize({ x: state.x, y: state.y, w: width, h: height }, resizing.targets, this.#bounds(), { threshold: SNAP_DISTANCE, gap: SNAP_GAP });
             width += snap.x.delta ?? 0;
             height += snap.y.delta ?? 0;
             resizing.snapped = [snap.x.delta !== null, snap.y.delta !== null];
@@ -618,7 +619,7 @@ export default class extends Controller {
         const touched = this.windowTargets
             .map((element) => element.dataset.window)
             .filter((other) => !moving.includes(other) && this.#isShown(other))
-            .filter((other) => moving.some((member) => touching(this.#rect(member), this.#rect(other), GAP, TOUCH_TOLERANCE)));
+            .filter((other) => moving.some((member) => touching(this.#rect(member), this.#rect(other), SNAP_GAP, TOUCH_TOLERANCE)));
         if (touched.length > 0) {
             this.#setGroups(join(this.#groups(), [id, ...touched], () => this.#newGroup(id)));
         }

@@ -81,3 +81,12 @@ test('a window a gap under another, overlapping across, hangs under it', () => {
     assert.ok(!hangsUnder({ x: 100, y: 488, w: 200, h: 100 }, CHAT, 12, 1));
     assert.ok(!hangsUnder(CHAT, { x: 412, y: 200, w: 200, h: 100 }, 12, 1), 'beside it, not under');
 });
+
+test('with no gap, a window dragged near another snaps onto its edge, touching it', () => {
+    const moved = { x: 405, y: 100, w: 300, h: 200 };
+    const snap = snapMove([moved], [CHAT], BOUNDS, { threshold: 10, gap: 0 });
+
+    assert.equal(moved.x + snap.x.delta, CHAT.x + CHAT.w);
+    assert.ok(touching(CHAT, { ...moved, x: CHAT.x + CHAT.w }, 0, 1));
+    assert.ok(hangsUnder(CHAT, { x: 16, y: CHAT.y + CHAT.h, w: 300, h: 100 }, 0, 1));
+});
