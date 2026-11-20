@@ -1,8 +1,10 @@
 framework:
     cache:
-        # The "app" cache stores to the filesystem under var/share (kept by cache:clear): computed
-        # results (impact, cooling, proposals, downloaded map data), and on a developer machine also
-        # what the users made (the "spongecity.storage" alias in services.yaml).
+        # Unique name of your app: used to compute stable namespaces for cache keys.
+        # Must not depend on the path: zero-downtime deploys put every release in its own
+        # directory, and the default seed (the project dir) would give each release, and the
+        # workers still running the previous one, a separate namespace in the shared pool.
+        prefix_seed: spongecity-ai/app
 
 when@prod:
     framework:
