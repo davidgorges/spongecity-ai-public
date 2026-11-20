@@ -389,7 +389,8 @@ preview any alternative and swap it in. The same rules serve the 3D view's "add 
 
 ## 8. Where state lives
 
-There are no database entities. Everything about a plan lives in the application cache pool,
+There are no database entities. Everything about a plan lives in the storage pool
+(`spongecity.storage`: Redis in production, the application cache under `var/share` locally),
 each kind of object under its own key prefix and the plan's id. The SQLite database holds only
 the Messenger queues.
 

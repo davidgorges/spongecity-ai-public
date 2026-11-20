@@ -1,7 +1,8 @@
 # Deploying with Laravel Forge
 
-The app runs on a plain PHP server: no Node, no database server. State lives in SQLite and a cache
-pool, both under the kernel's share dir (`var/share/<env>`, set by `APP_SHARE_DIR`).
+The app runs on a plain PHP server with Redis: no Node, no database server. Plans, conversations
+and rationales live in Redis (the `spongecity.storage` pool, `STORAGE_REDIS_URL`); the Messenger
+queues in SQLite under the kernel's share dir (`var/share/<env>`, set by `APP_SHARE_DIR`).
 
 ## Site settings
 
@@ -14,8 +15,8 @@ pool, both under the kernel's share dir (`var/share/<env>`, set by `APP_SHARE_DI
 | Zero downtime deployments | On |
 | Shared paths | `var/share` |
 
-`var/share` holds everything that must survive a release: the SQLite database (the Messenger
-queues, see `DATABASE_URL`) and the plan cache pool. `var/` itself is committed (with only a
+`var/share` holds the SQLite database (the Messenger queues, see `DATABASE_URL`), which must survive
+a release, and the computed-results cache, which may not. Plans are in Redis. `var/` itself is committed (with only a
 `.gitkeep`) so Forge has a parent directory to put the symlink in. Never commit `var/share`.
 `App\Kernel::boot()` creates the share dir when it is missing, because SQLite cannot.
 
@@ -32,7 +33,13 @@ APP_SECRET=        # php -r 'echo bin2hex(random_bytes(16));'
 DEFAULT_URI=https://your-domain.tld/
 ANTHROPIC_API_KEY=
 OSM_USER_AGENT="SpongeCityAI/0.1 (contact: you@your-domain.tld)"
+# Forge's Redis: the default is redis://${REDIS_HOST}:${REDIS_PORT}; with a password
+# STORAGE_REDIS_URL=redis://PASSWORD@127.0.0.1:6379
 ```
+
+Every release lives in its own directory (`releases/<n>`). The cache namespaces would follow it, so
+`config/packages/cache.yaml` pins `prefix_seed` in production: without it, what one release stored
+is out of reach for the next.
 
 ## Deploy script
 
@@ -65,6 +72,11 @@ php bin/console messenger:consume simstadt --time-limit=3600 --limit=1
 ```
 
 ## Server
+
+- Redis must keep the plans: persistence on (RDB or AOF, Forge's default) and no eviction
+  (`redis-cli config get maxmemory-policy` should say `noeviction`).
+- The agent starts its tools as `php bin/console mcp:server` (stdio): the `php` on the `forge`
+  user's `PATH` must be the site's PHP version (`php -v`), and `proc_open` must be allowed.
 
 - SimStadt runs in Docker (`SIMSTADT_IMAGE`, `linux/amd64`). Install Docker and run
   `sudo usermod -aG docker forge`. Pick an x86 server; amd64 emulation on ARM is slow. Without

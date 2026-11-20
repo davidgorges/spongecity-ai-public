@@ -26,7 +26,7 @@ flowchart LR
         chat["ChatController → PlanAssistant"]
         tools["MCP server (mcp:server, stdio) · SpongeCityTools<br/><small>PlacementTools · SimStadtTools</small>"]
         handler["ImportSiteHandler<br/><small>worker: messenger:consume async</small>"]
-        store[("PlanStore and siblings<br/><small>cache.app</small>")]
+        store[("PlanStore and siblings<br/><small>spongecity.storage · Redis</small>")]
     end
 
     subgraph ext["External"]
@@ -159,8 +159,8 @@ This is a planning-level estimate, not a simulation. Keep new rules in `GroundCl
 
 `App\SpongeCity\Plan\Plan` is an entity: id, title, location, configuration `values` (`storm`,
 `site`, changed through `replaceSite()` and `setStorm()`) and a `PlanStatus`, which only the
-`PlanImport` state machine moves (below). `PlanStore` keeps plans in the
-application cache pool (`cache.app`), with no database entities. This is deliberate for the demo:
+`PlanImport` state machine moves (below). `PlanStore` keeps plans in
+the storage pool `spongecity.storage` (Redis in production, so it outlives deploys; on a developer machine an alias of `cache.app` under `var/share`), with no database entities. This is deliberate for the demo:
 the browser and the MCP tools read and write the same plan in separate requests.
 `SiteEditor` is the only code that mutates the site (add, update, remove, clear interventions); it
 always goes through `SiteType::normalize()`.
@@ -206,7 +206,8 @@ Plans are not persisted beyond the cache. For production, replace `PlanStore` wi
 backed implementation (the interface is small: `create`, `find`, `get`, `save`).
 
 `PlanStore`, `SimulationStore`, `TerrainStore`, `SurroundingsStore` and `SiteConditionsStore`
-extend `CacheStore` (one kind of object per key in `cache.app`). Controllers take the plan as an
+extend `CacheStore` (one kind of object per key in `spongecity.storage`). In production the cache
+`prefix_seed` is pinned: the namespaces would otherwise follow the release directory. Controllers take the plan as an
 argument (`Plan $plan`): `PlanValueResolver` looks up the route's `{id}` and answers 404 when
 there is none. The chat binds its message with `#[MapRequestPayload]` to `ChatMessage`
 (validated: not blank, at most 2000 characters).
@@ -413,7 +414,7 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
   Claude Desktop or the inspector.
 - **Client**: `mcp.clients.spongecity.servers.local` starts `bin/console mcp:server` as a child
   process (`transport: stdio`) for the chat turn, with the parent's environment plus its
-  `APP_ENV`/`APP_DEBUG`, so it reads the same `cache.app` (the same plans). No URL, no network, no
+  `APP_ENV`/`APP_DEBUG`, so it reads the same storage (the same plans). No URL, no network, no
   host check. The agent's `tools: - mcp_server: 'spongecity.local'` exposes the tools to the model
   with the prefix `local_`. Both are built-in symfony/ai and mcp-bundle wiring: the tools are
   declared once, with `#[McpTool]`.
@@ -753,7 +754,8 @@ symfony php vendor/bin/phpunit
 
 ## Known limitations and next steps
 
-- Plans, their conversations and rationales live in the cache pool. Not for production as is.
+- Plans, their conversations and rationales live in a key-value store (Redis), not a database: no
+  queries across plans, no backups beyond Redis' own persistence.
 - The plot's ground is assumed to be asphalt. Reading `surface` tags from OSM would fix parks;
   in Hamburg the Bodenversiegelung dataset would, once its service is back.
 - LoD2 roofs are drawn as simple flat, gable or hip roofs over the footprint, not the model's own
