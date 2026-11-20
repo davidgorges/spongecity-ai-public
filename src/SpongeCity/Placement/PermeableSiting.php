@@ -71,7 +71,7 @@ final readonly class PermeableSiting implements InterventionSiting
     /** permeable paving wants gentle ground: above this the base must be terraced */
     public const float MAX_SLOPE_PERCENT = 5.0;
     /** with a point given, only zones within this distance of it */
-    private const float NEAR_RADIUS_METRES = 30.0;
+    public const float NEAR_RADIUS_METRES = 30.0;
     /** a zone as a whole is offered when it is at most this much larger than an asked-for area */
     private const float WHOLE_ZONE_OVER_ASKED = 1.5;
     private const float MILLIMETRES_PER_METRE = 1000.0;
@@ -96,7 +96,7 @@ final readonly class PermeableSiting implements InterventionSiting
         $options = [];
         $kept = [];
         foreach ($zones as $zone) {
-            if (null !== $request->near && !$this->isNear($ground, $zone, $request->near)) {
+            if (null !== $request->near && !$this->zones->isNear($ground, $zone, $request->near, self::NEAR_RADIUS_METRES)) {
                 continue;
             }
             $reason = $this->keptBecause($zone);
@@ -366,21 +366,6 @@ final readonly class PermeableSiting implements InterventionSiting
         }
         foreach ($runoff->nodesIn($outline) as $node) {
             if ($runoff->isCaught($node)) {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    /**
-     * @param array{0: int|float, 1: int|float} $near plan millimetres
-     */
-    private function isNear(OpenGround $ground, Zone $zone, array $near): bool
-    {
-        foreach (array_keys($zone->cells) as $cell) {
-            [$x, $z] = $ground->centre($cell);
-            if (hypot($x - $near[0] / self::MILLIMETRES_PER_METRE, $z - $near[1] / self::MILLIMETRES_PER_METRE) <= self::NEAR_RADIUS_METRES) {
                 return true;
             }
         }

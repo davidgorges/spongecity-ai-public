@@ -201,10 +201,10 @@ final class RainGardenSitingTest extends KernelTestCase
     #[Test]
     public function otherTypesAreStillDrawnByHand(): void
     {
-        $result = $this->tools()->proposePlacements($this->plan(bowl: null)->id, O::NEWTREE);
+        $result = $this->tools()->proposePlacements($this->plan(bowl: null)->id, O::SHADESAIL);
 
         self::assertStringContainsString('add_objects', $result['error']);
-        self::assertEqualsCanonicalizing([O::RAINGARDEN, O::PERMEABLE, O::GREENROOF], $result['types']);
+        self::assertEqualsCanonicalizing([O::RAINGARDEN, O::PERMEABLE, O::PLANTING, O::GREENROOF], $result['types']);
     }
 
     #[Test]

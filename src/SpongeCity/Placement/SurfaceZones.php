@@ -152,6 +152,23 @@ final readonly class SurfaceZones
     }
 
     /**
+     * Whether any of a zone's cells lies within $radius metres of a point given in plan millimetres.
+     *
+     * @param array{0: int|float, 1: int|float} $near
+     */
+    public function isNear(OpenGround $ground, Zone $zone, array $near, float $radius): bool
+    {
+        foreach (array_keys($zone->cells) as $cell) {
+            [$x, $z] = $ground->centre($cell);
+            if (hypot($x - $near[0] / self::MILLIMETRES_PER_METRE, $z - $near[1] / self::MILLIMETRES_PER_METRE) <= $radius) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /**
      * The 4-connected pieces of a cell set.
      *
      * @param array<int, true> $cells
