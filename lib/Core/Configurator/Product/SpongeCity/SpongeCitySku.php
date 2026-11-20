@@ -8,6 +8,8 @@ final class SpongeCitySku
 {
     public const string PLOT = 'SC-PLOT';
     public const string TREE = 'SC-TREE';
+    /** the trench below a new tree (Baumrigole), per m³: excavation, structural soil, gravel, inlet */
+    public const string TREE_TRENCH = 'SC-TREE-TRENCH';
     public const string RAINGARDEN = 'SC-RAINGARDEN';
     /** the gravel trench below a rain garden, per m³: excavation, geotextile, gravel, overflow */
     public const string RAINGARDEN_TRENCH = 'SC-RAINGARDEN-TRENCH';

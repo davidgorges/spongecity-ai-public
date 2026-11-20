@@ -85,7 +85,7 @@ final class PlanWorkspace
     public const array EDITABLE = [
         O::RAINGARDEN => [O::STORAGE => [150, 300, 450], O::TRENCH => [0, 500, 1000]],
         O::PERMEABLE => [O::KIND => O::PERMEABLE_KINDS],
-        O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000]],
+        O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000], O::TRENCH_VOLUME => [0, 12, 20]],
         O::SHADESAIL => [O::Y => [2500, 3200, 4000]],
         // narrowed per roof to the kinds its building can take (GreenRoofs)
         O::GREENROOF => [O::KIND => O::GREENROOF_KINDS],

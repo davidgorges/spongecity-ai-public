@@ -49,6 +49,8 @@ final readonly class ImpactCalculator
     public const float MAX_CATCHMENT_RATIO_TRENCH = 15.0;
     /** water a gravel trench holds, as a share of its volume (pores of 16/32 gravel, DWA-A 138: 0.30 to 0.35) */
     public const float TRENCH_VOID_SHARE = 0.35;
+    /** sealed ground a tree trench (Baumrigole) takes the runoff of, m² per m³ of trench (BlueGreenStreets: 10 to 15 m³ for 100 to 150 m²) */
+    public const float TREE_TRENCH_CATCHMENT_M2_PER_M3 = 10.0;
     public const float SHADE_TEMPERATURE_REDUCTION = 12.0;
     private const float MILLIMETRES_PER_METRE = 1000.0;
     private const float SHADE_RAY_STEP_METRES = 1.5;
@@ -189,6 +191,14 @@ final readonly class ImpactCalculator
             $shade = $class->isRoof() ? ShadeKind::Sun : $this->shadeAt($shadeMap, $occluders['sails'], $x, $z);
             $areas[$class->value][$shade->value] = ($areas[$class->value][$shade->value] ?? 0.0) + $cellM2;
         }
+        // tree trenches store runoff below a tree standing on the plot, like a rain garden without its basin
+        foreach ($site->ofType(O::NEWTREE) as $tree) {
+            $volume = is_numeric($tree[O::TRENCH_VOLUME] ?? null) ? (float) $tree[O::TRENCH_VOLUME] : 0.0;
+            if ($volume > 0.0 && Polygon::contains($outline, (float) $tree[O::X], (float) $tree[O::Z])) {
+                $ponding += $volume * self::TRENCH_VOID_SHARE;
+                $reach += $volume * self::TREE_TRENCH_CATCHMENT_M2_PER_M3;
+            }
+        }
         $crowns = array_map(static fn (array $t): array => [
             'm2' => M_PI * ($t['radius'] / 1000) ** 2,
             'on_plot' => Polygon::contains($outline, $t['x'], $t['z']),
@@ -228,12 +238,12 @@ final readonly class ImpactCalculator
         $captured = 0.0;
         $rainGardenArea = $survey->area(GroundClass::RainGarden);
         $sealedCatchment = $survey->sealedArea();
-        if ($rainGardenArea > 0.0) {
+        if ($rainGardenArea > 0.0 || $survey->rainGardenPondingCubicMetres > 0.0) {
             $storage = $survey->rainGardenPondingCubicMetres + $rainGardenArea * self::RAIN_GARDEN_MEDIA_STORAGE;
             $reach = $survey->rainGardenReach();
             $reachable = min($sealedCatchment, $reach);
             $captured = min($storage, $reachable * GroundClass::Asphalt->runoffCoefficient() * $rain);
-            if ($sealedCatchment > $reach) {
+            if ($rainGardenArea > 0.0 && $sealedCatchment > $reach) {
                 $warnings[] = sprintf('The rain gardens (%.0f m²) are small for the %.0f m² of sealed surface around them (max. %d times their area drains into one, %d with a gravel trench below).', $rainGardenArea, $sealedCatchment, (int) self::MAX_CATCHMENT_RATIO, (int) self::MAX_CATCHMENT_RATIO_TRENCH);
             }
         }
@@ -483,6 +493,21 @@ final readonly class ImpactCalculator
     }
 
     /**
+     * Where the shadow of a tree's crown falls at the moment the shade is measured: the centre of the
+     * crown's shadow on the ground, plan millimetres (the crown's middle height cast away from the sun).
+     *
+     * @return array{0: float, 1: float}
+     */
+    public static function crownShadowCentre(float $x, float $z, float $height): array
+    {
+        [$dx, $dz] = self::towardsSun();
+        $middle = $height * (self::CROWN_BASE_SHARE + 1.0) / 2;
+        $reach = $middle / tan(deg2rad(self::SUN_ELEVATION));
+
+        return [$x - $dx * $reach, $z - $dz * $reach];
+    }
+
+    /**
      * @return array{0: float, 1: float} the unit vector towards the sun in plan (x east, z south: north is -z)
      */
     private static function towardsSun(): array
@@ -499,7 +524,7 @@ final readonly class ImpactCalculator
     {
         return [
             'Runoff coefficients per surface follow typical DWA-A 138 / DIN 1986-100 values (asphalt 0.9, roof 0.9, permeable pavers 0.4, gravel 0.6, lawn 0.15).',
-            'Rain gardens are connected to the sealed surface around them; they hold ponding depth plus 0.12 m of water in the planting medium.',
+            sprintf('Rain gardens are connected to the sealed surface around them; they hold ponding depth plus %.2f m of water in the planting medium, and %d %% of the volume of a gravel trench below them. Tree trenches hold %d %% of their volume and take the runoff of %d m² per m³.', self::RAIN_GARDEN_MEDIA_STORAGE, (int) round(self::TRENCH_VOID_SHARE * 100), (int) round(self::TRENCH_VOID_SHARE * 100), (int) self::TREE_TRENCH_CATCHMENT_M2_PER_M3),
             'Tree crowns are modelled at their recorded diameter (tree register) or, without one, at mature size (radius 28 % of the height); they intercept 2 mm of rain.',
             'Shade is evaluated at one moment (14:00, mid-summer); shade sails let rain through.',
             'Surface temperatures are indicative values of a sunny summer midday, not a thermal simulation.',

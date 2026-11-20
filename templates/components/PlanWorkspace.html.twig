@@ -497,7 +497,7 @@
                                     data-live-id-param="{{ object.id }}"
                                     data-live-field-param="{{ field }}"
                                     data-live-value-param="{{ option }}"
-                                >{% if field == 'kind' %}{{ ('plan.object.kind.' ~ option)|trans }}{% elseif field == 'storage' %}{{ 'plan.object.value.storage'|trans({'%value%': option}) }}{% else %}{{ ('plan.object.value.' ~ field)|trans({'%value%': (option / 1000)|number_format(1)|trim('0', 'right')|trim('.', 'right')}) }}{% endif %}</twig:ToggleGroup:Item>
+                                >{% if field == 'kind' %}{{ ('plan.object.kind.' ~ option)|trans }}{% elseif field == 'storage' %}{{ 'plan.object.value.storage'|trans({'%value%': option}) }}{% elseif field == constant('Core\\Configurator\\Site\\SiteObject::TRENCH_VOLUME') %}{{ ('plan.object.value.' ~ field)|trans({'%value%': option}) }}{% else %}{{ ('plan.object.value.' ~ field)|trans({'%value%': (option / 1000)|number_format(1)|trim('0', 'right')|trim('.', 'right')}) }}{% endif %}</twig:ToggleGroup:Item>
                             {% endfor %}
                         </twig:ToggleGroup>
                     {% endfor %}

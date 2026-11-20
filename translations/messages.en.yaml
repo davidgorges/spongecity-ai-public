@@ -217,12 +217,14 @@ plan:
         field:
             storage: Ponding depth
             trench: Gravel trench below (where water soaks away)
+            trenchVolume: Tree trench below (where water soaks away)
             kind: Kind
             height: Height when grown
             y: Height above ground
         value:
             storage: '%value% mm'
             trench: '%value% m'
+            trenchVolume: '%value% m³'
             height: '%value% m'
             y: '%value% m'
         close: Close
@@ -325,6 +327,7 @@ plan:
     sku:
         SC-PLOT: Analysed area
         SC-TREE: Shade trees
+        SC-TREE-TRENCH: Tree trenches
         SC-RAINGARDEN: Rain gardens
         SC-RAINGARDEN-TRENCH: Gravel trenches below rain gardens
         SC-PERMEABLE-PAVERS: Permeable pavers

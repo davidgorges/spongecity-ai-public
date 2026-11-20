@@ -558,7 +558,7 @@ final readonly class RainGardenSiting implements InterventionSiting
 
     private function infiltrates(InfiltrationPotential $potential): bool
     {
-        return InfiltrationPotential::Possible === $potential || InfiltrationPotential::Likely === $potential;
+        return $potential->soaksAway();
     }
 
     /**

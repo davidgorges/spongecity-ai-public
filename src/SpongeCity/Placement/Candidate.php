@@ -47,7 +47,8 @@ final readonly class Candidate
         return [
             'id' => $this->id,
             O::TYPE => $this->object[O::TYPE],
-            O::POINTS => $this->object[O::POINTS],
+            // an outline (a garden, a surface) or a point (a tree)
+            ...(isset($this->object[O::POINTS]) ? [O::POINTS => $this->object[O::POINTS]] : [O::X => $this->object[O::X] ?? null, O::Z => $this->object[O::Z] ?? null]),
             'metrics' => $this->metrics,
             'reasons' => $this->reasons,
             'warnings' => $this->warnings,

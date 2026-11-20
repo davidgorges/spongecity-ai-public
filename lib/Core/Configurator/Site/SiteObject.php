@@ -42,6 +42,8 @@ final class SiteObject
     public const string STORAGE = 'storage';
     /** a rain garden's gravel trench below it (Mulden-Rigolen-Element): its depth in millimetres, 0 for none */
     public const string TRENCH = 'trench';
+    /** a new tree's trench below it (Baumrigole: structural soil and gravel that store the runoff of the ground around): its volume in m³, 0 for none */
+    public const string TRENCH_VOLUME = 'trenchVolume';
     /** a building's use (BuildingType) and the look of its walls (Facade) */
     public const string USE = 'use';
     public const string FACADE = 'facade';
@@ -219,7 +221,7 @@ final class SiteObject
         self::ROAD => 'An existing street or footpath along its centre line (points, not closed) with its width in millimetres. Context from OpenStreetMap, not changeable by the design.',
         self::AREA => 'An existing ground area of the plot (closed outline): its use (yard, parking, access = fire lane and deliveries, sport, play, quiet, green) and its surface today. From OpenStreetMap, or set by the user (look "user"); its use decides what its surface may become. Context, not an intervention.',
         self::EQUIPMENT => 'Existing play equipment (swing, slide, climbing, carousel, seesaw, spring, other) at x/z, width × depth its fall zone (DIN EN 1176), turned by turn. From OpenStreetMap or marked by the user. Context: nothing may be planned in its fall zone.',
-        self::NEWTREE => 'INTERVENTION: a newly planted shade tree at x/z (height is the expected height when grown). Gives shade and evaporative cooling.',
+        self::NEWTREE => 'INTERVENTION: a newly planted shade tree at x/z (height is the expected height when grown). Gives shade and evaporative cooling. trenchVolume (m³, 0 for none): a tree trench below it (Baumrigole) that stores the runoff of the sealed ground around it and waters the tree, only where the ground lets water soak away.',
         self::RAINGARDEN => 'INTERVENTION: a sunken planted rain garden (closed outline) that takes runoff from surrounding sealed areas; storage is its ponding depth in millimetres; trench is the depth of a gravel trench below it (a swale-trench, Mulden-Rigolen-Element, 0 for none) that stores more water and takes the runoff of a larger area, only where the ground lets water soak away (propose_placements says where).',
         self::PERMEABLE => 'INTERVENTION: a permeable surface (closed outline) replacing sealed ground: pavers with joints, gravel, or grass pavers.',
         self::PLANTING => 'INTERVENTION: unsealed planting or lawn (closed outline) replacing sealed ground.',
@@ -360,7 +362,7 @@ final class SiteObject
                 self::WIDTH => [self::INT, 1000, 30000, 6000],
                 self::KIND => [self::ENUM, self::ROAD_KINDS, self::ROAD_CARRIAGEWAY],
             ],
-            self::NEWTREE => [...self::POSITION, self::HEIGHT => [self::INT, 3000, 25000, 9000]],
+            self::NEWTREE => [...self::POSITION, self::HEIGHT => [self::INT, 3000, 25000, 9000], self::TRENCH_VOLUME => [self::INT, 0, 40, 0]],
             self::RAINGARDEN => [self::POINTS => [self::OUTLINE, 3], self::STORAGE => [self::INT, 100, 600, 300], self::TRENCH => [self::INT, 0, 1500, 0]],
             self::PERMEABLE => [self::POINTS => [self::OUTLINE, 3], self::KIND => [self::ENUM, self::PERMEABLE_KINDS, self::KIND_PAVERS]],
             self::PLANTING => [self::POINTS => [self::OUTLINE, 3]],

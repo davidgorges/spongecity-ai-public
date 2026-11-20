@@ -51,6 +51,7 @@ final class InterventionBuilder
     private const array GREENROOF_SKU = [O::KIND_EXTENSIVE => SpongeCitySku::GREENROOF_EXTENSIVE, O::KIND_INTENSIVE => SpongeCitySku::GREENROOF_INTENSIVE];
     private const array GREENROOF_COLOURS = [O::KIND_EXTENSIVE => '#7d8f4e', O::KIND_INTENSIVE => '#5f8a3c'];
     private const float MILLIMETRES_PER_METRE = 1000.0;
+    private const float CUBIC_MILLIMETRES_PER_CUBIC_METRE = 1e9;
 
     /** layers of the ground, millimetres: the plot lies lowest, interventions on top of existing paving */
     private const int PLOT_TOP = 4;
@@ -169,7 +170,11 @@ final class InterventionBuilder
         $area = Measure::area(Polygon::area($points), self::SQUARE_MILLIMETRES_PER_SQUARE_METRE);
 
         return match ($type) {
-            O::NEWTREE => [new Part(SpongeCitySku::TREE, $label, Model::ofHeight(GardenModels::TREES, self::TREE_VARIANT, $num(O::HEIGHT)), position: new Vector3($num(O::X), 0, $num(O::Z)))],
+            O::NEWTREE => [
+                new Part(SpongeCitySku::TREE, $label, Model::ofHeight(GardenModels::TREES, self::TREE_VARIANT, $num(O::HEIGHT)), position: new Vector3($num(O::X), 0, $num(O::Z))),
+                // the tree trench lies under it, out of sight: on the bill by its volume, not drawn
+                ...($num(O::TRENCH_VOLUME) > 0 ? [new Part(SpongeCitySku::TREE_TRENCH, $label, measure: Measure::volume($num(O::TRENCH_VOLUME) * self::CUBIC_MILLIMETRES_PER_CUBIC_METRE))] : []),
+            ],
             // the view draws a basin of its ponding depth, planted, with water in it
             O::RAINGARDEN => [
                 ...$this->slab(SpongeCitySku::RAINGARDEN, $label, self::MATERIAL_RAINGARDEN, $points, self::RAINGARDEN_TOP, $area, [

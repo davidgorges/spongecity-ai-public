@@ -33,12 +33,13 @@ final readonly class SpongeCityDefinition implements ProductDefinition, StagesSc
     public const string LABEL = 'spongecity.label';
 
     /**
-     * prices in euro cents per m² (areas), per m³ (a rain garden's trench), per piece (trees, a green roof's set-up per building).
+     * prices in euro cents per m² (areas), per m³ (a rain garden's or a tree's trench), per piece (trees, a green roof's set-up per building).
      * Green roofs are retrofit prices: system build-up, root barrier, gravel strip, drainage, crane;
      * not a new waterproofing, not structural reinforcement.
      */
     private const array PRICES = [
         Sku::TREE => 90000,
+        Sku::TREE_TRENCH => 15000,
         Sku::RAINGARDEN => 18000,
         Sku::RAINGARDEN_TRENCH => 12000,
         Sku::PERMEABLE_PAVERS => 11000,
@@ -61,6 +62,7 @@ final readonly class SpongeCityDefinition implements ProductDefinition, StagesSc
      */
     private const array MAINTENANCE_PER_YEAR = [
         Sku::TREE => 8000,
+        Sku::TREE_TRENCH => 200,
         Sku::RAINGARDEN => 600,
         // inspecting and flushing the overflow and the inspection shaft
         Sku::RAINGARDEN_TRENCH => 200,
