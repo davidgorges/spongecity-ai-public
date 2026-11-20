@@ -43,8 +43,9 @@ const BOTTOM_EDGE = 'bottom';
  * with data-window-auto opens by itself when that value changes to a non-empty one (an object was
  * selected). The live component re-renders the windows' contents: their place is applied again.
  *
- * A window moved or resized snaps to the edges of the others (GAP beside them, or lined up with
- * them) and of the view, else to an invisible grid (GRID); Alt places it freely. Dropped against
+ * A window moved or resized follows the pointer; an edge of another window (GAP beside it, or
+ * lined up with it) or of the view that comes near pulls it on. Dropped elsewhere, it goes onto an
+ * invisible grid (GRID). Alt places it freely. Dropped against
  * another one it joins its group (window_manager/groups.js): dragging, or moving with the arrow
  * keys, any window of a group moves them all. Shift-drag takes a window out of its group, closing
  * it does too. Groups are kept with the places.
@@ -171,11 +172,12 @@ export default class extends Controller {
             if (e.pointerId !== this.#drag?.pointer) {
                 return;
             }
-            const { moved } = this.#drag;
+            const drag = this.#drag;
             this.#drag = null;
             this.#showGuides(null, null);
-            // a press without a move (bringing it forward) groups nothing
-            if (moved) {
+            // a press without a move (bringing it forward) neither snaps nor groups
+            if (drag.moved) {
+                this.#dropOnGrid(drag);
                 this.#joinTouching(id);
             }
             this.#save();
@@ -212,11 +214,12 @@ export default class extends Controller {
             if (e.pointerId !== this.#resizing?.pointer) {
                 return;
             }
-            const { moved } = this.#resizing;
+            const resizing = this.#resizing;
             this.#resizing = null;
             this.#showGuides(null, null);
-            // a press without a move (or a double click: its own size) groups nothing
-            if (moved) {
+            // a press without a move (or a double click: its own size) neither snaps nor groups
+            if (resizing.moved) {
+                this.#resizeOnGrid(resizing);
                 this.#joinTouching(id);
             }
             this.#save();
@@ -284,18 +287,34 @@ export default class extends Controller {
         let dy = event.clientY - drag.from[1];
         drag.moved = true;
         let guides = [null, null];
-        // Alt: placed freely
-        if (!event.altKey) {
+        // it follows the pointer, but an edge near pulls it on (Alt: placed freely)
+        drag.free = event.altKey;
+        drag.snapped = [false, false];
+        if (!drag.free) {
             const moved = Object.values(drag.starts).map((rect) => ({ ...rect, x: rect.x + dx, y: rect.y + dy }));
             const snap = snapMove(moved, drag.targets, this.#bounds(), { threshold: SNAP_DISTANCE, gap: GAP });
-            // nothing near on an axis: the grabbed window's corner on the grid
-            const lead = drag.starts[drag.id];
-            dx = snap.x.delta === null ? toGrid(lead.x + dx, GRID) - lead.x : dx + snap.x.delta;
-            dy = snap.y.delta === null ? toGrid(lead.y + dy, GRID) - lead.y : dy + snap.y.delta;
+            dx += snap.x.delta ?? 0;
+            dy += snap.y.delta ?? 0;
+            drag.snapped = [snap.x.delta !== null, snap.y.delta !== null];
             guides = [snap.x.guide, snap.y.guide];
         }
-        this.#moveAll(drag.starts, ...this.#clampDelta(drag.starts, dx, dy));
+        drag.delta = this.#clampDelta(drag.starts, dx, dy);
+        this.#moveAll(drag.starts, ...drag.delta);
         this.#showGuides(...guides);
+    }
+
+    /** dropped: on an axis not snapped to an edge, the grabbed window's corner goes onto the grid (its group with it) */
+    #dropOnGrid(drag) {
+        if (drag.free) {
+            return;
+        }
+        const lead = drag.starts[drag.id];
+        const [dx, dy] = drag.delta;
+        this.#moveAll(drag.starts, ...this.#clampDelta(
+            drag.starts,
+            drag.snapped[0] ? dx : toGrid(lead.x + dx, GRID) - lead.x,
+            drag.snapped[1] ? dy : toGrid(lead.y + dy, GRID) - lead.y,
+        ));
     }
 
     /** the windows from where they started, moved by dx, dy */
@@ -316,16 +335,34 @@ export default class extends Controller {
         let width = resizing.start[0] + event.clientX - resizing.from[0];
         let height = resizing.start[1] + event.clientY - resizing.from[1];
         let guides = [null, null];
-        if (!event.altKey) {
+        // the corner follows the pointer, but an edge near pulls it on (Alt: freely)
+        resizing.free = event.altKey;
+        resizing.snapped = [false, false];
+        if (!resizing.free) {
             const state = this.#state[resizing.id];
             const snap = snapResize({ x: state.x, y: state.y, w: width, h: height }, resizing.targets, this.#bounds(), { threshold: SNAP_DISTANCE, gap: GAP });
-            // nothing near: the corner on the grid
-            width = snap.x.delta === null ? toGrid(state.x + width, GRID) - state.x : width + snap.x.delta;
-            height = snap.y.delta === null ? toGrid(state.y + height, GRID) - state.y : height + snap.y.delta;
+            width += snap.x.delta ?? 0;
+            height += snap.y.delta ?? 0;
+            resizing.snapped = [snap.x.delta !== null, snap.y.delta !== null];
             guides = [snap.x.guide, snap.y.guide];
         }
+        resizing.size = [width, height];
         this.#setSize(resizing.id, width, height);
         this.#showGuides(...guides);
+    }
+
+    /** let go: on an axis not snapped to an edge, the corner goes onto the grid */
+    #resizeOnGrid(resizing) {
+        if (resizing.free) {
+            return;
+        }
+        const state = this.#state[resizing.id];
+        const [width, height] = resizing.size;
+        this.#setSize(
+            resizing.id,
+            resizing.snapped[0] ? width : toGrid(state.x + width, GRID) - state.x,
+            resizing.snapped[1] ? height : toGrid(state.y + height, GRID) - state.y,
+        );
     }
 
     /** a window's size, kept inside the view from where it stands */
