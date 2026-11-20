@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\SpongeCity\Chat;
 
 use Symfony\AI\Agent\AgentInterface;
+use Symfony\AI\Agent\Toolbox\ToolboxInterface;
 use Symfony\AI\Platform\Message\Message;
 use Symfony\AI\Platform\Message\MessageBag;
 use Symfony\Component\DependencyInjection\Attribute\Autowire;
@@ -20,6 +21,8 @@ final readonly class PlanAssistant
     public const string ROLE_ASSISTANT = Conversation::ROLE_ASSISTANT;
     /** what travels with every message: the plan, and the language the interface shows the agent's reasons in */
     public const string MESSAGE_FORMAT = "plan_id: %s\ninterface_language: %s\n\n%s";
+    /** the agent's tools from this application's MCP server (ai.yaml: mcp_server 'spongecity.local') */
+    public const string PLANNING_TOOLBOX = 'ai.toolbox.spongecity.mcp.spongecity.local';
 
     public function __construct(
         #[Autowire(service: 'ai.agent.spongecity')]
@@ -28,6 +31,8 @@ final readonly class PlanAssistant
         private ConversationStore $conversations,
         #[Autowire(param: 'kernel.default_locale')]
         private string $defaultLocale,
+        #[Autowire(service: self::PLANNING_TOOLBOX)]
+        private ToolboxInterface $planningTools,
     ) {
     }
 
@@ -41,6 +46,12 @@ final readonly class PlanAssistant
 
     public function ask(string $planId, string $message): string
     {
+        // a server that cannot be listed contributes no tools, silently: the model then writes its
+        // tool calls as text into the reply. The listing is kept, the agent does not list again.
+        if ([] === $this->planningTools->getTools()) {
+            throw PlanningToolsUnavailable::fromServer();
+        }
+
         $bag = new MessageBag();
         foreach ($this->history($planId) as $turn) {
             $bag = $bag->with(self::ROLE_USER === $turn[Conversation::KEY_ROLE] ? Message::ofUser($turn[Conversation::KEY_CONTENT]) : Message::ofAssistant($turn[Conversation::KEY_CONTENT]));
@@ -52,8 +63,11 @@ final readonly class PlanAssistant
 
         // the session is locked while it is open: a turn takes a minute, and the page's own requests
         // meanwhile (the re-renders that show the design appear) would wait for it until they time out
+        // (only a started one: saving a session that never started fails, there is no $_SESSION yet)
         $session = $this->requests->getCurrentRequest()?->hasSession() ? $this->requests->getSession() : null;
-        $session?->save();
+        if ($session?->isStarted()) {
+            $session->save();
+        }
         $reply = $this->agent->call($bag)->asText();
         $this->conversations->record($planId, $message, $reply);
 

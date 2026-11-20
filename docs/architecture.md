@@ -407,12 +407,16 @@ model's thinking *and* its answer, and with the platform's default of 1000 the t
 all up, so the reply came back as a bare `ThinkingResult` and `asText()` failed ("The planning
 agent could not answer"). Its tools are the **MCP server of this same application**:
 
-- **Server** (`mcp-bundle`, `config/packages/mcp.yaml`): `/mcp` (HTTP, localhost only by default;
-  set `http.allowed_hosts` to expose it) serves `App\Mcp\SpongeCityTools`, declared with
+- **Server** (`mcp-bundle`, `config/packages/mcp.yaml`): `/mcp` (HTTP) answers only the hosts in
+  `MCP_ALLOWED_HOSTS` (default `localhost,127.0.0.1,[::1]`, any other Host header gets a 403). In
+  production add the host `MCP_SERVER_URL` points at. It serves `App\Mcp\SpongeCityTools`, declared with
   `#[McpTool]`. Any MCP client (Claude Desktop, the inspector) can use it.
 - **Client**: `mcp.clients.spongecity.servers.local` points at `MCP_SERVER_URL`
   (`${DEFAULT_URI}mcp`, which follows the port the Symfony CLI serves on); the agent's `tools: - mcp_server: 'spongecity.local'`
-  exposes the tools to the model with the prefix `local_`.
+  exposes the tools to the model with the prefix `local_`. A server that cannot be listed (unreachable,
+  or a 403 for its host) contributes no tools, silently, and the model then writes its tool calls as
+  text. `PlanAssistant` therefore refuses the turn when the toolbox is empty
+  (`PlanningToolsUnavailable`, logged as "The planning agent failed").
 
 | Tool | Does |
 |---|---|
@@ -423,6 +427,8 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 | `add_objects` / `update_object` / `remove_object` / `clear_interventions` | Edit the design; values are corrected, not rejected. |
 | `set_design_storm` | Rain depth for the calculation (10 to 120 mm/h). |
 | `calculate_impact` | Metrics with bases, assumptions, warnings, cost. |
+| `propose_placements` type `greenroof` | Eligible flat roofs of the plot's buildings (GreenRoofs), with planted area, retention, roof cooling and cost; the rest named with the reason. |
+| `calculate_cooling` | Hot-day evapotranspiration and evaporative cooling, surface/air/perceived temperature, heat stress shares, yearly water balance; today vs. plan and per kind of measure. |
 | `simulate_buildings` / `get_building_simulation` | Hamburg only: a SimStadt run (heat demand, heat demand with shadow, PV potential) for the buildings within 100 m, started and polled (see "Building simulations"). |
 | `get_site_conditions` | Hamburg only: terrain of the plot (elevation, slope, where water runs and collects), infiltration potential as shares of the plot with their meaning, and the sources (publisher, date, licence, limitations) of the site's official layers. |
 | `propose_placements` / `place_candidate` | Where an intervention works, worked out by the server (rain gardens so far, see "Placing interventions"): candidates with metrics and reasons, then one placed by its id. |

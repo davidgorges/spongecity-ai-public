@@ -17,6 +17,7 @@ final readonly class Metric
         public float $design,
         public string $basis,
         public bool $higherIsBetter = true,
+        public ?MetricTarget $target = null,
     ) {
     }
 
@@ -25,8 +26,14 @@ final readonly class Metric
         return $this->design - $this->baseline;
     }
 
+    /** how the planned design rates against the target; null where the metric has none (volumes scale with the plot) */
+    public function rating(): ?Rating
+    {
+        return $this->target?->rate($this->design, $this->higherIsBetter);
+    }
+
     /**
-     * @return array{key: string, label: string, unit: string, baseline: float, design: float, delta: float, improved: bool, basis: string}
+     * @return array{key: string, label: string, unit: string, baseline: float, design: float, delta: float, improved: bool, basis: string, higher_is_better: bool, rating: string|null, baseline_rating: string|null, target: array{good: float, poor: float, source: string}|null}
      */
     public function toArray(): array
     {
@@ -41,6 +48,10 @@ final readonly class Metric
             'delta' => round($delta, 2),
             'improved' => $this->higherIsBetter ? $delta > 0 : $delta < 0,
             'basis' => $this->basis,
+            'higher_is_better' => $this->higherIsBetter,
+            'rating' => $this->rating()?->value,
+            'baseline_rating' => $this->target?->rate($this->baseline, $this->higherIsBetter)->value,
+            'target' => null === $this->target ? null : ['good' => $this->target->good, 'poor' => $this->target->poor, 'source' => $this->target->source],
         ];
     }
 }

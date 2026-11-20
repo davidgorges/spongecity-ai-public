@@ -9,7 +9,9 @@ use App\SpongeCity\Geo\SiteImporter;
 use App\SpongeCity\PlanEvaluator;
 use Core\Configurator\Product\SpongeCity\Impact\GroundClass;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
+use Core\Configurator\Product\SpongeCity\Impact\MetricTarget;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
+use Core\Configurator\Product\SpongeCity\Impact\Rating;
 use Core\Configurator\Scene\ModelCatalog;
 use Core\Configurator\Scene\SceneSerializer;
 use Core\Configurator\Site\Site;
@@ -40,6 +42,36 @@ final class ImpactCalculatorTest extends KernelTestCase
             self::assertTrue($metric->toArray()['improved'], $metric->key.' did not improve: '.json_encode($metric->toArray()));
         }
         self::assertGreaterThan(0.0, $report->metric(ImpactCalculator::METRIC_RETENTION)?->delta());
+    }
+
+    #[Test]
+    public function anAsphaltYardRatesPoorOnEveryTargetAndVolumesGetNone(): void
+    {
+        $report = (new ImpactCalculator())->calculate($this->site([]), self::STORM);
+
+        foreach ([ImpactCalculator::METRIC_PERMEABLE_SHARE, ImpactCalculator::METRIC_PEAK_COEFFICIENT, ImpactCalculator::METRIC_SHADE, ImpactCalculator::METRIC_SURFACE_TEMPERATURE] as $key) {
+            $metric = $report->metric($key)?->toArray();
+            self::assertSame(Rating::Poor->value, $metric['rating'] ?? null, $key);
+            self::assertNotNull($metric['target'] ?? null, $key);
+        }
+        foreach ([ImpactCalculator::METRIC_RUNOFF, ImpactCalculator::METRIC_RETENTION] as $key) {
+            self::assertNull($report->metric($key)?->rating(), $key);
+        }
+    }
+
+    #[Test]
+    public function aTargetRatesInTheMetricsDirection(): void
+    {
+        $target = new MetricTarget(good: 0.3, poor: 0.6, source: 'test');
+
+        self::assertSame(Rating::Good, $target->rate(0.25, higherIsBetter: false));
+        self::assertSame(Rating::Fair, $target->rate(0.45, higherIsBetter: false));
+        self::assertSame(Rating::Poor, $target->rate(0.6, higherIsBetter: false));
+
+        $share = new MetricTarget(good: 50.0, poor: 25.0, source: 'test');
+        self::assertSame(Rating::Good, $share->rate(50.0, higherIsBetter: true));
+        self::assertSame(Rating::Fair, $share->rate(30.0, higherIsBetter: true));
+        self::assertSame(Rating::Poor, $share->rate(10.0, higherIsBetter: true));
     }
 
     #[Test]

@@ -26,7 +26,8 @@ final readonly class BuildingClearance
      */
     public function conflict(array $object, array $buildings): ?BuildingConflict
     {
-        if (!in_array($object[O::TYPE] ?? null, O::INTERVENTIONS, true)) {
+        // a green roof is meant to lie on its building (SiteEditor checks it against GreenRoofs)
+        if (!in_array($object[O::TYPE] ?? null, O::INTERVENTIONS, true) || O::GREENROOF === $object[O::TYPE]) {
             return null;
         }
         $outline = isset($object[O::POINTS]) ? Site::points($object) : [];

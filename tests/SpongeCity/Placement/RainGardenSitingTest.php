@@ -168,7 +168,7 @@ final class RainGardenSitingTest extends KernelTestCase
         $result = $this->tools()->proposePlacements($this->plan(bowl: null)->id, O::NEWTREE);
 
         self::assertStringContainsString('add_objects', $result['error']);
-        self::assertEqualsCanonicalizing([O::RAINGARDEN, O::PERMEABLE], $result['types']);
+        self::assertEqualsCanonicalizing([O::RAINGARDEN, O::PERMEABLE, O::GREENROOF], $result['types']);
     }
 
     #[Test]

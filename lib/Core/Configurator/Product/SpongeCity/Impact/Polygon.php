@@ -30,6 +30,66 @@ final class Polygon
     }
 
     /**
+     * The length of a closed outline, millimetres.
+     *
+     * @param list<array{0: float|int, 1: float|int}> $points
+     */
+    public static function perimeter(array $points): float
+    {
+        $length = 0.0;
+        $count = count($points);
+        foreach ($points as $i => [$ax, $az]) {
+            [$bx, $bz] = $points[($i + 1) % $count];
+            $length += hypot($bx - $ax, $bz - $az);
+        }
+
+        return $length;
+    }
+
+    /**
+     * The outline moved inwards by $distance (millimetres), corner by corner along the bisector,
+     * a sharp corner moving at most $maxMiter times the distance. Not clipped: a part narrower
+     * than twice the distance folds over itself, so check the width first.
+     *
+     * @param list<array{0: float|int, 1: float|int}> $points
+     *
+     * @return list<array{0: float, 1: float}>
+     */
+    public static function inset(array $points, float $distance, float $maxMiter = 3.0): array
+    {
+        $count = count($points);
+        if ($distance <= 0.0 || $count < 3) {
+            return array_map(static fn (array $p): array => [(float) $p[0], (float) $p[1]], $points);
+        }
+        $signed = 0.0;
+        foreach ($points as $i => [$x, $z]) {
+            [$nx, $nz] = $points[($i + 1) % $count];
+            $signed += $x * $nz - $nx * $z;
+        }
+        // which side is inside: left of each edge when the outline runs counter-clockwise (in x/z)
+        $side = $signed > 0 ? 1.0 : -1.0;
+        $normal = static function (array $a, array $b) use ($side): array {
+            $length = hypot($b[0] - $a[0], $b[1] - $a[1]);
+
+            return $length > 0 ? [-$side * ($b[1] - $a[1]) / $length, $side * ($b[0] - $a[0]) / $length] : [0.0, 0.0];
+        };
+        $inset = [];
+        foreach ($points as $i => $point) {
+            $before = $normal($points[($i - 1 + $count) % $count], $point);
+            $after = $normal($point, $points[($i + 1) % $count]);
+            [$mx, $mz] = [$before[0] + $after[0], $before[1] + $after[1]];
+            $dot = $before[0] * $after[0] + $before[1] * $after[1];
+            $scale = min($maxMiter, 1.0 / max(1e-6, sqrt((1.0 + $dot) / 2.0)));
+            $length = hypot($mx, $mz);
+            $inset[] = $length > 1e-9
+                ? [$point[0] + $mx / $length * $distance * $scale, $point[1] + $mz / $length * $distance * $scale]
+                : [$point[0] + $after[0] * $distance, $point[1] + $after[1] * $distance];
+        }
+
+        return $inset;
+    }
+
+    /**
      * The area two outlines share, either of them concave: $a clipped to each triangle of $b
      * (Sutherland–Hodgman is exact against a convex clip, whatever the subject's shape).
      *

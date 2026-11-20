@@ -16,6 +16,7 @@ spongecity:
         permeable: Permeable surface
         planting: Planting
         shadesail: Shade sail
+        greenroof: Green roof
 
 home:
     title: Don't just ask AI how to make a place greener. Let it redesign the real place.
@@ -149,6 +150,7 @@ plan:
             newtree: Shade tree
             planting: '%area% m² planting'
             shadesail: Shade sail
+            greenroof: '%kind%, %planted% m² planted'
     windows:
         dock: Windows
         chat: Planning agent
@@ -168,6 +170,7 @@ plan:
             planting: Planting
             newtree: Shade tree
             shadesail: Shade sail
+            greenroof: Green roof
             equipment: Play equipment
             tree: Existing tree
             building: Building
@@ -176,6 +179,11 @@ plan:
             pavers: Permeable pavers
             grass_pavers: Grass pavers
             gravel: Water-bound gravel
+            extensive: Extensive green roof (sedum)
+            intensive: Intensive green roof (roof garden)
+        green_roof:
+            possible: 'Possible: %area% planted (%kinds%)'
+            planned: Planned
         fact:
             area: Area
             ponding: Ponding depth
@@ -190,6 +198,9 @@ plan:
             footprint: Footprint
             use: Used as
             surface: Ground today
+            green_roof: Green roof
+            roof_area: Roof area
+            planted: Planted
         field:
             storage: Ponding depth
             kind: Kind
@@ -209,6 +220,7 @@ plan:
         delete: Delete
         confirm_delete: Click again to delete
         add_here: Add here
+        green_roof: Plant a green roof
         add:
             raingarden: Rain garden
             permeable: Permeable surface
@@ -222,6 +234,7 @@ plan:
             permeable: '%kind% added: %area% m² of %zone%, as its use allows.'
             newtree: Shade tree added. Change its height in the panel.
             equipment: Play equipment marked. Say what it is in the panel.
+            greenroof: 'Green roof planned: %area% m² planted, about %cost% € with the set-up. A structural check of the roof comes first.'
         nothing_fits: 'No rain garden fits near here. %reason%'
         blocked: 'Not here: %reason%.'
         zone_kept: '%zone% is used as %use% and keeps its surface. Change its use in the panel if that is wrong.'
@@ -255,6 +268,11 @@ plan:
         was: 'was %value%'
         points: pts
         basis: Calculations and assumptions
+        target: 'Good %good% · poor %poor%'
+        rating:
+            good: Good
+            fair: Fair
+            poor: Poor
     measures:
         title: Planned measures
         clear: Remove all
@@ -276,6 +294,7 @@ plan:
             permeable: Permeable surface
             planting: Planting
             shadesail: Shade sail
+            greenroof: Green roof
     cost:
         title: Bill of quantities
         total: Estimated cost
@@ -289,3 +308,6 @@ plan:
         SC-PERMEABLE-GRASS: Grass pavers
         SC-PLANTING: Planting
         SC-SHADESAIL: Shade sails
+        SC-GREENROOF-EXTENSIVE: Extensive green roof (retrofit)
+        SC-GREENROOF-INTENSIVE: Intensive green roof (retrofit)
+        SC-GREENROOF-SETUP: Green roof set-up per building (structural survey, crane, scaffolding)

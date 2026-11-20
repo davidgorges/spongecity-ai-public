@@ -45,6 +45,23 @@ final readonly class PermeableSiting implements InterventionSiting
         O::AREA_PARKING => 'grass pavers carry cars and let the rain through',
         O::AREA_QUIET => 'a water-bound gravel surface suits ground with little traffic',
     ];
+    /** use → why each of the other permeable kinds does not suit it */
+    public const array WHY_NOT = [
+        O::AREA_YARD => [
+            O::KIND_GRASS_PAVERS => 'grass between the stones does not survive daily running and play, and the open cells trip wheelchairs and buggies',
+            O::KIND_GRAVEL => 'loose gravel gets kicked about and is hard going for wheelchairs',
+        ],
+        O::AREA_PARKING => [
+            O::KIND_PAVERS => 'pavers carry cars as well, but let less rain through and heat up more, and parked cars leave the grass alone',
+            O::KIND_GRAVEL => 'water-bound gravel ruts under turning and parking cars',
+        ],
+        O::AREA_QUIET => [
+            O::KIND_PAVERS => 'pavers are more than ground with little traffic needs, and cost more',
+            O::KIND_GRASS_PAVERS => 'grass pavers are built to carry loads: with little traffic gravel does the job for less',
+        ],
+    ];
+    /** why the root zone of trees takes gravel and nothing else */
+    public const string WHY_NOT_IN_ROOT_ZONE = 'it needs a compacted base dug into the root zone';
     /** a band along a façade, metres deep (from the drip strip); deeper when an area is asked for */
     public const float BAND_METRES = 6.0;
     private const float MAX_BAND_METRES = 20.0;
@@ -225,6 +242,7 @@ final readonly class PermeableSiting implements InterventionSiting
             default => 'The whole zone, along its edges: buildings, paths and the neighbouring zones.',
         };
         $reasons[] = sprintf('Takes about %.0f m³ off the runoff in a %d mm/h storm (%s, runoff coefficient %.2f, becomes %s, %.2f).', $removed, $context->stormMillimetres, $zone->surface, $today->runoffCoefficient(), $kind, $after->runoffCoefficient());
+        $reasons[] = $this->materialTradeOff($zone, $shape, $kind, $area, $rain);
         if ($feedsGarden) {
             $reasons[] = 'Its water runs into a planned rain garden: unsealing here leaves the garden room for the rest.';
         }
@@ -253,6 +271,7 @@ final readonly class PermeableSiting implements InterventionSiting
                 [
                     'area_m2' => round($area, 1),
                     'kind' => $kind,
+                    'kinds_not_chosen' => $this->rejectedKinds($zone, $shape, $kind),
                     'zone' => $zone->id,
                     'zone_use' => $zone->use,
                     'zone_use_source' => $zone->source,
@@ -268,6 +287,52 @@ final readonly class PermeableSiting implements InterventionSiting
                 $warnings,
             ),
         ];
+    }
+
+    /**
+     * Why the other permeable kinds were not chosen here: kind → reason.
+     *
+     * @return array<string, string>
+     */
+    private function rejectedKinds(Zone $zone, string $shape, string $kind): array
+    {
+        $rejected = [];
+        foreach (array_diff(O::PERMEABLE_KINDS, [$kind]) as $other) {
+            $rejected[$other] = self::SHAPE_TREES === $shape ? self::WHY_NOT_IN_ROOT_ZONE : (self::WHY_NOT[$zone->use][$other] ?? '');
+        }
+
+        return $rejected;
+    }
+
+    /**
+     * The material against the one that would take the most rain: what the choice costs or gains
+     * in runoff and surface heat, so the trade-off can be explained, not only the result.
+     */
+    private function materialTradeOff(Zone $zone, string $shape, string $kind, float $area, float $rain): string
+    {
+        $chosen = GroundClass::fromPermeableKind($kind);
+        $rejected = $this->rejectedKinds($zone, $shape, $kind);
+        $best = array_key_first($rejected);
+        foreach (array_keys($rejected) as $other) {
+            if (GroundClass::fromPermeableKind($other)->runoffCoefficient() < GroundClass::fromPermeableKind($best)->runoffCoefficient()) {
+                $best = $other;
+            }
+        }
+        $rival = GroundClass::fromPermeableKind($best);
+        $runoff = $area * ($rival->runoffCoefficient() - $chosen->runoffCoefficient()) * $rain;
+        $heat = $rival->surfaceTemperature() - $chosen->surfaceTemperature();
+
+        return sprintf(
+            '%s rather than %s: %s. %s would take about %.1f m³ %s off the runoff and be %.0f K %s at midday.',
+            ucfirst(str_replace('_', ' ', $kind)),
+            str_replace('_', ' ', $best),
+            $rejected[$best],
+            ucfirst(str_replace('_', ' ', $best)),
+            abs($runoff),
+            $runoff <= 0 ? 'more' : 'less',
+            abs($heat),
+            $heat <= 0 ? 'cooler' : 'warmer',
+        );
     }
 
     /**

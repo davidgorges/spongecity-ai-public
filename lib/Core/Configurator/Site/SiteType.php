@@ -233,6 +233,7 @@ final readonly class SiteType implements StructuredValue
             O::HEX => is_string($value) && 1 === preg_match(self::HEX_PATTERN, $value) ? strtolower($value) : $text(1),
             O::OUTLINE => self::outline($value, $int(1)),
             O::BLOCKS => self::blocks($value),
+            O::REF => is_string($value) && 1 === preg_match(self::ID_PATTERN, $value) ? $value : null,
             default => null,
         };
     }
@@ -373,6 +374,7 @@ final readonly class SiteType implements StructuredValue
                 O::INT => ['type' => 'integer', 'minimum' => $field[1], 'maximum' => $field[2], 'default' => $field[3]],
                 O::ENUM => ['type' => 'string', 'enum' => $field[1], 'default' => $field[2]],
                 O::HEX => ['type' => 'string', 'pattern' => '^#[0-9a-fA-F]{6}$', 'default' => $field[1]],
+                O::REF => ['type' => 'string', 'pattern' => '^[A-Za-z0-9_-]{1,24}$', 'description' => 'The id of the object it belongs to.'],
                 O::BLOCKS => ['type' => 'array', 'maxItems' => O::MAX_PARTS, 'description' => 'Roof levels from the 3D building model: leave as they are.', 'items' => ['type' => 'object', 'properties' => [O::POINTS => ['type' => 'array'], O::HEIGHT => ['type' => 'integer']]]],
                 default => ['type' => 'array', 'minItems' => $field[1], 'maxItems' => O::MAX_POINTS, 'items' => ['type' => 'array', 'items' => ['type' => 'integer'], 'minItems' => 2, 'maxItems' => 2], 'description' => 'Plan points [x, z] in millimetres.'],
             };
@@ -382,9 +384,15 @@ final readonly class SiteType implements StructuredValue
             'type' => 'object',
             'description' => O::DESCRIPTIONS[$type],
             'properties' => $properties,
-            'required' => $partial ? [] : [O::TYPE, ...array_keys(array_filter(O::fields($type), static fn (array $field): bool => O::OUTLINE === $field[0]))],
+            'required' => $partial ? [] : [O::TYPE, ...array_keys(array_filter(O::fields($type), static fn (array $field): bool => O::REF === $field[0] || (O::OUTLINE === $field[0] && !self::derivesOutline($type))))],
             'additionalProperties' => false,
         ];
+    }
+
+    /** a type whose outline is taken from the object it refers to (a green roof: its building's), not given */
+    private static function derivesOutline(string $type): bool
+    {
+        return [] !== array_filter(O::fields($type), static fn (array $field): bool => O::REF === $field[0]);
     }
 
     /** at most MAX_LABEL characters, cut after a whole word with an ellipsis */

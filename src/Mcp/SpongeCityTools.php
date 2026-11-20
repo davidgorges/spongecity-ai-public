@@ -11,6 +11,7 @@ use App\SpongeCity\Geo\DataSource;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\NominatimGeocoder;
 use App\SpongeCity\Import\PlanImporter;
+use App\SpongeCity\Plan\GreenRoofNotAllowed;
 use App\SpongeCity\Plan\OverlapsBuilding;
 use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanStatus;
@@ -192,7 +193,7 @@ final readonly class SpongeCityTools
     }
 
     /**
-     * Plans interventions: adds objects to the 3D scene. Each object needs "type" (one of the interventions: newtree, raingarden, permeable, planting, shadesail) and its fields; outlines are "points": [[x, z], ...] in millimetres inside the plot and outside every building's outline (existing_buildings in get_site). Out-of-range values are corrected, not rejected. An intervention on a building is not added: it comes back in "conflicts" with the building and the overlap; draw it again in the open. Give each object a "why": one or two sentences for the user, in their language, on why it goes there; it is shown over the object in the 3D view. Returns the new ids.
+     * Plans interventions: adds objects to the 3D scene. Each object needs "type" (one of the interventions: newtree, raingarden, permeable, planting, shadesail, greenroof) and its fields; outlines are "points": [[x, z], ...] in millimetres inside the plot and outside every building's outline (existing_buildings in get_site). Out-of-range values are corrected, not rejected. A greenroof takes "building" (the id) and "kind" instead of points, and only on a roof that can carry it (see propose_placements type "greenroof"); otherwise it comes back in "conflicts" with the reasons. Any other intervention on a building is not added: it comes back in "conflicts" with the building and the overlap; draw it again in the open. Give each object a "why": one or two sentences for the user, in their language, on why it goes there; it is shown over the object in the 3D view. Returns the new ids.
      *
      * @param list<array<string, mixed>> $objects
      *
@@ -239,6 +240,8 @@ final readonly class SpongeCityTools
             return ['updated' => $this->editor->update($planId, $id, $changes)];
         } catch (OverlapsBuilding $e) {
             return ['updated' => false, 'conflict' => $e->conflict->toArray()];
+        } catch (GreenRoofNotAllowed $e) {
+            return ['updated' => false, 'conflict' => $e->toArray()];
         }
     }
 

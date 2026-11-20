@@ -330,7 +330,7 @@ sequenceDiagram
 
 | Look | Design | Measure | Place by rules | Buildings |
 |---|---|---|---|---|
-| `get_site`<br/>`get_site_conditions`<br/>`list_object_types`<br/>`search_place` · `load_site` | `add_objects`<br/>`update_object`<br/>`remove_object`<br/>`clear_interventions` | `calculate_impact`<br/>`set_design_storm` | `propose_placements`<br/>`place_candidate`<br/>`get_zones` · `describe_zone` | `simulate_buildings`<br/>`get_building_simulation` |
+| `get_site`<br/>`get_site_conditions`<br/>`list_object_types`<br/>`search_place` · `load_site` | `add_objects`<br/>`update_object`<br/>`remove_object`<br/>`clear_interventions` | `calculate_impact`<br/>`calculate_cooling`<br/>`set_design_storm` | `propose_placements`<br/>`place_candidate`<br/>`get_zones` · `describe_zone` | `simulate_buildings`<br/>`get_building_simulation` |
 
 The tools are stateless: the plan id travels with every message. The system prompt
 (`config/prompts/spongecity.md`) tells the agent to look first, design with tools, measure before

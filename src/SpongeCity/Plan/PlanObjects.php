@@ -5,6 +5,10 @@ declare(strict_types=1);
 namespace App\SpongeCity\Plan;
 
 use App\SpongeCity\Placement\Zone;
+use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
+use Core\Configurator\Product\SpongeCity\GreenRoof\RoofLevel;
+use Core\Configurator\Product\SpongeCity\InterventionBuilder;
+use Core\Configurator\Site\SiteBuilder;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Site\Site;
@@ -21,6 +25,8 @@ final readonly class PlanObjects
     /** what the menu offers for an object */
     public const string CAN_EDIT = 'edit';
     public const string CAN_DELETE = 'delete';
+    /** a building whose roof can be planted and has no green roof yet */
+    public const string CAN_GREENROOF = 'greenroof';
     /** how an object is found under the pointer: its outline on the ground, or standing above it */
     public const string ON_GROUND = 'ground';
     public const string UPRIGHT = 'upright';
@@ -49,6 +55,7 @@ final readonly class PlanObjects
         foreach ($site->objects as $object) {
             $type = (string) $object[O::TYPE];
             $row = match (true) {
+                O::GREENROOF === $type => $this->greenRoof($site, $object),
                 in_array($type, O::INTERVENTIONS, true) => $this->intervention($object, $type),
                 O::EQUIPMENT === $type => $this->row($object, $type, ['points' => $this->rounded(Site::outlinesOf($object)[0])], self::ON_GROUND, [self::CAN_EDIT, self::CAN_DELETE], [
                     $this->fact('kind', $this->translator->trans('plan.equipment.kind.'.$object[O::KIND])),
@@ -59,11 +66,7 @@ final readonly class PlanObjects
                     $this->fact('height', $this->metres($object[O::HEIGHT]).' m'),
                     $this->fact('crown', $this->metres(2 * $this->crownRadius($object)).' m'),
                 ]),
-                O::BUILDING === $type && count(Site::points($object)) >= 3 => $this->row($object, $type, ['points' => Site::points($object), 'base' => 0.0, 'top' => (float) $object[O::HEIGHT]], self::UPRIGHT, [], [
-                    $this->fact('height', $this->metres($object[O::HEIGHT]).' m'),
-                    ...((int) ($object[O::STOREYS] ?? 0) > 0 ? [$this->fact('storeys', (string) $object[O::STOREYS])] : []),
-                    $this->fact('footprint', $this->squareMetres(Polygon::area(Site::points($object)))),
-                ]),
+                O::BUILDING === $type && count(Site::points($object)) >= 3 => $this->building($site, $object),
                 default => null,
             };
             if (null !== $row) {
@@ -88,6 +91,60 @@ final readonly class PlanObjects
         }
 
         return $objects;
+    }
+
+    /**
+     * A building, and whether its roof can be planted: on the plot's own, the reason it cannot, or
+     * that it can (the menu then offers a green roof).
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return array<string, mixed>
+     */
+    private function building(Site $site, array $object): array
+    {
+        $plot = $site->plot();
+        $assessment = GreenRoofs::assess($object, null === $plot ? [] : Site::points($plot));
+        $planted = null !== GreenRoofs::onBuilding($site, (string) $object[O::ID]);
+        $can = $assessment->isEligible() && !$planted ? [self::CAN_GREENROOF] : [];
+        $greenRoof = match (true) {
+            !$assessment->onPlot => [],
+            $planted => [$this->fact('green_roof', $this->translator->trans('plan.object.green_roof.planned'))],
+            $assessment->isEligible() => [$this->fact('green_roof', $this->translator->trans('plan.object.green_roof.possible', [
+                '%area%' => $this->squareMetres($assessment->plantedSquareMetres() * self::SQUARE_MILLIMETRES_PER_SQUARE_METRE),
+                '%kinds%' => implode(' / ', array_map(fn (string $kind): string => $this->translator->trans('plan.object.kind.'.$kind), $assessment->kinds)),
+            ]))],
+            default => [$this->fact('green_roof', $assessment->reasons[0] ?? '')],
+        };
+
+        return $this->row($object, O::BUILDING, ['points' => Site::points($object), 'base' => 0.0, 'top' => (float) $object[O::HEIGHT]], self::UPRIGHT, $can, [
+            $this->fact('height', $this->metres($object[O::HEIGHT]).' m'),
+            ...((int) ($object[O::STOREYS] ?? 0) > 0 ? [$this->fact('storeys', (string) $object[O::STOREYS])] : []),
+            $this->fact('footprint', $this->squareMetres(Polygon::area(Site::points($object)))),
+            ...$greenRoof,
+        ]);
+    }
+
+    /**
+     * A green roof: found on its building's roof, with its kind (a person may change it), roof and planted area.
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return array<string, mixed>
+     */
+    private function greenRoof(Site $site, array $object): array
+    {
+        $levels = GreenRoofs::levelsOf($site, $object);
+        // from the lowest roof's top to the highest planted build-up
+        $roofTop = static fn (RoofLevel $level): float => $level->height + SiteBuilder::FOOTPRINT_ROOF;
+        $base = [] === $levels ? 0.0 : min(array_map($roofTop, $levels));
+        $top = [] === $levels ? 0.0 : max(array_map($roofTop, $levels)) + InterventionBuilder::greenRoofThickness((string) $object[O::KIND]);
+
+        return $this->row($object, O::GREENROOF, ['points' => Site::points($object), 'base' => $base, 'top' => $top], self::UPRIGHT, [self::CAN_EDIT, self::CAN_DELETE], [
+            $this->fact('kind', $this->translator->trans('plan.object.kind.'.$object[O::KIND]), O::KIND),
+            $this->fact('roof_area', $this->squareMetres(array_sum(array_map(static fn (RoofLevel $l): float => $l->grossSquareMetres, $levels)) * self::SQUARE_MILLIMETRES_PER_SQUARE_METRE)),
+            $this->fact('planted', $this->squareMetres(array_sum(array_map(static fn (RoofLevel $l): float => $l->plantedSquareMetres, $levels)) * self::SQUARE_MILLIMETRES_PER_SQUARE_METRE)),
+        ]);
     }
 
     /**

@@ -6,6 +6,7 @@ namespace App\SpongeCity\Plan;
 
 use App\SpongeCity\Terrain\SiteGrounding;
 use App\SpongeCity\Terrain\TerrainStore;
+use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
 use Core\Configurator\Site\SiteType;
@@ -45,8 +46,18 @@ final readonly class SiteEditor
         $known = array_column($current, O::ID);
 
         $additions = [];
+        $conflicts = [];
+        $site = Site::fromJson($normalizer->normalize(['objects' => $current]));
         foreach ($objects as $object) {
             unset($object[O::ID]);
+            if (O::GREENROOF === ($object[O::TYPE] ?? null)) {
+                try {
+                    $object = self::greenRoof($site, $object);
+                } catch (GreenRoofNotAllowed $e) {
+                    $conflicts[] = [O::TYPE => O::GREENROOF, ...$e->toArray()];
+                    continue;
+                }
+            }
             $additions[] = $object;
         }
         $result = SiteType::rawObjects($normalizer->normalize(['objects' => [...$current, ...$additions]]));
@@ -54,7 +65,6 @@ final readonly class SiteEditor
 
         $kept = [];
         $ids = [];
-        $conflicts = [];
         foreach ($result as $object) {
             $isNew = !in_array($object[O::ID], $known, true);
             $conflict = $isNew ? $this->clearance->conflict($object, $buildings) : null;
@@ -75,7 +85,8 @@ final readonly class SiteEditor
     /**
      * @param array<string, mixed> $changes
      *
-     * @throws OverlapsBuilding when the change moves an intervention onto a building (nothing is changed)
+     * @throws OverlapsBuilding     when the change moves an intervention onto a building (nothing is changed)
+     * @throws GreenRoofNotAllowed when a green roof would become a kind its building cannot take
      */
     public function update(string $planId, string $id, array $changes): bool
     {
@@ -92,6 +103,15 @@ final readonly class SiteEditor
                 // a roof chosen by hand is drawn as chosen, not as the 3D model has it
                 if (O::BUILDING === ($object[O::TYPE] ?? null) && isset($changes[O::ROOF])) {
                     $changes[O::MODEL] = null;
+                }
+                // a green roof stays on its building, and becomes a roof garden only where that can carry one
+                if (O::GREENROOF === ($object[O::TYPE] ?? null)) {
+                    unset($changes[O::BUILDING_ID], $changes[O::POINTS]);
+                    $kind = $changes[O::KIND] ?? null;
+                    $assessment = GreenRoofs::assessIn(Site::fromJson((new SiteType())->normalize(['objects' => $objects])), (string) ($object[O::BUILDING_ID] ?? ''));
+                    if (is_string($kind) && null !== $assessment && !$assessment->allows($kind)) {
+                        throw new GreenRoofNotAllowed($assessment->buildingId, [sprintf('This roof takes no %s green roof.', $kind), ...$assessment->reasons]);
+                    }
                 }
                 $objects[$i] = [...$object, ...$changes];
                 $found = true;
@@ -186,6 +206,38 @@ final readonly class SiteEditor
     public function site(string $planId): Site
     {
         return Site::fromJson($this->plans->get($planId)->siteJson());
+    }
+
+    /**
+     * A green roof as it is added: on a building of the plot that can take it (GreenRoofs), one per
+     * building, its outline the building's footprint.
+     *
+     * @param array<string, mixed> $object
+     *
+     * @return array<string, mixed>
+     *
+     * @throws GreenRoofNotAllowed
+     */
+    private static function greenRoof(Site $site, array $object): array
+    {
+        $buildingId = is_string($object[O::BUILDING_ID] ?? null) ? $object[O::BUILDING_ID] : '';
+        $assessment = GreenRoofs::assessIn($site, $buildingId);
+        if (null === $assessment) {
+            throw new GreenRoofNotAllowed($buildingId, [sprintf('No building "%s": give the id of a building from get_site.', $buildingId)]);
+        }
+        if (!$assessment->isEligible()) {
+            throw new GreenRoofNotAllowed($buildingId, $assessment->reasons);
+        }
+        if (null !== GreenRoofs::onBuilding($site, $buildingId)) {
+            throw new GreenRoofNotAllowed($buildingId, ['This building already has a green roof: change its kind with update_object instead.']);
+        }
+        $kind = is_string($object[O::KIND] ?? null) ? $object[O::KIND] : O::KIND_EXTENSIVE;
+        if (!$assessment->allows($kind)) {
+            throw new GreenRoofNotAllowed($buildingId, [sprintf('This roof takes no %s green roof.', $kind), ...$assessment->reasons]);
+        }
+        $building = GreenRoofs::buildingOf($site, $object);
+
+        return [...$object, O::KIND => $kind, O::POINTS => null === $building ? [] : Site::points($building)];
     }
 
     /**

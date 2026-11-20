@@ -48,7 +48,8 @@ final class SiteBuilder
     private const int CIRCLE_SEGMENTS = 20;
     private const string TREE_VARIANT = 'tree_01';
     /** the roof slab on a footprint: thin, it only carries the roof's colour */
-    private const int FOOTPRINT_ROOF = 80;
+    /** a flat roof: a slab this thick on top of the walls (a green roof lies on it, InterventionBuilder) */
+    public const int FOOTPRINT_ROOF = 80;
     private const float TILE_TEXTURE_SIZE = 1.2;
     /** pitched roofs on footprints (at the building's own pitch, else PitchedRoof::DEFAULT_PITCH); a roof surface of a building's model below this slope is flat: gravel, not tiles */
     private const float FLAT_ROOF_DEGREES = 10.0;

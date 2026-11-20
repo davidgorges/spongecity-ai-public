@@ -57,6 +57,26 @@ final class PermeableSitingTest extends KernelTestCase
     }
 
     #[Test]
+    public function eachCandidateSaysWhyItsMaterialBeatTheOthersAndWhatThatCosts(): void
+    {
+        $proposal = $this->tools()->proposePlacements($this->sealedYard()->id, O::PERMEABLE, count: 5);
+        $byKindAndUse = [];
+        foreach ($proposal['candidates'] as $candidate) {
+            $byKindAndUse[$candidate['metrics']['zone_use'].'/'.$candidate['metrics']['shape']] ??= $candidate;
+        }
+
+        $yard = $byKindAndUse[O::AREA_YARD.'/band'];
+        self::assertEquals(PermeableSiting::WHY_NOT[O::AREA_YARD], $yard['metrics']['kinds_not_chosen']);
+        $tradeOff = implode(' ', $yard['reasons']);
+        self::assertStringContainsString('Pavers rather than grass pavers: '.PermeableSiting::WHY_NOT[O::AREA_YARD][O::KIND_GRASS_PAVERS], $tradeOff);
+        self::assertMatchesRegularExpression('/Grass pavers would take about [\d.]+ m³ more off the runoff and be 8 K cooler/', $tradeOff, 'the price of the choice, in numbers');
+
+        $carPark = array_values(array_filter($proposal['candidates'], static fn (array $c): bool => O::AREA_PARKING === $c['metrics']['zone_use']))[0];
+        self::assertSame(O::KIND_GRASS_PAVERS, $carPark['metrics']['kind']);
+        self::assertArrayHasKey(O::KIND_PAVERS, $carPark['metrics']['kinds_not_chosen']);
+    }
+
+    #[Test]
     public function aYardOffersABandAlongTheFacadeTheTreesAndTheWholeZoneAsAlternatives(): void
     {
         $plan = $this->sealedYard();

@@ -29,7 +29,11 @@ final readonly class SpongeCityDefinition implements ProductDefinition, StagesSc
     public const string KEY = 'spongecity';
     public const string LABEL = 'spongecity.label';
 
-    /** prices in euro cents per m² (areas), per piece (trees) */
+    /**
+     * prices in euro cents per m² (areas), per piece (trees, a green roof's set-up per building).
+     * Green roofs are retrofit prices: system build-up, root barrier, gravel strip, drainage, crane;
+     * not a new waterproofing, not structural reinforcement.
+     */
     private const array PRICES = [
         Sku::TREE => 90000,
         Sku::RAINGARDEN => 18000,
@@ -38,6 +42,9 @@ final readonly class SpongeCityDefinition implements ProductDefinition, StagesSc
         Sku::PERMEABLE_GRASS_PAVERS => 7500,
         Sku::PLANTING => 3500,
         Sku::SHADESAIL => 15000,
+        Sku::GREENROOF_EXTENSIVE => 9500,
+        Sku::GREENROOF_INTENSIVE => 19000,
+        Sku::GREENROOF_SETUP => 800000,
     ];
 
     public function __construct(private InterventionBuilder $interventions = new InterventionBuilder())

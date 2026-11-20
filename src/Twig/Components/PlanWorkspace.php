@@ -7,6 +7,8 @@ namespace App\Twig\Components;
 use App\SpongeCity\Conditions\SiteConditionsStore;
 use App\SpongeCity\Geo\DataSource;
 use App\SpongeCity\Placement\AddHere;
+use App\SpongeCity\Placement\GreenRoofSiting;
+use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
 use App\SpongeCity\Placement\Placements;
 use App\SpongeCity\Placement\Zone;
 use App\SpongeCity\Plan\Plan;
@@ -44,6 +46,7 @@ final class PlanWorkspace
     use DefaultActionTrait;
 
     public const string ACTION_REMOVE = 'removeObject';
+    public const string ACTION_ADD_GREEN_ROOF = 'addGreenRoof';
     public const string ACTION_CLEAR = 'clearInterventions';
     public const string ACTION_RESHAPE_PLOT = 'reshapePlot';
     /** the keys of plotMap() */
@@ -83,6 +86,8 @@ final class PlanWorkspace
         O::PERMEABLE => [O::KIND => O::PERMEABLE_KINDS],
         O::NEWTREE => [O::HEIGHT => [6000, 9000, 12000, 15000]],
         O::SHADESAIL => [O::Y => [2500, 3200, 4000]],
+        // narrowed per roof to the kinds its building can take (GreenRoofs)
+        O::GREENROOF => [O::KIND => O::GREENROOF_KINDS],
     ];
     /** "use this instead" on an alternative the agent had for an object */
     public const string ACTION_USE_ALTERNATIVE = 'useAlternative';
@@ -230,11 +235,12 @@ final class PlanWorkspace
      * else its kind, numbered when several share it: "Shade tree 2") and a `size` (a tree's
      * height, else its area), so they can be told apart.
      *
-     * @return list<array{id: string, type: string, label: string|null, name: string, size: string}>
+     * @return list<array{id: string, type: string, label: string|null, name: string, size: string, cost: float|null}>
      */
     public function interventions(): array
     {
         $rows = [];
+        $costs = $this->analyzer->costsByMeasure($this->plan());
         foreach ($this->site()->objects as $object) {
             if (in_array($object[O::TYPE], O::INTERVENTIONS, true)) {
                 $label = Site::label($object);
@@ -244,6 +250,7 @@ final class PlanWorkspace
                     'label' => $label,
                     'name' => $label ?? $this->translator->trans('plan.measures.type.'.$object[O::TYPE]),
                     'size' => $this->sizeOf($object),
+                    'cost' => $costs[(string) $object[O::ID]] ?? null,
                 ];
             }
         }
@@ -361,6 +368,16 @@ final class PlanWorkspace
         $this->notice = [self::NOTICE_TEXT => $this->translator->trans(self::NOTICE_PREFIX.$key, $params), self::NOTICE_OK => $added];
     }
 
+    /** a green roof on the building the person pointed at in the 3D view, by the placement rules */
+    #[LiveAction]
+    public function addGreenRoof(#[LiveArg] string $id): void
+    {
+        $result = $this->addHere->greenRoof($this->plan(), $id);
+        $added = str_starts_with($result['outcome'], AddHere::ADDED);
+        $this->open(self::PROP_SELECTED, $added ? ($result['id'] ?? null) : null);
+        $this->notice = [self::NOTICE_TEXT => $this->translator->trans(self::NOTICE_PREFIX.$result['outcome'], $result['params']), self::NOTICE_OK => $added];
+    }
+
     #[LiveAction]
     public function dismissNotice(): void
     {
@@ -389,13 +406,15 @@ final class PlanWorkspace
             return null;
         }
         // what PlanObjects knows (interventions, trees, buildings); zones and equipment have panels of their own
-        $row = array_find($this->objects->of(new Site([$object]), []), static fn (array $row): bool => $row['id'] === $id);
+        // a green roof is read with its building and the plot
+        $context = O::GREENROOF === $object[O::TYPE] ? $this->normalizedSite() : new Site([$object]);
+        $row = array_find($this->objects->of($context, []), static fn (array $row): bool => $row['id'] === $id);
         if (null === $row || O::EQUIPMENT === $row['type']) {
             return null;
         }
         $fields = [];
         foreach (self::EDITABLE[$object[O::TYPE]] ?? [] as $field => $options) {
-            $fields[$field] = ['value' => $object[$field] ?? null, 'options' => $options];
+            $fields[$field] = ['value' => $object[$field] ?? null, 'options' => $this->optionsFor($object, $field, $options)];
         }
 
         return [
@@ -474,6 +493,7 @@ final class PlanWorkspace
         $metrics = $alternative->metrics;
         $parameters = [
             '%area%' => (int) round((float) ($metrics['area_m2'] ?? 0)),
+            '%planted%' => (int) round((float) ($metrics[GreenRoofSiting::METRIC_PLANTED] ?? 0)),
             '%catchment%' => (int) round((float) ($metrics['catchment_m2'] ?? 0), -1),
             '%retained%' => number_format((float) ($metrics['retained_m3'] ?? 0), 1),
             '%removed%' => number_format((float) ($metrics['runoff_removed_m3'] ?? 0), 1),
@@ -523,11 +543,30 @@ final class PlanWorkspace
     public function editObject(#[LiveArg] string $id, #[LiveArg] string $field, #[LiveArg] string $value): void
     {
         $object = $this->objectById($id);
-        $options = null === $object ? [] : self::EDITABLE[$object[O::TYPE]][$field] ?? [];
+        $options = null === $object ? [] : $this->optionsFor($object, $field, self::EDITABLE[$object[O::TYPE]][$field] ?? []);
         $chosen = array_find($options, static fn (int|string $option): bool => (string) $option === $value);
         if (null !== $chosen) {
             $this->editor->update($this->planId, $id, [$field => $chosen]);
         }
+    }
+
+    /**
+     * The values a person may choose for a field of this object: a green roof's kinds are only those
+     * its building can take (a roof garden is not offered on a hall).
+     *
+     * @param array<string, mixed>   $object
+     * @param list<int|string>       $options
+     *
+     * @return list<int|string>
+     */
+    private function optionsFor(array $object, string $field, array $options): array
+    {
+        if (O::GREENROOF !== $object[O::TYPE] || O::KIND !== $field) {
+            return $options;
+        }
+        $assessment = GreenRoofs::assessIn($this->normalizedSite(), (string) ($object[O::BUILDING_ID] ?? ''));
+
+        return array_values(array_filter($options, static fn (int|string $kind): bool => null !== $assessment && $assessment->allows((string) $kind)));
     }
 
     #[LiveAction]

@@ -10,6 +10,9 @@ const ZONE = 'zone';
 const BUILDING = 'building';
 /** what the menu offers (PlanObjects::CAN_*) */
 const CAN_DELETE = 'delete';
+/** a building whose roof can be planted (PlanObjects::CAN_GREENROOF) */
+const CAN_GREENROOF = 'greenroof';
+const GREENROOF = 'greenroof';
 /** which panel edits which kind of object (the props value's keys) */
 const EQUIPMENT = 'equipment';
 /** a point this high over the ground (metres) is on something standing: a wall, a crown, a sail */
@@ -22,7 +25,7 @@ const MODEL_MATCH = 500;
 /** standing on the ground: what lies on top wins (equipment over a rain garden over its zone) */
 const GROUND_ORDER = ['equipment', 'raingarden', 'planting', 'permeable', 'newtree', 'tree', ZONE];
 /** above it: what stands highest in front */
-const UPRIGHT_ORDER = ['shadesail', 'newtree', 'tree', BUILDING, 'equipment', 'raingarden', 'planting', 'permeable', ZONE];
+const UPRIGHT_ORDER = ['shadesail', 'newtree', 'tree', GREENROOF, BUILDING, 'equipment', 'raingarden', 'planting', 'permeable', ZONE];
 /** keeps the menu this far (CSS pixels) inside the view */
 const EDGE_MARGIN = 8;
 const KEY_NEXT = 'ArrowDown';
@@ -127,9 +130,9 @@ export default class extends Controller {
             return;
         }
         const target = this.#objectAt(detail);
-        // on a building nothing is added: its wall is no ground
+        // on a building nothing is added: its wall is no ground (its roof may be planted)
         const onPlot = target?.type !== BUILDING && contains(this.plotValue, detail.x, detail.z);
-        if (!onPlot && !target?.can.includes(CAN_DELETE)) {
+        if (!onPlot && !target?.can.includes(CAN_DELETE) && !target?.can.includes(CAN_GREENROOF)) {
             // nothing to do here: no menu
             return;
         }
@@ -260,6 +263,9 @@ export default class extends Controller {
                 this.#act(this.actionsValue.remove, { id: object.id });
             });
             children.push(remove);
+        }
+        if (object?.can.includes(CAN_GREENROOF)) {
+            children.push(this.#item(texts.greenRoof, CAN_GREENROOF, () => this.#act(this.actionsValue.greenRoof, { id: object.id })));
         }
         if (onPlot) {
             children.push(this.#part(this.separatorTarget), this.#part(this.groupTarget, texts.addHere));
