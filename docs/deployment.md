@@ -19,6 +19,11 @@ queues, see `DATABASE_URL`) and the plan cache pool. `var/` itself is committed 
 `.gitkeep`) so Forge has a parent directory to put the symlink in. Never commit `var/share`.
 `App\Kernel::boot()` creates the share dir when it is missing, because SQLite cannot.
 
+`framework.cache.prefix_seed` is fixed in `config/packages/cache.yaml`. Symfony's default seeds
+the pool namespace with the project dir, which differs per release: plans would vanish on every
+deploy, and workers still on the previous release would not find plans the web just created (or
+hear `messenger:stop-workers`).
+
 ## Environment
 
 Forge's environment editor writes `.env`, which replaces the committed defaults. Either paste the
