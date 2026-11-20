@@ -188,6 +188,29 @@ final class ImpactCalculatorTest extends KernelTestCase
         self::assertGreaterThan($shade([$west]) + 1.0, $shade([$west, [O::TYPE => O::TREE, O::X => 5000, O::Z => 0, O::HEIGHT => 12000, O::DIAMETER => 8000]]), 'a tree crown adds its shadow');
     }
 
+    #[Test]
+    public function aGreenRoofCoversNoGroundBeyondItsBuildingsFootprint(): void
+    {
+        $plot = [O::TYPE => O::PLOT, O::POINTS => [[-15000, -15000], [15000, -15000], [15000, 15000], [-15000, 15000]], O::SURFACE => O::SURFACE_ASPHALT];
+        // a 10 m × 10 m footprint, whose lower roof level (from the map's building parts) reaches 2 m beyond it to the east
+        $building = [
+            O::TYPE => O::BUILDING, O::ID => 'b1', O::ROOF => 'flat', O::HEIGHT => 9000,
+            O::POINTS => [[-5000, -5000], [5000, -5000], [5000, 5000], [-5000, 5000]],
+            O::PARTS => [
+                [O::POINTS => [[-5000, -5000], [7000, -5000], [7000, 5000], [-5000, 5000]], O::HEIGHT => 6000],
+                [O::POINTS => [[-5000, -5000], [0, -5000], [0, 5000], [-5000, 5000]], O::HEIGHT => 9000],
+            ],
+        ];
+        $greenRoof = [O::TYPE => O::GREENROOF, O::BUILDING_ID => 'b1', O::KIND => O::KIND_EXTENSIVE, O::POINTS => $building[O::POINTS]];
+        $calculator = new ImpactCalculator();
+        $roof = static fn (array $objects): float => (float) $calculator
+            ->survey(Site::fromJson((new SiteType())->normalize(['objects' => [$plot, $building, ...$objects]])))
+            ?->roofArea();
+
+        self::assertEqualsWithDelta(100.0, $roof([]), 3.0);
+        self::assertEqualsWithDelta($roof([]), $roof([$greenRoof]), 0.5, 'the green roof turns roof green, it adds none');
+    }
+
     private function site(array $interventions): Site
     {
         $plot = [O::TYPE => O::PLOT, O::POINTS => [[-15000, -15000], [15000, -15000], [15000, 15000], [-15000, 15000]], O::SURFACE => O::SURFACE_ASPHALT];
