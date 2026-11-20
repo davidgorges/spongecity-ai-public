@@ -661,8 +661,9 @@ sequenceDiagram
   within `SNAP_DISTANCE` pulls it on, shown by a guide line. Dropped elsewhere it goes onto an
   invisible 16 px grid; Alt places it freely (`assets/window_manager/snap.js`).
   Dropped against another window it joins its group (`assets/window_manager/groups.js`): dragging
-  or nudging any window of a group moves them all, kept inside the view as one. Shift-drag takes a
-  window out of its group, closing it does too; a press without a move groups nothing. Inside the Card's content `id` names the Card's
+  or nudging the group's anchor (its topmost window, the leftmost of those level) moves them all,
+  kept inside the view as one; dragging any other window takes it out of the group. Shift-drag
+  takes even the anchor out, closing a window does too; a press without a move groups nothing. Inside the Card's content `id` names the Card's
   own (`window-…`), so `Plan:Window` keeps the window's in `window_id`. The live re-render rewrites the windows' markup, so the
   manager applies its layout again on `render:finished`. Object details opens by itself when
   its `data-window-auto` (the selected intervention, equipment or zone) changes. Below 1024 px the

@@ -1,7 +1,8 @@
 /**
- * Windows snapped together move as one: each window's group (null: on its own), kept with its
- * place in the browser. A window joins when it is dropped against another and leaves when it is
- * dragged away with Shift or closed. Pure functions on a map window id → group id
+ * Windows snapped together move as one when the group's anchor is dragged (its topmost window,
+ * the leftmost of those level): each window's group (null: on its own), kept with its place in the
+ * browser. A window joins when it is dropped against another; it leaves when it is dragged while
+ * not the anchor (or with Shift), or closed. Pure functions on a map window id → group id
  * (tests/js/window_manager/groups.test.mjs).
  */
 
@@ -15,6 +16,17 @@ export function members(groups, id) {
     const group = groups[id] ?? null;
 
     return group === null ? [id] : Object.keys(groups).filter((other) => groups[other] === group);
+}
+
+/**
+ * The group's anchor, which drags the others along: the topmost window, the leftmost of those level.
+ *
+ * @param {string[]} ids the group's windows
+ * @param {Record<string, {x: number, y: number}>} places
+ * @returns {string}
+ */
+export function anchor(ids, places) {
+    return [...ids].sort((a, b) => (places[a].y - places[b].y) || (places[a].x - places[b].x))[0];
 }
 
 /**

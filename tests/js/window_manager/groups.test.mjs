@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { join, leave, members, normalise } from '../../../assets/window_manager/groups.js';
+import { anchor, join, leave, members, normalise } from '../../../assets/window_manager/groups.js';
 
 const NEW = () => 'g1';
 
@@ -37,4 +37,11 @@ test('a window leaving a larger group leaves the others together', () => {
 
 test('groups of one are none', () => {
     assert.deepEqual(normalise({ chat: 'a', map: 'b', details: 'b' }), { chat: null, map: 'b', details: 'b' });
+});
+
+test('the anchor of a group is its topmost window, the leftmost of those level', () => {
+    const places = { chat: { x: 16, y: 76 }, map: { x: 412, y: 76 }, effect: { x: 16, y: 467 } };
+
+    assert.equal(anchor(['effect', 'map', 'chat'], places), 'chat');
+    assert.equal(anchor(['effect', 'map'], places), 'map');
 });

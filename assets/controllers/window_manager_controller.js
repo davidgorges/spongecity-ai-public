@@ -2,7 +2,7 @@ import { Controller } from '@hotwired/stimulus';
 import { getComponent } from '@symfony/ux-live-component';
 import { press } from '../configurator/press.js';
 import { snapMove, snapResize, toGrid, touching } from '../window_manager/snap.js';
-import { join, leave, members, normalise } from '../window_manager/groups.js';
+import { anchor, join, leave, members, normalise } from '../window_manager/groups.js';
 
 /** the element of the live component the windows belong to (it re-renders them) */
 const LIVE_ROOT = '[data-controller~="live"]';
@@ -47,8 +47,9 @@ const BOTTOM_EDGE = 'bottom';
  * lined up with it) or of the view that comes near pulls it on. Dropped elsewhere, it goes onto an
  * invisible grid (GRID). Alt places it freely. Dropped against
  * another one it joins its group (window_manager/groups.js): dragging, or moving with the arrow
- * keys, any window of a group moves them all. Shift-drag takes a window out of its group, closing
- * it does too. Groups are kept with the places.
+ * keys, the group's anchor (its topmost window, the leftmost of those level) moves them all;
+ * dragging any other one takes it out of the group. Shift-drag takes even the anchor out, closing
+ * a window does too. Groups are kept with the places.
  *
  * Below FLOATING the windows are not floating: one of them is shown under the view, the dock
  * switches between them like tabs.
@@ -154,8 +155,8 @@ export default class extends Controller {
         const id = element.dataset.window;
         event.preventDefault();
         event.currentTarget.setPointerCapture?.(event.pointerId);
-        // Shift: this one alone, out of its group
-        if (event.shiftKey) {
+        // only the anchor drags its group along; any other window (or with Shift, any) leaves it
+        if (event.shiftKey || !this.#isAnchor(id)) {
             this.#setGroups(leave(this.#groups(), id));
         }
         const moving = this.#moving(id);
@@ -265,6 +266,9 @@ export default class extends Controller {
         event.preventDefault();
         const id = event.params.id;
         const step = event.shiftKey ? BIG_NUDGE : NUDGE;
+        if (!this.#isAnchor(id)) {
+            this.#setGroups(leave(this.#groups(), id));
+        }
         const moving = this.#moving(id);
         const starts = Object.fromEntries(moving.map((member) => [member, this.#rect(member)]));
         this.#moveAll(starts, ...this.#clampDelta(starts, move[0] * step, move[1] * step));
@@ -565,6 +569,13 @@ export default class extends Controller {
     /** the windows that move with this one (its group, those shown), itself included */
     #moving(id) {
         return members(this.#groups(), id).filter((member) => member === id || this.#isShown(member));
+    }
+
+    /** whether the window drags its group along: on its own, or the group's topmost (leftmost of those level) */
+    #isAnchor(id) {
+        const moving = this.#moving(id);
+
+        return moving.length < 2 || anchor(moving, this.#state) === id;
     }
 
     /** the rectangles of the windows shown, but these */
