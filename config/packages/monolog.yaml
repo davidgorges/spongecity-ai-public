@@ -39,17 +39,19 @@ when@prod:
                 excluded_http_codes: [404, 405]
                 channels: ["!deprecation"]
                 buffer_size: 50 # How many messages should be saved? Prevent memory leaks
+            # A file, not stderr: PHP-FPM drops the stderr of web requests. var/log is a shared path on
+            # Forge, so the file survives deploys (docs/deployment.md).
             nested:
-                type: stream
-                path: php://stderr
+                type: rotating_file
+                path: "%kernel.logs_dir%/%kernel.environment%.log"
+                max_files: 14
                 level: debug
-                formatter: monolog.formatter.json
             console:
                 type: console
                 process_psr_3_messages: false
                 channels: ["!event", "!doctrine"]
             deprecation:
-                type: stream
+                type: rotating_file
                 channels: [deprecation]
-                path: php://stderr
-                formatter: monolog.formatter.json
+                path: "%kernel.logs_dir%/%kernel.environment%.deprecations.log"
+                max_files: 7
