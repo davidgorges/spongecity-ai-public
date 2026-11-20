@@ -236,6 +236,7 @@ plan:
             y: '%value% m'
         close: Close
         deselect: Deselect
+        schematic: 'Cutaway showing how it is built: %kind%'
         deselect_title: Select nothing (the window stays open)
         remove: Remove
     menu:

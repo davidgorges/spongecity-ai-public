@@ -481,6 +481,10 @@
                     <twig:Button variant="ghost" size="xs" class="shrink-0 text-muted-foreground" title="{{ close_label }}" data-action="live#action" data-live-action-param="{{ constant('App\\Twig\\Components\\PlanWorkspace::ACTION_CLOSE_SELECTED') }}">{{ 'plan.object.deselect'|trans }}</twig:Button>
                 </twig:Card:Header>
                 <twig:Card:Content class="{{ panel_content }}">
+                    {% if object.schematic %}
+                        {# how the measure is built: changes with its variant (a trench, a kind) #}
+                        <img src="{{ asset(object.schematic) }}" alt="{{ 'plan.object.schematic'|trans({'%kind%': ('plan.object.type.' ~ object.type)|trans}) }}" width="{{ constant('App\\SpongeCity\\Plan\\Schematics::WIDTH') }}" height="{{ constant('App\\SpongeCity\\Plan\\Schematics::HEIGHT') }}" loading="lazy" decoding="async" class="aspect-[3/2] w-full rounded-md bg-[#f6f5f1] object-cover">
+                    {% endif %}
                     <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
                         {% for fact in object.facts %}
                             <dt class="text-muted-foreground">{{ fact[0] }}</dt>
