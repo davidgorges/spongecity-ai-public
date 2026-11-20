@@ -14,6 +14,7 @@ use App\SpongeCity\Plan\Plan;
 use App\SpongeCity\Plan\PlanAnalyzer;
 use App\SpongeCity\Plan\PlanObjects;
 use App\SpongeCity\Plan\PlanStore;
+use App\SpongeCity\Plan\Schematics;
 use App\SpongeCity\Plan\SiteEditor;
 use App\SpongeCity\PlanEvaluator;
 use App\SpongeCity\Rationale\Alternative;
@@ -423,7 +424,7 @@ final class PlanWorkspace
      * The object selected in the 3D view (an intervention, a tree, a building), with its facts and,
      * for an intervention, what may be changed; null when none is (or it has a panel of its own).
      *
-     * @return array{id: string, type: string, name: string, facts: list<array{0: string, 1: string, 2: string|null}>, fields: array<string, array{value: mixed, options: list<int|string>}>, removable: bool}|null
+     * @return array{id: string, type: string, name: string, schematic: string|null, facts: list<array{0: string, 1: string, 2: string|null}>, fields: array<string, array{value: mixed, options: list<int|string>}>, removable: bool}|null
      */
     public function selectedObject(): ?array
     {
@@ -448,6 +449,8 @@ final class PlanWorkspace
             'id' => $row['id'],
             'type' => $row['type'],
             'name' => $row['name'],
+            // how it is built, as an isometric cutaway (an intervention's, by its variant): a path for asset()
+            'schematic' => null === Schematics::name($object) ? null : Schematics::path((string) Schematics::name($object)),
             // a fact that may be changed shows as the choice made below, not twice
             'facts' => array_values(array_filter($row['facts'], static fn (array $fact): bool => !isset($fields[$fact[2] ?? '']))),
             'fields' => $fields,
