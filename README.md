@@ -66,6 +66,9 @@ and `DEFAULT_URI` follows it (see `.env`). Run console commands through
   buildings, street trees, terrain and infiltration data.
 - Offline, without network: `symfony console app:plan:demo` creates a synthetic schoolyard and
   prints its URL.
+- Your own agent: the plan page's window "Your own agent" gives the MCP server URL and the plan id.
+  For Claude Code: `claude mcp add --transport http spongecity http://127.0.0.1:8000/mcp` (your
+  port), then ask it to work on that plan; the 3D view follows every change it makes.
 
 ### 5. Tests
 

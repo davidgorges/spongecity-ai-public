@@ -88,7 +88,12 @@ flowchart LR
 
 - **The agent's tools are this app's own MCP server.** The `agent` worker starts it as a child
   process (`bin/console mcp:server`, stdio) and calls the tools Claude asks for through it: no
-  network, no URL. `/mcp` serves the same tools to outside clients (localhost only).
+  network, no URL. `/mcp` serves the same tools to an agent a person connects themselves (Claude
+  Desktop, Claude Code, any MCP client): open like the plan page, the plan's id is the key, and rate
+  limited per client.
+- **Every tool call that changes a plan is pushed to the pages showing it.** Whether the in-app
+  agent made it (stdio) or one a person connected (HTTP): `PublishPlanChanges` publishes on the
+  plan's Mercure topic, the page re-renders (`plan_updates_controller.js`).
 - **Slow work never blocks a page.** Site imports (seconds to a minute), SimStadt runs (up to a
   few minutes) and the agent's turns (a minute or more) have a queue and a worker each, so one never
   waits for the other, and no web request runs longer than PHP-FPM allows.
@@ -323,14 +328,15 @@ sequenceDiagram
     A->>A: history + "plan_id, interface_language"
     A->>M: messages
     loop until the model answers in text
-        M->>T: tool call, e.g. get_site_conditions
+        M->>T: tool call, e.g. add_objects
         T->>S: read or edit the plan
+        opt the tool changed the plan (not read-only)
+            T->>H: publish on spongecity/plan/{id} (PublishPlanChanges)
+            H--)LC: plan:changed (plan_updates_controller.js)
+            LC->>S: re-render from the stored plan
+            LC--)U: the design grows in the 3D view
+        end
         T-->>M: JSON result
-    end
-    par every 2.5 s while the agent works
-        JS--)LC: plan:changed
-        LC->>S: re-render from the stored plan
-        LC--)U: the design grows in the 3D view
     end
     M-->>A: reply
     A->>S: record the turn (ConversationStore)

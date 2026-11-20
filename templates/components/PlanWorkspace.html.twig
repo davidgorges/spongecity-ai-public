@@ -50,7 +50,16 @@
 {% set cost = this.cost %}
 {% set interventions = this.interventions %}
 {% set plot_map = this.plotMap %}
-<div {{ attributes.defaults({'class': 'min-h-screen lg:h-screen', 'data-action': 'plan:changed@window->live#$render'}) }}>
+<div {{ attributes.defaults({'class': 'min-h-screen lg:h-screen', 'data-action': constant('App\\Twig\\Components\\PlanWorkspace::EVENT_PLAN_CHANGED') ~ '@window->live#$render'}) }}>
+{# whatever changes the plan elsewhere (an agent's tool call: App\Mcp\PublishPlanChanges) re-renders it here #}
+<div
+    data-live-ignore
+    hidden
+    {{ stimulus_controller('plan-updates', {
+        stream: mercure(constant('App\\SpongeCity\\Plan\\PlanUpdates::TOPIC_FORMAT')|format(plan.id)),
+        event: constant('App\\Twig\\Components\\PlanWorkspace::EVENT_PLAN_CHANGED'),
+    }) }}
+></div>
 <div
     class="relative flex min-h-screen flex-col lg:block lg:h-full lg:min-h-0 lg:overflow-hidden"
     {{ stimulus_controller('window-manager', {storageKey: constant('App\\Twig\\Components\\PlanWorkspace::WINDOWS_STORAGE_KEY')}) }}
@@ -220,6 +229,7 @@
         details: {icon: 'lucide:mouse-pointer-click', title: 'plan.windows.details'|trans},
         effect: {icon: 'lucide:gauge', title: 'plan.windows.effect'|trans},
         measures: {icon: 'lucide:receipt', title: 'plan.windows.measures'|trans},
+        agent: {icon: 'lucide:plug', title: 'plan.windows.agent'|trans},
     } %}
     <nav class="sticky top-0 z-30 flex justify-center gap-1 border-b border-border bg-background/95 p-1.5 lg:absolute lg:top-auto lg:bottom-6 lg:left-1/2 lg:-translate-x-1/2 lg:rounded-xl lg:border lg:shadow-lg" aria-label="{{ 'plan.windows.dock'|trans }}">
         {% for id, window in windows %}
@@ -771,6 +781,34 @@
             </twig:Table>
             <p class="text-xs text-muted-foreground">{{ 'plan.cost.note'|trans }}</p>
         {% endif %}
+    </twig:Plan:Window>
+
+    {# an agent of the person's own (Claude Desktop, Claude Code, any MCP client) works on this plan
+       through /mcp; every change it makes shows here (App\Mcp\PublishPlanChanges) #}
+    {% set mcp_url = url(constant('App\\Mcp\\McpEndpoint::ROUTE')) %}
+    {% set copy_label = 'plan.agent.copy'|trans %}
+    {% set copy_done = 'plan.agent.copied'|trans %}
+    <twig:Plan:Window id="agent" title="{{ windows.agent.title }}" icon="{{ windows.agent.icon }}" place="below chat" :open="false">
+        <p class="text-sm text-muted-foreground text-pretty">{{ 'plan.agent.lead'|trans }}</p>
+        {% for field in [
+            {id: 'agent-mcp-url', label: 'plan.agent.server'|trans, value: mcp_url},
+            {id: 'agent-plan-id', label: 'plan.agent.plan'|trans, value: plan.id},
+            {id: 'agent-claude-code', label: 'plan.agent.claude_code'|trans, value: 'claude mcp add --transport http spongecity ' ~ mcp_url},
+        ] %}
+            <div class="flex flex-col gap-1.5" {{ stimulus_controller('clipboard', {done: copy_done}) }}>
+                <twig:Label for="{{ field.id }}" class="text-xs">{{ field.label }}</twig:Label>
+                <twig:InputGroup class="h-8">
+                    <twig:InputGroup:Input id="{{ field.id }}" value="{{ field.value }}" readonly class="font-mono text-xs" data-clipboard-target="source" data-action="focus->clipboard#select" />
+                    <twig:InputGroup:Addon align="inline-end">
+                        <twig:InputGroup:Button aria-describedby="{{ field.id }}" data-action="clipboard#copy">
+                            <twig:ux:icon name="lucide:copy" aria-hidden="true" />
+                            <span data-clipboard-target="label">{{ copy_label }}</span>
+                        </twig:InputGroup:Button>
+                    </twig:InputGroup:Addon>
+                </twig:InputGroup>
+            </div>
+        {% endfor %}
+        <p class="text-xs text-muted-foreground text-pretty">{{ 'plan.agent.ask'|trans({'%plan%': plan.id}) }}</p>
     </twig:Plan:Window>
 </div>
 </div>

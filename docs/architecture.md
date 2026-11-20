@@ -415,8 +415,24 @@ agent could not answer"). Its tools are the **MCP server of this same applicatio
 
 - **Server** (`mcp-bundle`, `config/packages/mcp.yaml`): serves the `#[McpTool]` methods of
   `App\Mcp\*` over two transports. **stdio** (`bin/console mcp:server`) is how the agent reaches it;
-  **HTTP** (`/mcp`, localhost only, any other Host header gets a 403) is for outside clients such as
-  Claude Desktop or the inspector.
+  **HTTP** (`/mcp`, `McpEndpoint`) is for an agent a person connects themselves: Claude Desktop,
+  Claude Code, any MCP client, or the inspector. The plan page's window "Your own agent" gives the
+  URL, the plan id and the `claude mcp add` command. It is open like the plan page (the plan's id is
+  the key); the DNS rebinding protection accepts the app's own host (`DEFAULT_URI`) and localhost,
+  any other Host header gets a 403. Outside agents read the server's `instructions` (`mcp.yaml`)
+  instead of the in-app agent's system prompt. Sessions live in `cache.app` (`store: cache`, with a
+  lock), so every PHP-FPM process and the next release know them.
+- **Rate limits** (`McpRateLimits`, `config/packages/rate_limiter.yaml`), per client address and only
+  over HTTP (the in-app agent is not limited): every request to `/mcp` (429 with `Retry-After`
+  beyond it), and more tightly the expensive tools, `load_site` and `search_place` (the public map
+  services) and `simulate_buildings` (Docker): beyond their share they answer with a tool error
+  the agent reads.
+- **Every change reaches the page** (`PublishPlanChanges`, a listener on the SDK's `ResponseEvent`):
+  after a successful call of a tool that is not marked read-only (its `#[McpTool]` annotations) and
+  takes a `planId`, `PlanUpdates` publishes on the plan's Mercure topic `spongecity/plan/{id}`, and
+  every page showing the plan re-renders (`plan_updates_controller.js`, a burst of calls gathered
+  into one render). One listener, for both transports: the in-app agent's stdio child and an
+  outside agent over HTTP.
 - **Client**: `mcp.clients.spongecity.servers.local` starts `bin/console mcp:server` as a child
   process (`transport: stdio`) for the chat turn, in the `agent` worker, with the parent's environment plus its
   `APP_ENV`/`APP_DEBUG`, so it reads the same storage (the same plans). No URL, no network, no
@@ -624,10 +640,11 @@ sequenceDiagram
   the storm persists into the plan.
 - `plan_chat_controller.js` subscribes to the plan's topic when it connects (an `EventSource` on the
   URL Twig's `mercure()` builds), so no reply is missed, and every page showing the plan sees it.
-  It posts the message, dispatches a `plan:changed` event on window every 2.5 s while the agent works
-  and once more when the reply arrives; the component re-renders on that event, so the user watches
-  the design appear. A turn that has not answered after 5 minutes is shown as failed. The chat region
-  is `data-live-ignore`.
+  It posts the message and dispatches a `plan:changed` event on window when the reply arrives; the
+  component re-renders on that event. While the agent works, each tool call that changes the plan
+  re-renders it on its own (`plan_updates_controller.js`, see "The agent and MCP"), so the user
+  watches the design appear. A turn that has not answered after 5 minutes is shown as failed. The
+  chat region is `data-live-ignore`.
 - The 3D canvas is `data-live-ignore`; a re-render only changes the `scene` value, and the
   `configurator_viewer_controller.js` updates the scene without moving the camera.
 - **Windows**: the view fills the screen; the agent's chat, the mini map, object details, the
@@ -788,9 +805,11 @@ symfony php vendor/bin/phpunit
   (e.g. the heat-planning dataset's building-age classes, per block) would sharpen heat demand.
 - The geocoder takes the first hit; a pick-list for ambiguous names would help.
 - Public Overpass/Nominatim instances are rate limited; self-host Overpass for reliability.
-- The chat shows the final answer only; the hub is in place, so publishing the agent's tool steps
-  as they happen (Symfony AI `onProgress`, through `ChatStream`) is a natural next step, and could
-  replace the 2.5 s re-render polling with an update per change.
+- The chat shows the final answer only; the plan already follows every tool call, and showing the
+  agent's steps as text too (Symfony AI `onProgress`, through `ChatStream`) is a natural next step.
+- `/mcp` has no accounts: anyone with a plan's id can change it, as on the plan page. The rate
+  limits keep a single client from flooding it, not a determined one; per-plan tokens would be the
+  next step if plans need protecting.
 - `get_site` gives the agent building centres only, not footprints, so it places interventions
   without knowing exactly where walls are.
 - Areas mapped as multipolygon relations (some schools, parks) are not found as the plot yet: only
