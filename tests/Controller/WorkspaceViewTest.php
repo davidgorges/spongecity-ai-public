@@ -20,7 +20,8 @@ use Symfony\Component\Routing\Generator\UrlGeneratorInterface;
 use Symfony\UX\LiveComponent\Test\InteractsWithLiveComponents;
 
 /**
- * How the workspace is handled: every window can be resized by its corner handle, the view
+ * How the workspace is handled: every window can be resized by its corner handle and snaps
+ * with guide lines, the view
  * marks what the mouse is over (the context menu finds the object for it), and a finger held
  * on the view opens the context menu. Measures are told apart in their list and shown when
  * picked there; removing them all is asked first; numbers read as the interface's language
@@ -50,6 +51,18 @@ final class WorkspaceViewTest extends WebTestCase
             self::assertStringContainsString('window-manager#resetSize', $handle->attr('data-action'));
             self::assertStringStartsWith('Resize ', (string) $handle->attr('aria-label'), 'named, not a translation key');
         });
+    }
+
+    #[Test]
+    public function windowsSnapWithGuideLinesAndTheGripTellsHow(): void
+    {
+        $crawler = $this->workspace()->crawler();
+
+        self::assertCount(1, $crawler->filter('[data-window-manager-target="guideX"][data-window-guide][hidden]'));
+        self::assertCount(1, $crawler->filter('[data-window-manager-target="guideY"][data-window-guide][hidden]'));
+        $grip = $crawler->filter('[data-window="chat"] [data-action="keydown->window-manager#nudge"]');
+        self::assertCount(1, $grip);
+        self::assertStringContainsString('Shift-drag', (string) $grip->attr('aria-label'), 'how to take a window out of its group');
     }
 
     #[Test]

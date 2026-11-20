@@ -74,6 +74,7 @@ and `DEFAULT_URI` follows it (see `.env`). Run console commands through
 
 ```bash
 symfony php vendor/bin/phpunit
+node --experimental-detect-module --test tests/js/   # the browser code's pure modules (Node 20+)
 ```
 
 No network, Docker or API key needed.
