@@ -19,7 +19,6 @@ final readonly class NominatimGeocoder
 {
     public const string ENDPOINT = 'https://nominatim.openstreetmap.org/search';
     private const int LIMIT = 5;
-    private const int CACHE_SECONDS = 30 * 86400;
     /** bump when the query or the result shape changes */
     private const int CACHE_VERSION = 1;
 
@@ -40,7 +39,7 @@ final readonly class NominatimGeocoder
 
         /** @var list<array{lat: string, lon: string, display_name: string}> $rows */
         $rows = $this->cache->get($key, function (ItemInterface $item, bool &$save) use ($query): array {
-            $item->expiresAfter(self::CACHE_SECONDS);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
             $rows = $this->fetch($query);
             $save = [] !== $rows;
 

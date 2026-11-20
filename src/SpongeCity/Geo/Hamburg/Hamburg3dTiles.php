@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\SpongeCity\Geo\Hamburg;
 
 use App\SpongeCity\Geo\GeoBox;
+use App\SpongeCity\Geo\GeodataCache;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -14,12 +15,11 @@ use Symfony\Contracts\HttpClient\HttpClientInterface;
  * 3D portal serves them) within a box: the tileset is walked down to the leaf tiles
  * touching the box (following external tilesets), and every leaf's batch table is read
  * (b3dm, i3dm, or a composite of them). Only attributes; the geometry is not decoded.
- * Tiles are cached for a week.
+ * Tiles are cached (GeodataCache::LIFETIME_SECONDS).
  */
 final readonly class Hamburg3dTiles
 {
     public const string BASE_URL = 'https://www.daten-hamburg.de/gdi3d/datasource-data/';
-    private const int CACHE_SECONDS = 604_800;
     private const int CACHE_VERSION = 1;
     private const int TIMEOUT_SECONDS = 30;
     /** tilesets nest a few levels; this guards against a cycle */
@@ -177,7 +177,7 @@ final readonly class Hamburg3dTiles
     private function fetch(string $url): string
     {
         return $this->cache->get(sprintf('tiles3d_v%d_%s', self::CACHE_VERSION, hash('xxh128', $url)), function (ItemInterface $item) use ($url): string {
-            $item->expiresAfter(self::CACHE_SECONDS);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
 
             return $this->httpClient->request('GET', $url, [
                 'timeout' => self::TIMEOUT_SECONDS,

@@ -7,7 +7,7 @@ queues in SQLite under the kernel's share dir (`var/share/<env>`, set by `APP_SH
 What the geodata services answered about a place (Nominatim, OpenStreetMap, Hamburg's buildings,
 infiltration areas, LOD3 roofs) is cached in Redis too (the `spongecity.geodata` pool,
 `App\SpongeCity\Geo\GeodataCache`), so the same address imports again without asking them. Each
-entry expires after its service's `CACHE_SECONDS`. The large raw downloads (zip archives, 3D tiles, a few hundred MB) stay in `cache.app`
+entry, and each raw download on disk, expires after `GeodataCache::LIFETIME_SECONDS`. The large raw downloads (zip archives, 3D tiles, a few hundred MB) stay in `cache.app`
 on disk under `var/share`: Redis keeps everything in memory.
 
 ## Site settings

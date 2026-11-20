@@ -19,6 +19,13 @@ final class GeodataCache
 {
     public const string POOL = 'spongecity.geodata';
 
+    /**
+     * How long any geodata answer or download is kept, in this pool or in cache.app on disk: the
+     * official data and OpenStreetMap change rarely at a site's scale. Bump a service's
+     * CACHE_VERSION when what it asks or keeps changes.
+     */
+    public const int LIFETIME_SECONDS = 30 * 86400;
+
     private function __construct()
     {
     }

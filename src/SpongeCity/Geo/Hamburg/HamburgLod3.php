@@ -5,11 +5,11 @@ declare(strict_types=1);
 namespace App\SpongeCity\Geo\Hamburg;
 
 use App\SpongeCity\Geo\GeodataCache;
-use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use App\SpongeCity\Geo\GeoPoint;
 use App\SpongeCity\Geo\RemoteZip;
 use App\SpongeCity\Geo\UtmPlanTransform;
 use Psr\Log\LoggerInterface;
+use Symfony\Component\DependencyInjection\Attribute\Autowire;
 use Symfony\Contracts\Cache\CacheInterface;
 use Symfony\Contracts\Cache\ItemInterface;
 use Symfony\Contracts\HttpClient\HttpClientInterface;
@@ -39,7 +39,6 @@ final readonly class HamburgLod3
     private const string TILE_PATTERN = '#(^|/)%02d%02d\.gml$#';
     private const int TILE_METRES = 1000;
     private const int KILOMETRES_PER_NAME = 100;
-    private const int CACHE_SECONDS = 604_800;
     /** 3: corner heights, roof types and walls, holes and openings left out */
     private const int CACHE_VERSION = 3;
     private const int COORDINATE_DECIMALS = 5;
@@ -52,10 +51,10 @@ final readonly class HamburgLod3
         #[Autowire(service: GeodataCache::POOL)]
         private CacheInterface $cache,
         private LoggerInterface $logger,
-        /** the application cache on disk: the zip archives are too large for Redis */
+        /* the application cache on disk: the zip archives are too large for Redis */
         CacheInterface $downloads,
     ) {
-        $this->zips = array_map(static fn (string $url): RemoteZip => new RemoteZip($httpClient, $downloads, $url, self::CACHE_SECONDS), self::ZIP_URLS);
+        $this->zips = array_map(static fn (string $url): RemoteZip => new RemoteZip($httpClient, $downloads, $url, GeodataCache::LIFETIME_SECONDS), self::ZIP_URLS);
     }
 
     /**
@@ -70,7 +69,7 @@ final readonly class HamburgLod3
         $key = sprintf('lod3_roofs_v%d_%s_%s_%d', self::CACHE_VERSION, round($centre->latitude, self::COORDINATE_DECIMALS), round($centre->longitude, self::COORDINATE_DECIMALS), (int) $halfSideMetres);
 
         return $this->cache->get($key, function (ItemInterface $item) use ($centre, $halfSideMetres): array {
-            $item->expiresAfter(self::CACHE_SECONDS);
+            $item->expiresAfter(GeodataCache::LIFETIME_SECONDS);
 
             return $this->read($centre, $halfSideMetres);
         });
