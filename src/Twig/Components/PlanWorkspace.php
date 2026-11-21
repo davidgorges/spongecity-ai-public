@@ -25,6 +25,7 @@ use Core\Configurator\Product\SpongeCity\GreenRoof\GreenRoofs;
 use Core\Configurator\Product\SpongeCity\Impact\ImpactCalculator;
 use Core\Configurator\Product\SpongeCity\Impact\Polygon;
 use Core\Configurator\Product\SpongeCity\SpongeCityParameter;
+use Core\Configurator\Product\SpongeCity\StormIntensity;
 use Core\Configurator\Scene\SceneSerializer;
 use Core\Configurator\Site\Site;
 use Core\Configurator\Site\SiteObject as O;
@@ -342,6 +343,12 @@ final class PlanWorkspace
     public function maxStorm(): int
     {
         return SpongeCityParameter::STORM_MAX;
+    }
+
+    /** how heavy the simulated rain is, in words: for whoever does not know what 40 mm/h means */
+    public function stormIntensity(): StormIntensity
+    {
+        return StormIntensity::of($this->storm);
     }
 
     #[LiveAction]

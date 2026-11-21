@@ -1,6 +1,6 @@
 spongecity:
     label: SpongeCity plan
-    storm: Design storm
+    storm: Simulated rainfall
     applicant:
         label: Who applies for funding
         unknown: Not known yet
@@ -41,7 +41,23 @@ home:
 
 plan:
     panel: Planning
-    storm: Design storm
+    storm: Simulated rainfall
+    storm_intensity:
+        downpour:
+            label: Downpour
+            means: A strong shower, several times a summer.
+        heavy:
+            label: Heavy rain
+            means: The weather service warns of heavy rain from 15 mm/h.
+        severe:
+            label: Severe rain
+            means: Severe weather warning from 25 mm/h; gutters overflow.
+        cloudburst:
+            label: Cloudburst
+            means: Extreme weather from 40 mm/h; cellars and streets flood.
+        extreme:
+            label: Extreme event
+            means: Rare even over decades; streets flood for hours.
     viewer:
         label: 3D model of %place%
         unavailable: This browser cannot show the 3D view. The plan, the figures and the chat still work.
