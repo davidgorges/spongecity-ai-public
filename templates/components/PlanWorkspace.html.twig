@@ -670,6 +670,7 @@
 
     {% set min_storm = this.minStorm %}
     {% set max_storm = this.maxStorm %}
+    {% set intensity = this.stormIntensity.value %}
     <twig:Plan:Window id="effect" title="{{ windows.effect.title }}" icon="{{ windows.effect.icon }}" place="left bottom">
         <twig:block name="actions">
             <twig:Badge variant="outline" class="font-mono font-normal text-muted-foreground">{{ impact.plot_m2|number_format(0) }} m²</twig:Badge>
@@ -689,6 +690,12 @@
                 data-slider-model-name-value="storm"
             />
             <output class="w-16 text-right font-mono text-xs" aria-labelledby="storm-label"><span data-slider-display-target="output">{{ storm }}</span> mm/h</output>
+        </div>
+        {# how heavy that is, for whoever does not know what so many mm/h mean (DWD warning levels) #}
+        {% set intensity_variants = {downpour: 'secondary', heavy: 'info', severe: 'warning', cloudburst: 'destructive', extreme: 'destructive'} %}
+        <div class="flex items-center gap-2 text-xs text-muted-foreground" data-storm-intensity="{{ intensity }}">
+            <twig:Badge variant="{{ intensity_variants[intensity] }}">{{ ('plan.storm_intensity.' ~ intensity ~ '.label')|trans }}</twig:Badge>
+            <span>{{ ('plan.storm_intensity.' ~ intensity ~ '.means')|trans }}</span>
         </div>
         <dl class="grid grid-cols-2 gap-2">
             {# a rating against the metric's orientation values: green met, amber on the way, red far off #}
