@@ -21,6 +21,16 @@ enum ExampleSchool: string
         return $this->value.', Hamburg';
     }
 
+    /** the 3D view of the school, under assets/ */
+    public function image(): string
+    {
+        return match ($this) {
+            self::BrechtSchule => 'images/schools/brecht-schule.jpg',
+            self::Johanneum => 'images/schools/johanneum.jpg',
+            self::AlbertSchweitzer => 'images/schools/albert-schweitzer.jpg',
+        };
+    }
+
     public function district(): string
     {
         return match ($this) {

@@ -2,12 +2,11 @@
 
 {% block body %}
     <main class="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-8 px-4 py-16">
-        <header class="flex flex-col gap-3">
-            <p class="flex items-center gap-2 font-mono text-sm text-primary">
-                <twig:ux:icon name="lucide:sprout" class="size-4" aria-hidden="true" />
-                SpongeCity AI
-            </p>
-            <h1 class="font-heading text-4xl font-semibold leading-tight text-balance">{{ 'home.title'|trans }}</h1>
+        <header class="flex flex-col gap-4">
+            <h1 class="flex items-center gap-3 font-heading text-5xl font-semibold leading-none sm:text-6xl">
+                <twig:ux:icon name="lucide:sprout" class="size-12 text-primary sm:size-14" aria-hidden="true" />
+                {{ 'home.title'|trans }}
+            </h1>
             <p class="text-lg text-muted-foreground text-pretty">{{ 'home.lead'|trans }}</p>
         </header>
 
@@ -28,7 +27,7 @@
                 </twig:InputGroup:Addon>
                 <twig:InputGroup:Input id="{{ field }}" name="{{ field }}" type="search" required autofocus autocomplete="off" placeholder="{{ placeholder }}" />
             </twig:InputGroup>
-            <twig:Button type="submit" size="lg" data-form-submit-disable-target="button">
+            <twig:Button type="submit" size="lg" class="h-11 px-4" data-form-submit-disable-target="button">
                 {{ submit_label }}
                 <twig:ux:icon name="lucide:arrow-right" aria-hidden="true" />
             </twig:Button>
@@ -39,14 +38,14 @@
             <ul class="grid gap-2 sm:grid-cols-3">
                 {% for school in schools %}
                     <li>
-                        <form method="post" action="{{ path('home_start') }}" class="h-full" {{ stimulus_controller('form-submit-disable') }} data-action="submit->form-submit-disable#busy">
+                        <form method="post" action="{{ path('home_start') }}" class="h-full overflow-hidden rounded-lg" {{ stimulus_controller('form-submit-disable') }} data-action="submit->form-submit-disable#busy">
                             <input type="hidden" name="{{ constant('App\\Controller\\PlaceSearch::FIELD') }}" value="{{ school.place }}">
-                            <button type="submit" class="flex h-full w-full flex-col items-start gap-1 rounded-lg border bg-card p-3 text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60" data-form-submit-disable-target="button">
-                                <span class="flex items-start gap-2 text-sm font-medium">
-                                    <twig:ux:icon name="lucide:school" class="mt-0.5 size-4 shrink-0 text-primary" aria-hidden="true" />
-                                    {{ school.value }}
+                            <button type="submit" class="group flex h-full w-full flex-col overflow-hidden rounded-lg border bg-card text-left transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-60" data-form-submit-disable-target="button">
+                                <img src="{{ asset(school.image) }}" alt="{{ 'home.sample_alt'|trans({'%school%': school.value}) }}" width="900" height="563" loading="lazy" class="aspect-video w-full object-cover transition-transform duration-300 group-hover:scale-105">
+                                <span class="flex flex-col gap-0.5 p-3">
+                                    <span class="text-sm font-medium">{{ school.value }}</span>
+                                    <span class="text-xs text-muted-foreground">{{ school.district }}</span>
                                 </span>
-                                <span class="text-xs text-muted-foreground">{{ school.district }}</span>
                             </button>
                         </form>
                     </li>
