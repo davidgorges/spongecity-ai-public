@@ -49,8 +49,10 @@ symfony console app:doctor         # checks the setup and prints how to fix what
 symfony open:local
 ```
 
-The planning chat's replies arrive through a Mercure hub (`compose.yaml`, started by the Symfony
-CLI through Docker): without Docker the chat queues messages but no reply reaches the page.
+The planning chat's replies and every change to a plan (by the agent, in the app's chat or over MCP)
+reach the page through a Mercure hub (`compose.yaml`, started by the Symfony CLI through Docker):
+without Docker the chat queues messages but no reply reaches the page. Only the import's progress
+screen polls (every 2 s, a LiveComponent `data-poll`) until the plan is ready.
 
 `app:doctor` checks the web server, the agent's tools (`bin/console mcp:server`), the import worker, the API key, the OSM
 user agent and SimStadt. A ✘ means the app won't work; a `!` only affects an optional feature.
@@ -62,7 +64,7 @@ and `DEFAULT_URI` follows it (see `.env`). Run console commands through
 ### 4. Try it
 
 - Type a place on the home page (e.g. `Brecht-Schule Hamburg`). The import runs in the worker and
-  takes 10 to 60 s; the page polls until the plan is ready. Places in Hamburg also get official
+  takes 10 to 60 s; the progress page polls until the plan is ready. Places in Hamburg also get official
   buildings, street trees, terrain and infiltration data.
 - Offline, without network: `symfony console app:plan:demo` creates a synthetic schoolyard and
   prints its URL.
