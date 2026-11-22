@@ -34,6 +34,7 @@ home:
     placeholder: Address or name of a place, e.g. a school
     submit: Rebuild in 3D
     schools: Or try a school in Hamburg
+    sample_alt: 3D view of %school%
     recent: Your recent plans
     sources: Data © OpenStreetMap contributors. Numbers are planning-level estimates with the assumptions shown next to them.
     error:
