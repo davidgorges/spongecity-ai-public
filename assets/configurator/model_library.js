@@ -14,7 +14,7 @@ export class ModelLibrary {
 
     /**
      * @param {string} url
-     * @param {string} variant node name, e.g. "bush_04"
+     * @param {string} variant node name, e.g. "plant_01"
      * @param {number[]} size target [width, height, depth] in metres; 0 = free
      * @returns {Promise<THREE.Object3D|null>} the variant standing on its origin, or null if missing
      */

@@ -35,18 +35,6 @@ final class Furnishing
     {
     }
 
-    /** A shrub on the lawn (always shown, it is part of the garden). */
-    public static function bush(string $label, int $variant, float $height, float $x, float $z, float $turn = 0.0, float $y = 0.0): Part
-    {
-        return new Part(
-            null,
-            $label,
-            Model::ofHeight(GardenModels::BUSHES, GardenModels::bush($variant), $height),
-            position: new Vector3($x, $y, $z),
-            rotation: new Vector3(0, $turn, 0),
-        );
-    }
-
     /** A plant in a terracotta pot (GardenModels::PLANT_*). */
     public static function pottedPlant(string $label, string $variant, float $height, float $x, float $z, float $turn = 0.0, float $y = 0.0): Part
     {
