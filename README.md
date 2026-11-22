@@ -125,3 +125,10 @@ building-type scheme. That code doesn't call SimStadt and doesn't need it.)
 - Public Overpass mirrors are sometimes overloaded; the import tries several and caches results
   for a day. A failed import shows on the plan page with a way back.
 - Stop everything: `symfony server:stop`.
+
+## License
+
+MIT, see [LICENSE](LICENSE). Bundled fonts (SIL OFL 1.1), 3D models, HDRIs and textures (CC0)
+keep their own licences, listed in the README next to them under `assets/`. Geodata is loaded
+at runtime and credited in the app: © OpenStreetMap contributors (ODbL) and Freie und
+Hansestadt Hamburg (dl-de/by-2-0).
