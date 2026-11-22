@@ -8,6 +8,7 @@ ai:
             platform: 'ai.platform.anthropic'
             # the output limit covers the model's thinking and its answer: with the platform's default (1000)
             # the thinking can use it all up and the reply comes back without any text
+            # (upstream: https://github.com/symfony/ai/issues/2988, fix in https://github.com/symfony/ai/pull/2989)
             model: 'claude-sonnet-5-5?max_tokens=8000'
             prompt:
                 file: '%kernel.project_dir%/config/prompts/spongecity.md'
