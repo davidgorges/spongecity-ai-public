@@ -11,11 +11,6 @@ namespace Core\Configurator\Scene;
  */
 final class GardenModels
 {
-    /** 15 garden bushes, 0.6–1.3 m, variants bush_01 … bush_15 */
-    public const string BUSHES = 'garden_bushes';
-    public const string BUSH_VARIANT_PREFIX = 'bush';
-    public const int BUSH_VARIANTS = 15;
-
     /** CC0 (Poly Haven) potted plants in terracotta pots, ~1 m: plant_01 (fig-like), plant_02 (large leaves) */
     public const string PLANTS = 'garden_plants';
     public const string PLANT_FIG = 'plant_01';
@@ -34,11 +29,6 @@ final class GardenModels
     public const string OLIVE_PLANTER = 'olive_planter';
     /** corten bowl with logs on a gravel ring (the width); burns at sunset and in the evening */
     public const string FIRE_PIT = 'fire_pit';
-
-    public static function bush(int $number): string
-    {
-        return sprintf('%s_%02d', self::BUSH_VARIANT_PREFIX, ($number - 1) % self::BUSH_VARIANTS + 1);
-    }
 
     private function __construct()
     {
