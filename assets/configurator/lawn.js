@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { TerrainField } from './terrain.js';
+import { LAWN_OFFSET } from './ground_layers.js';
 import { LAWN, applyMetricUVs, proceduralTexture } from './procedural_textures.js';
 
 /**
@@ -121,6 +122,9 @@ export class Lawn {
             map: texture.map,
             bumpMap: texture.bumpMap,
             bumpScale: texture.bumpScale,
+            polygonOffset: true,
+            polygonOffsetFactor: LAWN_OFFSET,
+            polygonOffsetUnits: LAWN_OFFSET,
         }));
         ground.position.y = -0.002;
         ground.receiveShadow = true;

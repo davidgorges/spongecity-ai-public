@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { applyGroundLayer, GROUND_LAYER_OFFSET, groundLayerOffset, SKU_AREA, SKU_PLOT } from '../../../assets/configurator/ground_layers.js';
+import { applyGroundLayer, GROUND_LAYER_OFFSET, LAWN_OFFSET, groundLayerOffset, SKU_AREA, SKU_PLOT } from '../../../assets/configurator/ground_layers.js';
 
 const material = () => ({ polygonOffset: false, polygonOffsetFactor: 0, polygonOffsetUnits: 0 });
 
@@ -31,4 +31,8 @@ test('what is not a draped ground layer is left as it is', () => {
         applyGroundLayer(own, part);
         assert.deepEqual(own, material(), JSON.stringify(part));
     }
+});
+
+test('the lawn under the site lies behind the plot, so an asphalt plot is not grassed over', () => {
+    assert.ok(LAWN_OFFSET > groundLayerOffset({ sku: SKU_PLOT, draped: true }));
 });

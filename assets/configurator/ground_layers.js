@@ -10,6 +10,9 @@ export const SKU_PLOT = 'SC-PLOT';
 /** a ground area of the plot drawn as it is, a lawn on an asphalt plot (SpongeCitySku::AREA) */
 export const SKU_AREA = 'SC-AREA';
 
+/** polygonOffset of the lawn under the whole site: behind the plot, so an asphalt plot is not grassed over */
+export const LAWN_OFFSET = 6;
+
 /** polygonOffset (factor and units) per layer: the plot under its areas, the areas under every measure */
 export const GROUND_LAYER_OFFSET = Object.freeze({ [SKU_PLOT]: 4, [SKU_AREA]: 2 });
 
