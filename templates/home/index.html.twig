@@ -2,12 +2,11 @@
 
 {% block body %}
     <main class="mx-auto flex min-h-screen max-w-2xl flex-col justify-center gap-8 px-4 py-16">
-        <header class="flex flex-col gap-3">
-            <p class="flex items-center gap-2 font-mono text-sm text-primary">
-                <twig:ux:icon name="lucide:sprout" class="size-4" aria-hidden="true" />
-                SpongeCity AI
-            </p>
-            <h1 class="font-heading text-4xl font-semibold leading-tight text-balance">{{ 'home.title'|trans }}</h1>
+        <header class="flex flex-col gap-4">
+            <h1 class="flex items-center gap-3 font-heading text-5xl font-semibold leading-none sm:text-6xl">
+                <twig:ux:icon name="lucide:sprout" class="size-12 text-primary sm:size-14" aria-hidden="true" />
+                {{ 'home.title'|trans }}
+            </h1>
             <p class="text-lg text-muted-foreground text-pretty">{{ 'home.lead'|trans }}</p>
         </header>
 
